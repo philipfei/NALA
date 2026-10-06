@@ -1,77 +1,77 @@
-# NALA_v0 变更说明
+# NALA_v0 Change Notes
 
-日期：2026-10-06　版本：v0.1.0　基于：motor_driver_C（Floris van Mourik / Mathan / sojim，2020–2022）
+Date: 2026-10-06 · Version: v0.1.0 · Based on: motor_driver_C (Floris van Mourik / Mathan / sojim, 2020–2022)
 
-## 目录
-| 路径 | 说明 |
+## Layout
+| Path | Description |
 |---|---|
-| `motor_driver_C/` | **修改后的** Studio 工程（打开 `motor_driver_C.atsln` 即可编译） |
-| `motor_driver_C.atsln` | Studio 的**解决方案**文件，只是个容器，里面登记了一个工程：`motor_driver_C\motor_driver_C.cproj`。**在 Studio 里打开这个。** |
-| `original_ref/` | 修改前原始源码的只读快照（与 OneDrive 仓库里的原件逐文件哈希一致），仅供对照。**与解决方案无关，不要在 Studio 里打开它**（其中的工程文件已改名为 `.cproj.orig`，防止被 Studio 当成工程） |
-| `build_cli/` | 命令行验证编译的产物（Debug / Release）和 Studio 构建日志 |
-| `tests/` | 串口帧解析逻辑的模型测试（`python rx_parser_model_test.py`） |
+| `motor_driver_C/` | The **modified** Studio project (open `motor_driver_C.atsln` to build) |
+| `motor_driver_C.atsln` | The Studio **solution** file. It is only a container that registers one project, `motor_driver_C\motor_driver_C.cproj`. **Open this one in Studio.** |
+| `original_ref/` | Read-only snapshot of the original sources before any edit (file-by-file hash-identical to the originals in the OneDrive repo), for comparison only. **Unrelated to the solution; do not open it in Studio** (its project file was renamed to `.cproj.orig` so Studio does not treat it as a project). |
+| `build_cli/` | Output of the command-line verification builds (Debug / Release) and the Studio build log |
+| `tests/` | Model tests for the serial frame parser (`python rx_parser_model_test.py`) |
 
-OneDrive 仓库里的原始代码**没有被修改**（所有文件修改时间仍为 2022-01-26，且与 `original_ref` 哈希一致）。
+The original code in the OneDrive repo has **not been modified** (all file modification times are still 2022-01-26, and the hashes match `original_ref`).
 
-## 逐条对应你的 6 个要求
-1. **补齐头文件**：新增 `config.h`、`ADC.h`、`encoder.h`、`motor_functions.h`、`pwm.h`、`timer.h`；`Usart.h` 去掉了从未实现的 3 个声明；`main.c`、`ADC.c` 补全 `stdio/stdint/Usart.h` 等包含。原先靠隐式声明才能"碰巧"编过的函数现在都有原型。三处重复的 `F_CPU` 定义统一到 `config.h`。
-2. **文件头注释**：每个文件都有作者、版本（v0.1.0）、日期（2026-10-06）、概述；`main.c` 里有完整的架构、测速原理、协议说明。原作者署名保留。作者栏我写的是 "HY (NALA v0 revision)"，如需改名直接改文件头。
-3. **去阻塞 + 测速周期准确**（见下节）。
-4. **参数**：轮半径 0.040 m、半轮距 0.160 m、半轴距 0.130 m，在 `config.h` 的 `WHEEL_RADIUS_M / HALF_TRACK_M / HALF_WHEELBASE_M`。偏航项力臂 `W+H` 由 0.315 变为 **0.290 m**。
-5. **编码器与电机对应关系**：`config.h` 末尾的 "WIRING MAP"：
-   - `MOTORn_ENCODER`（n=1..4，取值 1..4）：电机 n 的速度反馈取自哪个编码器；
-   - `MOTORn_ENC_SIGN`（±1）：该编码器计数符号（左右镜像安装，原来 M1、M2 取反，M3、M4 不取反）；
-   - `ENCn_*`：每个编码器 A/B 引脚和中断配置；`MOTORn_DIR_BIT`：方向引脚；
-   - 文档表格写明了每个电机的 PWM 引脚（固定在定时器输出上）和方向引脚；
-   - 编译期检查：编号越界或同一编码器被分给两个电机会直接 `#error`。
-6. **串口回传与协议**：速度帧格式不变（`0x80 0x86 Vx Vy w`，int8，9600 8N1），**缩放由 /100 改为 /50（每计数 0.02，后续修改）**；回传格式不变（`%f \t %f \t %f \t %f\n`，M1..M4 实测 rad/s）。
-   **新增（独立的一种帧，不影响速度帧）**：命令回显开关 `0x80 0x87 E`，E=1 开、E=0 关，其他值忽略；MCU 回 `echo on\n` / `echo off\n`。上电默认值由 `config.h` 的 `ECHO_COMMAND` 决定（默认 0）。
-   兼容性前提：上位机不会在速度帧之外发送 `0x80 0x87` 这个字节对（Pi 现有代码不会）。
+## Mapping to the 6 requirements
+1. **Complete the headers**: added `config.h`, `ADC.h`, `encoder.h`, `motor_functions.h`, `pwm.h`, `timer.h`; removed 3 never-implemented prototypes from `Usart.h`; completed the includes (`stdio` / `stdint` / `Usart.h`, etc.) in `main.c` and `ADC.c`. Functions that previously compiled only through implicit declarations now have prototypes. The three duplicate `F_CPU` definitions were unified in `config.h`.
+2. **File header comments**: every file has author, version (v0.1.0), date (2026-10-06) and a summary; `main.c` contains the full architecture, speed-measurement principle and protocol description. Original authors are credited. The author field is set to "HY (NALA v0 revision)"; edit the file headers to change it.
+3. **No blocking + accurate measurement period** (details below).
+4. **Parameters**: wheel radius 0.040 m, half track 0.160 m, half wheelbase 0.130 m, in `config.h` as `WHEEL_RADIUS_M / HALF_TRACK_M / HALF_WHEELBASE_M`. The yaw lever arm `W+H` changes from 0.315 to **0.290 m**.
+5. **Encoder ↔ motor mapping**: the "WIRING MAP" at the end of `config.h`:
+   - `MOTORn_ENCODER` (n = 1..4, value 1..4): which encoder provides the speed feedback of motor n;
+   - `MOTORn_ENC_SIGN` (±1): sign of that encoder's count (left/right motors are mounted as mirror images; originally M1, M2 inverted and M3, M4 not inverted);
+   - `ENCn_*`: A/B pins and interrupt configuration of each encoder; `MOTORn_DIR_BIT`: direction pins;
+   - the documentation table lists the PWM pin of each motor (fixed to the timer outputs) and its direction pin;
+   - compile-time checks: an out-of-range number, or one encoder assigned to two motors, triggers `#error`.
+6. **Serial feedback and protocol**: the velocity frame format is unchanged (`0x80 0x86 Vx Vy w`, int8, 9600 8N1), but the **scale changed from /100 to /50 (0.02 per count, later change)**; the feedback format is unchanged (`%f \t %f \t %f \t %f\n`, measured M1..M4 speeds in rad/s).
+   **Added (a separate frame type that does not affect the velocity frame)**: command-echo switch `0x80 0x87 E`, E=1 on, E=0 off, other values ignored; the MCU replies `echo on\n` / `echo off\n`. The power-on default is set by `ECHO_COMMAND` in `config.h` (default 0).
+   Compatibility precondition: the host never sends the byte pair `0x80 0x87` outside a velocity frame (the existing Pi code does not).
 
-## 去阻塞与测速周期（第 3 点细节）
-| | 原代码 | NALA_v0 |
+## Removing blocking and the measurement period (detail of item 3)
+| | Original code | NALA_v0 |
 |---|---|---|
-| 编码器计数 | 主循环里轮询两个 ~10 ms 窗口（M3/M4 一窗，M1/M2 一窗，**不同时**，窗口外漏计） | 引脚变化中断**连续**计数，四路同时、不漏 |
-| 周期来源 | `_delay_ms` + 阻塞打印，周期不确定（估约 90–100 ms） | Timer3 CTC 比较中断，**精确 100 ms**（OCR3A=24999，已核对） |
-| 速度公式的时间 | 写死 0.010 s；PID 的 dt 写死 0.045 s | 实际经过的时间 = 经过的节拍数 × 周期（主循环偶尔晚了也准） |
-| 串口发送 | `usart_send` 忙等，一行 ~45 ms | 环形缓冲 + 发送中断；回传放不下就丢，**绝不阻塞** |
-| 串口接收中断 | 里面做 sprintf、发送、计算（~25 ms） | 只收字节并置标志，计算在主循环 |
-| 速度换算 | `×6.28` | `×2π`（6.28318…） |
+| Encoder counting | Polled in the main loop in two ~10 ms windows (M3/M4 in one, M1/M2 in the other, **not simultaneous**, pulses outside the windows are missed) | Pin-change interrupts count **continuously**, all four channels at once, nothing missed |
+| Period source | `_delay_ms` + blocking print, period undefined (estimated 90–100 ms) | Timer3 CTC compare interrupt, **exactly 100 ms** (OCR3A = 24999, verified) |
+| Time used in the speed formula | Hard-coded 0.010 s; PID dt hard-coded 0.045 s | Actual elapsed time = number of elapsed ticks × period (still correct if the main loop is occasionally late) |
+| Serial transmit | `usart_send` busy-waits, one line takes ~45 ms | Ring buffer + transmit interrupt; if the feedback does not fit it is dropped, **never blocks** |
+| Serial receive interrupt | Does sprintf, transmit and computation inside (~25 ms) | Only receives bytes and sets a flag; computation happens in the main loop |
+| Speed conversion | `×6.28` | `×2π` (6.28318…) |
 
-计数规则（只数 A 相每个边沿，B≠A 记 +1）没变，所以 `ENC_COUNTS_PER_REV = 1536` 的标定仍然适用。
+The counting rule is unchanged (count every edge of channel A, B≠A counts +1), so the calibration `ENC_COUNTS_PER_REV = 1536` still applies.
 
-## 行为上与原版不同的地方（请知悉）
-1. **PID 实际增益会变。** 控制律没改（误差=测量−目标，`pwm -= u`，u 截断为 int，增益 Kp=0.74/Ki=3.7/Kd=0.0644），但原来 dt 被错写成 0.045 而真实周期约 0.09–0.1，所以 Ki 项实际比设计值小约一半、Kd 项大约一倍。现在 dt 是真实值，**Ki 项变大约 2 倍、Kd 项变小约 2 倍**。控制周期默认取 100 ms 就是为了让比例环节每秒的作用量和原来接近。**上车后需要观察是否振荡，必要时重新整定。**
-2. **命令立即生效**：收到命令后立刻输出前馈 PWM，而不是等下一圈（原来要等本圈结束）。
-3. **启动输出多了 `a\n`**：原来 `adc_init` 在 UART 使能之前调用，这个字符实际上没发出去；现在先使能 UART，所以会发出。
-4. **命令回显默认关闭**（原来每条命令回显一行 `Vx Vy w`）。可用串口帧 `80 87 01` 打开、`80 87 00` 关闭；或把 `config.h` 里 `ECHO_COMMAND` 设为 1 作为上电默认值。
-5. **修复了 memset 顺序问题**：原 `main.c` 先清零缓冲再用它算速度，导致指令永远是 0；新代码先取值再处理。（备份固件本身没有这个问题。）
-6. `readVelCmd` 不再存在（改成中断里直接交接）；备份固件里它是 2 字节 int，所以不必再追求字节一致。
-7. 去掉了主循环里被注释掉的旧代码（旧循环、PID 测试循环），它们仍在 `original_ref/main.c`。
-8. **速度帧缩放由 /100 改为 /50**（`config.h` 的 `CMD_SCALE`）：每计数 0.02，范围 ±2.54。Vx、Vy、w 三个量共用这个系数，Pi 端需发送 `值 × 50`（你说 Pi 上已改好）。
-   **轴向采用 ROS 标准**：Vx 向前、Vy 向左、w 逆时针为正。运动学公式没有改动，它和 "M1=左前 M2=左后 M3=右后 M4=右前" 的位置假设一致。
-9. **无命令超时自动停车**（`config.h`：`CMD_TIMEOUT_MS`，默认 500 ms，0 = 关闭）：小车在运动时，超时没有收到速度帧就把所有目标置零并发一次 `cmd timeout`；新的速度帧立即恢复。检查每 100 ms 一次，实际停车在最后一帧之后 500–600 ms。零速度帧不会超时；回显开关帧不刷新超时。
-   **这要求 Pi 持续重发速度帧**。本机那份 `motor_uart_comms.py`（2022 原版）只在速度变化时才发送（第 52–53 行 `isclose` 去重），不重发的话匀速行驶 0.5 s 就会停车。请确认 Pi 上的版本处理了这一点。
+## Behavioural differences from the original (please note)
+1. **The effective PID gains change.** The control law is unchanged (error = measured − target, `pwm -= u`, u truncated to int, gains Kp=0.74 / Ki=3.7 / Kd=0.0644), but the original dt was wrongly written as 0.045 while the real period was about 0.09–0.1, so the Ki term was effectively about half of its design value and the Kd term about double. dt is now the real value, so the **Ki term becomes about 2× larger and the Kd term about 2× smaller**. The default control period of 100 ms was chosen so that the per-second action of the proportional term stays close to the original. **After installing on the robot, check for oscillation and retune if necessary.**
+2. **Commands take effect immediately**: the feed-forward PWM is output as soon as a command arrives, instead of waiting for the next loop (originally it waited until the current loop finished).
+3. **An extra `a\n` at start-up**: originally `adc_init` was called before the UART was enabled, so this character was never actually sent; the UART is now enabled first, so it is sent.
+4. **Command echo is off by default** (originally every command was echoed as a `Vx Vy w` line). Turn it on with the serial frame `80 87 01` and off with `80 87 00`, or set `ECHO_COMMAND` in `config.h` to 1 as the power-on default.
+5. **Fixed the memset ordering bug**: the original `main.c` cleared the buffer first and then used it to compute the speed, so the command was always 0; the new code takes the values first and then processes them. (The backed-up firmware itself did not have this problem.)
+6. `readVelCmd` no longer exists (hand-over is done directly in the interrupt); in the backed-up firmware it was a 2-byte int, so there is no need to chase byte-identical output.
+7. Removed the commented-out old code in the main loop (the old loop and the PID test loop); it is still in `original_ref/main.c`.
+8. **Velocity frame scale changed from /100 to /50** (`CMD_SCALE` in `config.h`): 0.02 per count, range ±2.54. Vx, Vy and w share this factor; the Pi must send `value × 50` (reported as already updated on the Pi).
+   **Axes follow the ROS standard**: Vx forward, Vy left, w counter-clockwise positive. The kinematic equations are unchanged; they are consistent with the position assumption "M1 = front-left, M2 = rear-left, M3 = rear-right, M4 = front-right".
+9. **Automatic stop on command timeout** (`config.h`: `CMD_TIMEOUT_MS`, default 500 ms, 0 = disabled): while the robot is moving, if no velocity frame has been received before the timeout, all targets are set to zero and `cmd timeout` is sent once; a new velocity frame resumes operation immediately. The check runs every 100 ms, so the actual stop happens 500–600 ms after the last frame. A zero velocity frame never times out; the echo-switch frame does not refresh the timeout.
+   **This requires the Pi to keep re-sending velocity frames.** The local copy of `motor_uart_comms.py` (the 2022 original) only sends when the velocity changes (the `isclose` de-duplication at lines 52–53), so without re-sending the robot would stop after 0.5 s of constant-speed driving. Please confirm the version on the Pi handles this.
 
-## 工程文件改动（`motor_driver_C.cproj`）
-- 登记新增的 `encoder.c` 与各头文件。
-- DFP 路径 1.6.364 → **1.7.374**：本机 Studio 只装了 1.7.374，1.6.364 不存在。
-- Release 配置补上 `-lprintf_flt`：原来 Release 没链接浮点 printf，回传的 `%f` 在 Release 下会输出乱码，只有 Debug 正常。
+## Project file changes (`motor_driver_C.cproj`)
+- Registered the new `encoder.c` and the headers.
+- DFP path 1.6.364 → **1.7.374**: only 1.7.374 is installed in Studio on this machine; 1.6.364 does not exist.
+- Added `-lprintf_flt` to the Release configuration: Release previously did not link the floating-point printf, so the `%f` feedback printed garbage in Release and only worked in Debug.
 
-## 验证情况
-- Studio 命令行构建（`AtmelStudio.exe motor_driver_C.atsln /build Debug`）：**成功**，Flash 9356 B（28.6%），RAM 332 B（16.2%）。
-- 命令行 avr-gcc 5.4.0，Debug(-Og) 与 Release(-Os) 均 `-Wall -Wextra`：**0 警告**。Release：text 8380 B。
-- 串口帧解析的模型测试 13/13 通过：速度帧、负数、前置垃圾字节、连续帧、载荷里含 `80 87` 不会误触发、回显开/关/无效值、以及 2 万条不含 0x87 的随机字节流与**原版解析器结果完全一致**。注意这是对逻辑的模型测试，不是对 AVR 固件的实机测试。
-- 反汇编核对：6 个中断（PCINT0/1/2、USART 收/发、Timer3 比较）均挂入向量表；固件内无延时函数；Timer3 比较值 0x61A7 = 24999。
-- **尚未在真实硬件上验证**（没有烧录这版固件）。上车前建议依次确认：
-  1. 上电串口应先出现 `a`、`test`，之后每 100 ms 一行四个数；
-  2. 手转每个轮子，对应列的符号和数值是否符合预期（M1、M2 顺时针为负，M3、M4 为正，与之前实测一致）；
-  3. 悬空低速下发 `80 86 05 00 00`（+Vx = 0.10 m/s），四个轮子应同向转，实测转速应接近 2.5 rad/s；再试 `80 86 00 05 00`（+Vy = 向左平移）和 `80 86 00 00 19`（w = 0.50 rad/s，逆时针），看哪些轮子转、转向如何；
-  4. 超时：发一条 `80 86 05 00 00` 后不再发送，约 0.5–0.6 秒后车应停下，串口收到 `cmd timeout`；
-  4. 高速时观察编码器中断是否丢计数（约 2400 边沿/秒/轮，估算 CPU 占用约 5–6%，未实测）。
+## Verification status
+- Studio command-line build (`AtmelStudio.exe motor_driver_C.atsln /build Debug`): **succeeded**, Flash 9356 B (28.6%), RAM 332 B (16.2%).
+- Command-line avr-gcc 5.4.0, Debug (-Og) and Release (-Os), both with `-Wall -Wextra`: **0 warnings**. Release: text 8380 B.
+- Model test of the serial frame parser, 13/13 passed: velocity frame, negative values, leading garbage bytes, back-to-back frames, `80 87` inside a payload does not trigger, echo on/off/invalid value, and 20,000 random byte streams without 0x87 give results **identical to the original parser**. Note that this is a model test of the logic, not a test of the AVR firmware on real hardware.
+- Disassembly check: all 6 interrupts (PCINT0/1/2, USART RX/TX, Timer3 compare) are in the vector table; no delay functions in the firmware; Timer3 compare value 0x61A7 = 24999.
+- **Not yet verified on real hardware** (this firmware has not been flashed). Before putting it on the robot, check in this order:
+  1. After power-up the serial port should first show `a`, `test`, then a line of four numbers every 100 ms;
+  2. Turn each wheel by hand and check the sign and magnitude of the corresponding column (M1, M2 negative for clockwise, M3, M4 positive, consistent with the earlier measurements);
+  3. With the wheels lifted, send `80 86 05 00 00` at low speed (+Vx = 0.10 m/s): all four wheels should turn in the same sense and the measured speed should be close to 2.5 rad/s; then try `80 86 00 05 00` (+Vy = strafe left) and `80 86 00 00 19` (w = 0.50 rad/s, counter-clockwise) and see which wheels turn and in which direction;
+  4. Timeout: send one `80 86 05 00 00` and then nothing; after about 0.5–0.6 s the robot should stop and the serial port should receive `cmd timeout`;
+  5. At high speed, check whether the encoder interrupts lose counts (about 2400 edges/s/wheel, estimated CPU load about 5–6%, not measured).
 
-## 已知遗留（未改）
-- 位置假设（M1=左前 M2=左后 M3=右后 M4=右前，x 前 y 左 w 逆时针）仍是假设，需悬空实测确认。
-- `ENC_COUNTS_PER_REV=1536` 沿用原值，未在本硬件上重新核对。
-- 超时停车只在"运动中"生效，且停车靠 PID 把目标降到零，轮子仍在转时会有主动反向制动的成分（和下发一条停车帧效果相同）。
-- `timer.c` 里旧的 `start_timer3()` 选的是外部时钟（CS32:0=111），与其注释不符；它从未被调用，Timer3 现已专用于控制节拍，请勿再用。
+## Known leftovers (not changed)
+- The position assumption (M1 = front-left, M2 = rear-left, M3 = rear-right, M4 = front-right; x forward, y left, w counter-clockwise) is still an assumption and must be confirmed with the wheels lifted.
+- `ENC_COUNTS_PER_REV = 1536` is inherited from the original and has not been re-checked on this hardware.
+- The timeout stop only acts while the robot is "moving", and the stop is done by letting the PID bring the target to zero, so if the wheels are still spinning there is some active reverse braking (the same effect as sending a stop frame).
+- The old `start_timer3()` in `timer.c` selects the external clock (CS32:0 = 111), which does not match its comment; it is never called, and Timer3 is now dedicated to the control tick, so do not use it again.
