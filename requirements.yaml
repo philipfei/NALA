@@ -25,30 +25,35 @@ system:
   firmware:
     mcu: ATmega328PB, 16 MHz
     ide: Microchip Studio (Windows)   # build and flash
-    device_pack: ATmega_DFP 1.6.364   # from motor_driver_C.cproj
+    device_pack: ATmega_DFP 1.7.374   # from motor_driver_C.cproj (firmware v0.1.0, owned by a teammate)
     linker_flags: -lprintf_flt        # needed for %f in sprintf
 
 apt:
+  # The Pi follows the PC: if versions conflict, the Pi uses what the PC has.
+  # PC packages are never reinstalled without the user's approval.
   pc:
     stage_1:
-      - ros-jazzy-desktop                   # ROS 2 + RViz 2
-      - ros-jazzy-teleop-twist-keyboard     # keyboard teleop
-      - python3-pytest                      # unit tests
-      - python3-colcon-common-extensions    # build tool
-      - python3-rosdep                      # install ROS deps from package.xml
+      - ros2-apt-source 1.3.0               # ROS 2 apt repository (already installed)
+      - ros-jazzy-ros-base                  # ROS 2 (installed; the PC has no ros-jazzy-desktop)
+      - ros-jazzy-rmw-cyclonedds-cpp        # DDS (installed; the only RMW on the PC)
+      - ros-jazzy-teleop-twist-keyboard     # keyboard teleop (new in stage 1)
+      - python3-colcon-*                    # build tool (installed as single colcon packages)
+      - python3-pytest                      # unit tests (installed)
       - git
-    stage_2: []                             # RViz is in ros-jazzy-desktop
+    stage_2:
+      - ros-jazzy-rviz2                     # RViz (installed)
     stage_3:
       - ros-jazzy-nav2-map-server           # show the saved map to pick the base station
   pi:
-    stage_1:
+    stage_1:                                # installed by scripts/setup_pi.sh, in this order
+      - ros2-apt-source 1.3.0               # same version as the PC
+      - ros-jazzy-rmw-cyclonedds-cpp        # first, so ros-base uses Cyclone (like the PC), not Fast DDS
       - ros-jazzy-ros-base                  # ROS 2 without GUI tools
       - python3-serial                      # pyserial: UART to the MCU
       - python3-pytest                      # unit tests
-      - python3-colcon-common-extensions
-      - python3-rosdep
+      - python3-colcon-common-extensions    # build tool
       - git
-      - avahi-daemon                        # mDNS: ssh nala@<PI_HOSTNAME>.local
+      - avahi-daemon                        # mDNS: ssh nala@nala.local
     stage_2:
       - ros-jazzy-rplidar-ros               # RPLIDAR A2M8 driver
       - ros-jazzy-robot-state-publisher     # publish robot frames from the URDF
@@ -62,6 +67,9 @@ apt:
 pip: []   # none
 
 network:
-  pi_ssh: nala@<PI_HOSTNAME>.local   # hostname not known yet
-  ros_domain_id: null                # set in stage 1; must be the same on PC and Pi
-  time_sync: PC and Pi clocks must match (TF across machines). Check in stage 2.
+  pi_ssh: nala@nala.local            # Pi hostname NALA
+  robot_lan: 10.42.0.0/24            # PC USB Ethernet 10.42.0.1 shares the connection; Pi on WiFi
+  ros_domain_id: 0                   # same on PC and Pi (config/ros_env.sh)
+  rmw: rmw_cyclonedds_cpp            # config/ros_env.sh, config/cyclonedds.xml
+  pc_firewall: ufw must allow 10.42.0.0/24
+  time_sync: PC and Pi clocks must match (TF across machines). Both use NTP.

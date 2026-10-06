@@ -87,6 +87,15 @@ Everything below is project-specific and must be kept up to date.
 - `requirements.yaml`: system versions and every dependency (PC, Pi, firmware). Update it when a dependency is added or removed.
 - `docs/mcu_protocol.md`: the Pi <-> MCU protocol. Update it in the same commit as any protocol change.
 
+## Config folder
+
+- Every setting the user may want to change lives in `config/` at the repo root: speed limits, timeouts,
+  serial port, chassis parameters, LiDAR, SLAM, Nav2, coverage, teleop start speeds, DDS/network.
+- No tunable numbers in code or launch files. Nodes declare parameters without defaults, so a missing value fails loudly.
+- `nala_bringup` installs `config/` into its share folder. Launch files read it from there.
+  With `--symlink-install`, an edited file works after `git pull` without a rebuild (a new file needs a rebuild).
+- Config files are edited on the PC and pushed, like code.
+
 ## Git and deployment
 
 - Remote: <https://github.com/philipfei/NALA> (public), branch `main`. Claude may pull and push.
@@ -94,6 +103,18 @@ Everything below is project-specific and must be kept up to date.
   The Pi only pulls (`git pull` in the Pi SSH terminal). Never edit code on the Pi.
 - Never commit: `ref/`, `build/`, `install/`, `log/`, map files in `maps/`, passwords.
 - Line endings are LF for all files (see `.gitattributes`), because the code runs on Linux.
+- Claude may SSH to the Pi to run setup, `git pull`, build, tests and the apps (code still only comes from GitHub).
+- Build with `colcon build --symlink-install --base-paths src`. `--base-paths src` is needed on the PC,
+  because `ref/` contains old ROS 1 / CMake packages.
+- **Do not build on the PC repo drive.** The repo is on an NTFS drive (`/media/philip/新加卷`, ntfs3 driver).
+  A `colcon build` there crashed the ntfs3 kernel driver (kernel 7.0, 2026-10-06). Build on the Pi (ext4).
+  Run the pure-logic tests on the PC with `PYTHONPATH=src/nala_base python3 -m pytest -p no:cacheprovider src/nala_base/test`.
+
+## Packages and versions
+
+- The Pi follows the PC. If PC and Pi versions conflict, the Pi uses the version the PC has.
+  Never reinstall or upgrade PC packages without the user's approval. Installing a missing PC package also needs approval.
+- The user runs PC `sudo` commands. Claude has no PC sudo password.
 
 ## System
 
@@ -105,8 +126,13 @@ Everything below is project-specific and must be kept up to date.
 | ROS 2 | Jazzy | Jazzy |
 | Python | 3.12 | 3.12 |
 
-- Pi login user: `nala`. The password is not stored in this public repo. Ask the user.
-- Reach the Pi: `ssh nala@<PI_HOSTNAME>.local` (mDNS). The hostname is not known yet.
+- Pi login user: `nala`, hostname `NALA`. The password is not stored in this public repo. Ask the user.
+- Reach the Pi: `ssh nala@nala.local` (mDNS).
+- Network: the PC shares its connection on USB Ethernet (`enx00e17c6840b1`, 10.42.0.1/24).
+  The Pi is on WiFi in that network (10.42.0.x, DHCP). The PC also has eduroam WiFi, which ROS must not use.
+- DDS: Cyclone DDS on both (the PC has only Cyclone, no Fast DDS). `ROS_DOMAIN_ID=0`.
+  Set by `config/ros_env.sh`; `config/cyclonedds.xml` limits DDS to the 10.42.0.0/24 network.
+- PC firewall: ufw is active (input policy DROP). It must allow 10.42.0.0/24, or DDS from the Pi is blocked.
 - Install Python libraries with apt (`python3-*`). Ubuntu 24.04 blocks system-wide pip (PEP 668).
 - Firmware is built and flashed with Microchip Studio on Windows.
 
@@ -123,8 +149,12 @@ Everything below is project-specific and must be kept up to date.
 | Half wheelbase | 0.130 m |
 | Wheel **radius** | 0.040 m (diameter 0.080 m) |
 | Mecanum rotation term = half track + half wheelbase | 0.290 m |
-| LiDAR | RPLIDAR A2M8, USB, driver `rplidar_ros` |
-| Motor driver MCU | ATmega328PB, 16 MHz, on the Pi GPIO UART (device name: check on the Pi in stage 1; old code used `/dev/ttyS0`) |
+| Robot outer size (length x width) | 0.410 m x 0.360 m |
+| Motors | M1 front-left, M2 rear-left, M3 rear-right, M4 front-right |
+| Encoder | 1536 counts per wheel revolution (confirmed) |
+| Teleop speed limits | 2.0 m/s linear, 1.0 rad/s angular (`config/base.yaml`) |
+| LiDAR | RPLIDAR A2M8, USB, driver `rplidar_ros`. Mounted at the chassis center (x = y = 0), facing backward (yaw 180 deg). Height unknown |
+| Motor driver MCU | ATmega328PB, 16 MHz, on the Pi GPIO UART `/dev/ttyS0` |
 | IMU | None yet. May be added later (model unknown) |
 
 ## Reference code (`ref/`, local only)
@@ -132,27 +162,26 @@ Everything below is project-specific and must be kept up to date.
 - `ref/` holds the previous team's repos. It is read-only and not in git. **Never modify anything in `ref/`.**
 - `ref/raspberry-pi`: reference only, to learn how the old Pi talked to the MCU.
   **Never import, copy into a build, or depend on any file in it.** It will not be used.
-- `ref/motor_driver`: the firmware that is flashed on the MCU now. `firmware/` is an unchanged copy (the baseline).
-  We are allowed to change it and reflash the MCU.
+- `ref/motor_driver`: the old firmware of the previous team. `firmware/` now holds the teammate's new version.
 - The previous team did not use the measured wheel speeds that the MCU sends back.
   **This project must use them** (wheel odometry).
 
 ## Firmware
 
+- A teammate writes and owns the firmware (`firmware/`, v0.1.0 since 2026-10-06). **Claude never edits `firmware/`.**
+- Protocol source of truth: `firmware/docs/protocol.md` (and `firmware/CHANGES.md`).
+  When it changes, update the Pi code and `docs/mcu_protocol.md` (Pi-side summary) in the same commit.
 - Open `firmware/motor_driver_C.atsln` in Microchip Studio. The linker needs `-lprintf_flt`.
-- Protocol and known issues: `docs/mcu_protocol.md`. Fix the known issues in stage 1.
-- Agree every protocol change with the user first. Change the firmware, the Pi code and `docs/mcu_protocol.md` in the same commit.
-- Before changing the baseline, check that it builds unchanged.
 
 ## Applications (stages)
 
 | Stage | App | Goal | Status |
 |---|---|---|---|
-| 1 | Teleop | Drive the chassis with the keyboard | Not started |
+| 1 | Teleop | Drive the chassis with the keyboard | Code done. Hardware test pending (MCU not connected yet) |
 | 2 | Mapping | Teleop + real-time LiDAR SLAM + RViz on the PC + save the map and copy it back to the PC | Not started |
 | 3 | Coverage | The user sets a base station on the PC, in the map saved by app 2. The robot starts at the base station, covers the whole house, then returns to it | Not started |
 
-**Current stage: 0** (folder structure and docs, no code yet).
+**Current stage: 1** (teleop code done, waiting for the hardware test).
 
 Stage 2 special requirement: the house has many very similar rooms.
 SLAM must not jump to a wrong but similar-looking place.
@@ -161,14 +190,17 @@ SLAM must not jump to a wrong but similar-looking place.
 
 - The repo root is the colcon workspace. ROS 2 packages are in `src/`. Our nodes are Python (rclpy).
 - Packages: `nala_description` (URDF), `nala_base` (Pi <-> MCU driver, odometry),
-  `nala_bringup` (launch, config, RViz for all apps), `nala_coverage` (coverage planner, mission, base station picker).
+  `nala_bringup` (launch files and RViz layouts for all apps; installs `config/`), `nala_coverage` (coverage planner, mission, base station picker).
+- A package that is still empty has a `COLCON_IGNORE` file. Remove it in the stage that fills the package.
 - The Pi runs: `nala_base`, `rplidar_ros`, `robot_state_publisher`, `slam_toolbox`, Nav2, coverage mission.
-- The PC runs: keyboard teleop (`teleop_twist_keyboard`, holonomic keys), RViz, base station picker.
-- PC and Pi talk over the LAN with ROS 2 DDS (same `ROS_DOMAIN_ID`, value set in stage 1). Their clocks must be in sync.
+- The PC runs: keyboard teleop (`teleop_twist_keyboard`, IJKL keys, Shift = strafe; the user chose it over WASD), RViz, base station picker.
+- PC and Pi talk over the LAN with ROS 2 DDS (Cyclone, `ROS_DOMAIN_ID=0`). Their clocks must be in sync (both use NTP).
+- `nala_base` sends the current command to the MCU at a fixed rate (10 Hz), not synced to the MCU feedback
+  (reasons in `docs/mcu_protocol.md`).
 - Frames (REP 105): `map -> odom -> base_footprint -> base_link -> laser`.
   Body frame: x forward, y left, z up. Positive angular z = counter-clockwise seen from above.
 - Keep pure logic (protocol, kinematics, coverage planning) in ROS-free modules with pytest unit tests.
-- Safety: the Pi stops the robot if `/cmd_vel` is older than a timeout. The firmware also gets a command timeout.
+- Safety: the Pi sends zero if `/cmd_vel` is older than 0.6 s. The firmware stops after 500 ms without a frame.
 - Maps are saved in `maps/<name>/` and copied between Pi and PC with `scp`.
 
 ### Plan against SLAM pose jumps (tune and verify in stage 2)
@@ -181,11 +213,9 @@ SLAM must not jump to a wrong but similar-looking place.
 
 ## Open questions (ask before the stage that needs them)
 
-- [1] Pi hostname (docs use `<PI_HOSTNAME>`).
-- [1] Which motor (M1..M4) is at which corner, and the positive direction of each. Check on hardware with the wheels off the ground.
-- [1] Encoder counts per wheel revolution (the firmware assumes 1536).
-- [1] Max speeds for teleop.
-- [2] Robot outer size (length x width, for the footprint) and LiDAR mount pose (x, y, z, yaw from the chassis center).
+- [1] Hardware test with the new firmware (wheels off the ground): axes, wheel speed signs, PID behavior.
+  Checklist in `docs/mcu_protocol.md`.
+- [2] LiDAR mount height (z above the floor or above `base_link`).
 - [3] Base station: only a pose, or a physical dock or charger? How exact must the return be?
 - [3] Coverage width (tool width) and any coverage pattern requirements.
 - [any] IMU model, if one is added.

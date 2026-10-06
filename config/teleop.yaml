@@ -1,0 +1,7 @@
+# Keyboard teleop (teleop_twist_keyboard). Runs on the PC.
+# Start values only. Change them while driving with the keys q/z, w/x, e/c.
+# The robot never goes faster than the limits in base.yaml.
+teleop_twist_keyboard:
+  ros__parameters:
+    speed: 0.5    # m/s, start linear speed
+    turn: 1.0     # rad/s, start turn speed

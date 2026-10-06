@@ -6,11 +6,9 @@ The PC runs the keyboard teleop, RViz and the map tools.
 
 ## Status
 
-**Stage 0: folder structure and docs only. There is no code yet.** Most files are empty placeholders.
-
 | App | What it does | Status |
 |---|---|---|
-| 1. Teleop | Drive the chassis with the PC keyboard | Not started |
+| 1. Teleop | Drive the chassis with the PC keyboard | Code done. Hardware test pending (MCU not connected yet) |
 | 2. Mapping | App 1 + real-time LiDAR SLAM on the Pi + RViz on the PC + save the map and copy it to the PC | Not started |
 | 3. Coverage | Pick a base station in the saved map on the PC. The robot starts there, covers the whole house, and returns | Not started |
 
@@ -18,34 +16,46 @@ The PC runs the keyboard teleop, RViz and the map tools.
 
 | | PC | Pi |
 |---|---|---|
-| Hardware | - | Raspberry Pi 4B, 8 GB |
+| Hardware | - | Raspberry Pi 4B, 8 GB, hostname `NALA` |
 | OS | Ubuntu 24.04 | Ubuntu 24.04 |
 | Architecture | amd64 | arm64 |
-| ROS 2 | Jazzy | Jazzy |
+| ROS 2 | Jazzy (ros-base + rviz2) | Jazzy (ros-base) |
+| DDS | Cyclone DDS | Cyclone DDS |
 | Python | 3.12 | 3.12 |
 
-MCU firmware: ATmega328PB, built and flashed with Microchip Studio on Windows.
+Network: the PC shares its connection on USB Ethernet (10.42.0.1/24). The Pi is on WiFi in that network.
+ROS uses only this network (`config/cyclonedds.xml`), `ROS_DOMAIN_ID=0`.
+
+MCU firmware: ATmega328PB, written by a teammate, built and flashed with Microchip Studio on Windows.
 All dependencies: [requirements.yaml](requirements.yaml).
 
 ## Hardware
 
-- Chassis: 4 mecanum wheels.
+- Chassis: 4 mecanum wheels. Outer size 410 x 360 mm (length x width).
   Track width 320 mm (half: 160 mm). Wheelbase 260 mm (half: 130 mm). Wheel radius 40 mm (diameter: 80 mm).
-- LiDAR: RPLIDAR A2M8 (USB).
-- Motor driver: ATmega328PB, on the Pi GPIO UART. It runs a speed PID per wheel and sends back
-  the measured wheel speeds. Protocol: [docs/mcu_protocol.md](docs/mcu_protocol.md).
+- Motors: M1 front-left, M2 rear-left, M3 rear-right, M4 front-right. Encoders: 1536 counts per wheel revolution.
+- LiDAR: RPLIDAR A2M8 (USB), at the chassis center, facing backward.
+- Motor driver: ATmega328PB on the Pi GPIO UART (`/dev/ttyS0`). It runs a speed PID per wheel and sends back
+  the measured wheel speeds every 100 ms. Protocol: [docs/mcu_protocol.md](docs/mcu_protocol.md).
 - IMU: none for now (may be added later).
 
-## How it fits together (plan)
+## How it fits together
 
 ```
 PC                                   Pi (on the robot)                         MCU
-teleop_twist_keyboard --/cmd_vel-->  nala_base --UART velocity command-->       motor_driver
-                                     nala_base <--UART measured wheel speeds--  (PID per wheel)
-RViz <--/map /scan /tf /odom--       rplidar_ros  (/scan)
-                                     slam_toolbox (/map, map->odom)
-                                     Nav2 + nala_coverage (stage 3)
+teleop_twist_keyboard --/cmd_vel-->  nala_base --UART velocity frame, 10 Hz-->  motor_driver
+                                     nala_base <--UART wheel speeds, 10 Hz---   (PID per wheel)
+RViz <--/map /scan /tf /odom--       rplidar_ros  (/scan)                       [stage 2]
+                                     slam_toolbox (/map, map->odom)             [stage 2]
+                                     Nav2 + nala_coverage                       [stage 3]
 ```
+
+## Settings: the `config/` folder
+
+All settings you may want to change are in [config/](config/): speed limits, timeouts, serial port,
+teleop start speeds, network, and later LiDAR, SLAM, Nav2 and coverage.
+Edit them on the PC, push, then `git pull` on the Pi (see below) and restart the app.
+An edited file works without a rebuild. A new file needs a rebuild.
 
 ## File tree
 
@@ -60,34 +70,53 @@ NALA/
 ├── .gitignore                             What git ignores: build output, ref/, map files
 ├── .gitattributes                         Force LF line endings (the code runs on Linux)
 │
+├── config/                                All settings the user may change (installed by nala_bringup)
+│   ├── base.yaml                          [1] Pi base driver: serial port, speed limits, /cmd_vel timeout, send rate
+│   ├── teleop.yaml                        [1] PC keyboard teleop start speeds
+│   ├── ros_env.sh                         [1] ROS environment for PC and Pi: domain ID, Cyclone DDS
+│   ├── cyclonedds.xml                     [1] Cyclone DDS: use only the robot network 10.42.0.0/24
+│   ├── rplidar.yaml                       (empty) [2] RPLIDAR A2M8 driver params: port, frame, scan mode
+│   ├── slam_mapping.yaml                  (empty) [2] slam_toolbox mapping params, tuned against pose jumps
+│   ├── localization.yaml                  (empty) [3] Localization in the saved map
+│   ├── nav2_params.yaml                   (empty) [3] Nav2 params: holonomic controller, costmaps
+│   └── coverage.yaml                      (empty) [3] Coverage width, overlap, wall margin
+│
 ├── docs/
-│   └── mcu_protocol.md                    Pi <-> MCU UART protocol and known firmware issues
+│   └── mcu_protocol.md                    Pi-side summary of the Pi <-> MCU protocol, first hardware test
 │
 ├── firmware/                              MCU motor driver (ATmega328PB), Microchip Studio project.
-│   │                                      Unchanged copy of ref/motor_driver (the baseline). [1] fixes it.
+│   │                                      Written and owned by a teammate (v0.1.0). Claude does not edit it.
+│   ├── CHANGES.md                         What changed from the old firmware (English)
+│   ├── 变化.md                            Same as CHANGES.md (Chinese)
+│   ├── docs/
+│   │   ├── protocol.md                    The protocol, source of truth (Chinese)
+│   │   ├── state_machine.svg              UART frame parser state machine
+│   │   └── 笔记.md                        Refactoring notes (Chinese)
 │   ├── motor_driver_C.atsln               Studio solution file (open this one)
 │   └── motor_driver_C/
 │       ├── motor_driver_C.cproj           Studio project: device, compiler and linker settings
 │       ├── motor_driver_C.componentinfo.xml   Studio device pack info
-│       ├── main.c                         Command parser, kinematics, wheel speed measuring, PID loop, feedback
-│       ├── USART.c                        UART driver (9600 baud, 8N1)
-│       ├── Usart.h                        UART driver header
-│       ├── motor_functions.c              Set PWM duty and direction of each motor
-│       ├── pwm.c                          PWM pin and timer setup
-│       ├── timer.c                        Timer 3/4 helpers (not used by the main loop)
-│       ├── ADC.c                          ADC setup and read (only the setup is called)
+│       ├── config.h                       All firmware parameters and the wiring map
+│       ├── main.c                         Command handling, kinematics, PID loop, feedback, timeout
+│       ├── encoder.c / encoder.h          Encoder counting in pin-change interrupts
+│       ├── USART.c / Usart.h              UART driver (9600 baud, 8N1, TX ring buffer)
+│       ├── motor_functions.c / .h         Set PWM duty and direction of each motor
+│       ├── pwm.c / pwm.h                  PWM pin and timer setup
+│       ├── timer.c / timer.h              Timer helpers (Timer3 is the 100 ms control tick)
+│       ├── ADC.c / ADC.h                  ADC setup and read
 │       └── notused.c                      Old code, all commented out
 │
 ├── maps/                                  Saved maps and base station files. The map files are not in git.
 │   └── .gitkeep                           (empty) Keeps the folder in git. Stays empty
 │
 ├── scripts/
-│   ├── setup_pi.sh                        (empty) [1] One-time Pi setup: UART, serial permissions, dependencies
+│   ├── setup_pi.sh                        [1] One-time Pi setup: ROS, Cyclone DDS, UART, serial permissions, ~/.bashrc
 │   └── save_map.sh                        (empty) [2] Pi: save the current SLAM map into maps/<name>/
 │
 └── src/                                   ROS 2 packages. The repo root is the colcon workspace
     │
     ├── nala_description/                  Robot model: frames base_footprint, base_link, laser
+    │   ├── COLCON_IGNORE                  (empty) Skip this package until stage 2 fills it
     │   ├── CMakeLists.txt                 (empty) [2] Build and install rules
     │   ├── package.xml                    (empty) [2] Package manifest
     │   ├── launch/
@@ -95,35 +124,26 @@ NALA/
     │   └── urdf/
     │       └── nala.urdf.xacro            (empty) [2] Robot frames and LiDAR mount pose
     │
-    ├── nala_base/                         Pi <-> MCU driver: /cmd_vel to the MCU, measured wheel speeds to /odom
-    │   ├── package.xml                    (empty) [1] Package manifest
-    │   ├── setup.py                       (empty) [1] Python package setup and node entry points
-    │   ├── setup.cfg                      (empty) [1] Install paths for ros2 run
+    ├── nala_base/                         Pi <-> MCU driver: /cmd_vel to the MCU, measured wheel speeds
+    │   ├── package.xml                    [1] Package manifest
+    │   ├── setup.py                       [1] Python package setup and node entry points
+    │   ├── setup.cfg                      [1] Install paths for ros2 run
     │   ├── resource/
     │   │   └── nala_base                  (empty) [1] ament index marker. Stays empty
-    │   ├── config/
-    │   │   └── base.yaml                  (empty) [1] Serial port, geometry, speed limits, command timeout
-    │   ├── launch/
-    │   │   └── base.launch.py             (empty) [1] Start base_node with base.yaml
     │   ├── nala_base/
     │   │   ├── __init__.py                (empty) [1] Python package marker. Stays empty
-    │   │   ├── mcu_protocol.py            (empty) [1] Build command frames, parse feedback lines (no ROS)
-    │   │   ├── kinematics.py              (empty) [1] Mecanum inverse and forward kinematics (no ROS)
-    │   │   └── base_node.py               (empty) [1] ROS node: serial I/O, cmd timeout, /odom and TF [2]
+    │   │   ├── mcu_protocol.py            [1] Build velocity frames, parse feedback lines (no ROS)
+    │   │   ├── kinematics.py              [1] Speed limits. [2] Forward kinematics for odometry (no ROS)
+    │   │   └── base_node.py               [1] ROS node: serial I/O, limits, /cmd_vel timeout. [2] /odom and TF
     │   └── test/
-    │       ├── test_mcu_protocol.py       (empty) [1] Unit tests for mcu_protocol.py
-    │       └── test_kinematics.py         (empty) [1] Unit tests for kinematics.py
+    │       ├── test_mcu_protocol.py       [1] Unit tests for mcu_protocol.py
+    │       └── test_kinematics.py         [1] Unit tests for kinematics.py
     │
-    ├── nala_bringup/                      Launch files, configs and RViz layouts for the 3 apps
-    │   ├── CMakeLists.txt                 (empty) [1] Build and install rules
-    │   ├── package.xml                    (empty) [1] Package manifest
-    │   ├── config/
-    │   │   ├── rplidar.yaml               (empty) [2] RPLIDAR A2M8 driver params: port, frame, scan mode
-    │   │   ├── slam_mapping.yaml          (empty) [2] slam_toolbox mapping params, tuned against pose jumps
-    │   │   ├── localization.yaml          (empty) [3] Localization in the saved map
-    │   │   └── nav2_params.yaml           (empty) [3] Nav2 params: holonomic controller, costmaps
+    ├── nala_bringup/                      Launch files and RViz layouts for the 3 apps. Installs config/
+    │   ├── CMakeLists.txt                 [1] Install launch/ and the repo config/ folder
+    │   ├── package.xml                    [1] Package manifest
     │   ├── launch/
-    │   │   ├── app1_teleop_pi.launch.py   (empty) [1] Pi: base driver
+    │   │   ├── app1_teleop_pi.launch.py   [1] Pi: base driver
     │   │   ├── app2_slam_pi.launch.py     (empty) [2] Pi: base driver + LiDAR + robot model + SLAM
     │   │   ├── app2_slam_pc.launch.py     (empty) [2] PC: RViz with slam.rviz
     │   │   ├── app3_base_station_pc.launch.py   (empty) [3] PC: show the saved map, click to set the base station
@@ -134,13 +154,12 @@ NALA/
     │       └── coverage.rviz              (empty) [3] RViz layout for base station picking and coverage
     │
     └── nala_coverage/                     Coverage path planning and the base -> coverage -> base mission
+        ├── COLCON_IGNORE                  (empty) Skip this package until stage 3 fills it
         ├── package.xml                    (empty) [3] Package manifest
         ├── setup.py                       (empty) [3] Python package setup and node entry points
         ├── setup.cfg                      (empty) [3] Install paths for ros2 run
         ├── resource/
         │   └── nala_coverage              (empty) [3] ament index marker. Stays empty
-        ├── config/
-        │   └── coverage.yaml              (empty) [3] Coverage width, overlap, wall margin
         ├── nala_coverage/
         │   ├── __init__.py                (empty) [3] Python package marker. Stays empty
         │   ├── coverage_planner.py        (empty) [3] Map -> back-and-forth coverage path (no ROS)
@@ -152,55 +171,94 @@ NALA/
 
 `ref/` (the previous team's code) exists only on the development machine. It is not in git.
 
-## Setup (one time, on both PC and Pi)
+## Setup (one time)
 
-1. Install ROS 2 Jazzy: <https://docs.ros.org/en/jazzy/Installation/Ubuntu-Install-Debs.html>
-   (PC: `ros-jazzy-desktop`, Pi: `ros-jazzy-ros-base`).
-2. Install the apt packages for your machine from [requirements.yaml](requirements.yaml).
-3. Get the code: see the next section. The PC uses the same steps (without ssh).
-4. Pi only: run `scripts/setup_pi.sh` (written in stage 1).
+### PC
+
+ROS 2 Jazzy is already installed. Missing for app 1 (run in a PC terminal):
+
+```bash
+sudo apt install ros-jazzy-teleop-twist-keyboard
+sudo ufw status                      # is 10.42.0.0/24 allowed? If not:
+sudo ufw allow from 10.42.0.0/24     # DDS traffic from the Pi
+```
+
+The PC does not need to build anything for app 1.
+Do not run `colcon build` in the repo on the PC: the repo drive is NTFS, and a build there crashed the ntfs3 kernel driver.
+
+### Pi
+
+The Pi needs internet (through the PC). In a PC terminal:
+
+```bash
+ssh-copy-id nala@nala.local          # optional: log in without a password from now on
+ssh nala@nala.local
+```
+
+Then in the Pi SSH terminal:
+
+```bash
+git clone https://github.com/philipfei/NALA.git ~/NALA
+bash ~/NALA/scripts/setup_pi.sh      # asks for the sudo password, takes about 15 minutes
+sudo reboot
+```
+
+`setup_pi.sh` installs ROS 2 and the tools from [requirements.yaml](requirements.yaml), gives `nala` access to
+the UART, removes the Linux serial console from `/dev/ttyS0`, and adds `source ~/NALA/config/ros_env.sh` to `~/.bashrc`.
 
 ## Get new code onto the Pi (git pull over SSH)
 
 Code is never edited on the Pi. Changes are pushed to GitHub from the development machine,
-and the Pi pulls them.
-
-Open an SSH terminal to the Pi from the PC:
-
-```bash
-ssh nala@<PI_HOSTNAME>.local
-```
-
-- `<PI_HOSTNAME>`: run `hostname` on the Pi to see it.
-- `.local` needs mDNS (`avahi-daemon` on the Pi) and both machines on the same network.
-  If it does not work, use the Pi IP address instead (run `hostname -I` on the Pi).
-
-First time only, in the Pi SSH terminal:
-
-```bash
-git clone https://github.com/philipfei/NALA.git ~/NALA
-```
-
-Every time there is new code, in the Pi SSH terminal:
+and the Pi pulls them. In the Pi SSH terminal (`ssh nala@nala.local`):
 
 ```bash
 cd ~/NALA
 git pull
-source /opt/ros/jazzy/setup.bash
-colcon build --symlink-install
-source install/setup.bash
+colcon build --symlink-install --base-paths src
+source ~/NALA/config/ros_env.sh
 ```
 
-Note: in stage 0 the packages are empty, so there is nothing to build yet. `colcon build` works from stage 1 on.
+- `.local` needs mDNS (`avahi-daemon` on the Pi) and both machines on the same network.
+  If it does not work, use the Pi IP address instead (run `hostname -I` on the Pi).
+- `--base-paths src`: build only the packages in `src/`.
+- Changed only a file in `config/`? Then `git pull` is enough, no build.
 
 ## How to run the applications
 
-Will be written when each app is finished: the exact commands for the **PC terminal** and the **Pi terminal**.
+### App 1: keyboard teleop
 
-- App 1 (teleop): not ready yet.
-- App 2 (mapping): not ready yet.
-- App 3 (coverage): not ready yet.
+**Pi terminal** (`ssh nala@nala.local`):
+
+```bash
+ros2 launch nala_bringup app1_teleop_pi.launch.py
+```
+
+Add `log_level:=debug` to see every frame sent to the MCU and the measured wheel speeds.
+
+**PC terminal** (in the repo folder):
+
+```bash
+source config/ros_env.sh
+ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args --params-file config/teleop.yaml
+```
+
+Keys (keep the teleop terminal focused):
+
+```
+u  i  o        i = forward, , = backward, j / l = turn left / right
+j  k  l        u o m . = drive and turn at the same time
+m  ,  .        k (or any other key) = stop
+Shift + U I O J L M < > = drive without turning (J / L = move sideways)
+q / z = all speeds +10 % / -10 %,  w / x = linear only,  e / c = turn only
+```
+
+- **Hold** a key to drive. When you release it, the robot stops after 0.6 s (`cmd_vel_timeout`).
+- Limits: 2.0 m/s and 1.0 rad/s (`config/base.yaml`), even if the teleop shows higher values.
+- Stop: Ctrl+C in either terminal. The Pi sends a stop frame when it exits.
+
+App 2 (mapping) and app 3 (coverage): not ready yet.
 
 ## Build and flash the MCU firmware
 
-Will be written in stage 1 (Microchip Studio on Windows, open `firmware/motor_driver_C.atsln`).
+The firmware is written by a teammate. See [firmware/CHANGES.md](firmware/CHANGES.md):
+open `firmware/motor_driver_C.atsln` in Microchip Studio on Windows (device pack ATmega_DFP 1.7.374), build, flash.

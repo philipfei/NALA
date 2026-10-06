@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Cyclone DDS settings for the PC and the Pi (loaded through CYCLONEDDS_URI in ros_env.sh).
+  Use only the robot network 10.42.0.0/24 (PC: USB Ethernet 10.42.0.1, Pi: WiFi 10.42.0.x).
+  Without this, Cyclone on the PC may pick the eduroam WiFi and never see the Pi.
+  If the robot network changes, change the address below (host part 0 = whole network).
+-->
+<CycloneDDS xmlns="https://cdds.io/config">
+  <Domain Id="any">
+    <General>
+      <Interfaces>
+        <NetworkInterface address="10.42.0.0" />
+      </Interfaces>
+    </General>
+  </Domain>
+</CycloneDDS>
