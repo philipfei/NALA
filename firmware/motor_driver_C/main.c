@@ -1,526 +1,372 @@
 /*
- * motor_driver_C.c
+ * main.c  --  NALA_v0 motor driver firmware
  *
- * Created: 9/18/2021 1:02:46 PM
- * Author : Floris van mourik
- */ 
+ * Project  : NALA_v0 (ATmega328PB, 4 mecanum wheels, 4 quadrature encoders)
+ * Author   : HY / Claude (NALA v0 revision)
+ * Version  : v0.1.0
+ * Date     : 2026-10-06
+ *
+ * Original : motor_driver_C by Floris van Mourik (created 9/18/2021), with pwm/timer
+ *            code by Mathan and UART code by sojim. The untouched original sources
+ *            are kept in ../original_ref/.
+ *
+ * ---------------------------------------------------------------------------
+ * OVERVIEW
+ *   Receives body velocity commands (Vx, Vy, w) over UART, converts them to four
+ *   wheel speed targets with the mecanum inverse kinematics, and runs one PID
+ *   loop per wheel on the speed measured from the encoders. The PID output
+ *   drives four PWM motor channels. The four measured wheel speeds are printed
+ *   back over the UART.
+ *
+ * STRUCTURE (no blocking loops, no software delays)
+ *   - Encoders   : pin-change interrupts count edges continuously     (encoder.c)
+ *   - Time base  : Timer3 compare interrupt, exactly every CONTROL_PERIOD_MS
+ *                  (TIMER3_COMPA_vect below). It snapshots the encoder counts.
+ *   - UART RX    : interrupt, only collects the 5-byte frame and sets a flag.
+ *   - UART TX    : ring buffer drained by the UDRE interrupt             (USART.c)
+ *   - main loop  : (1) apply a newly received command,
+ *                  (2) when a control period has elapsed: compute speeds, PID,
+ *                      motor output, telemetry.
+ *
+ * SPEED MEASUREMENT
+ *   speed [rad/s] = (counts in the period / ENC_COUNTS_PER_REV) * 2*pi / period
+ *   Because the period comes from a hardware timer (and is multiplied by the
+ *   number of timer ticks actually elapsed, in case the main loop is ever late),
+ *   the time base is exact. The original code assumed 0.010 s per measurement
+ *   window and 0.045 s per loop; the real values were larger (print and delay
+ *   included), which made measured speeds and the PID I/D terms inaccurate.
+ *
+ * UART PROTOCOL (frame layout unchanged; scale now 0.02, see below)
+ *   Host -> MCU, 9600 8N1:  0x80 0x86 Vx Vy w   (3x int8; /50 -> m/s, m/s, rad/s; 0.02 per count)
+ *   NOTE: the original scale was /100. The host (Pi) must send value*50.
+ *   Axes: ROS convention, Vx forward, Vy left, w counter-clockwise positive.
+ *   Safety (NALA_v0): no velocity frame for CMD_TIMEOUT_MS while moving -> stop,
+ *   MCU prints "cmd timeout\n" once. The host must therefore re-send commands.
+ *   Added in NALA_v0 (separate frame, does not affect the one above):
+ *                           0x80 0x87 E          E=1 command echo on, E=0 off
+ *                           -> MCU replies "echo on\n" / "echo off\n"
+ *   MCU -> host (telemetry, once per TELEMETRY_EVERY_N_TICKS periods):
+ *       "<w1> \t <w2> \t <w3> \t <w4>\n"   measured wheel speeds M1..M4 in rad/s
+ *   Boot text: "a\n" (ADC init) and "test\n".
+ *
+ * WIRING / MAPPING : see config.h (motor <-> encoder association, signs, pins).
+ * ---------------------------------------------------------------------------
+ */
 
-#define F_CPU	16000000
+#include "config.h"
 
+#include <stdint.h>
+#include <stdio.h>
 #include <avr/io.h>
 #include <avr/interrupt.h>
-#include <util/delay.h>
-#include <setjmp.h>
+#include <util/atomic.h>
 
-#define delay_t 10
+#include "ADC.h"
+#include "Usart.h"
+#include "encoder.h"
+#include "motor_functions.h"
+#include "pwm.h"
+#include "timer.h"
 
+#define NUM_MOTORS 4
 
-//CLASSIC PID ZIEGLER NICHOLS:
-// #define K_p 2.22 //Ku = 3.7
-// #define K_i 11.1
-// #define K_d 0.02775
+/* ------------------------------------------------------------------------- */
+/* Motor <-> encoder association, built from the wiring map in config.h       */
+/* ------------------------------------------------------------------------- */
+/* motor_encoder[m] = index (0..3 = E1..E4) of the encoder that measures motor M(m+1). */
+static const uint8_t motor_encoder[NUM_MOTORS] = {
+	MOTOR1_ENCODER - 1, MOTOR2_ENCODER - 1, MOTOR3_ENCODER - 1, MOTOR4_ENCODER - 1
+};
+/* Sign applied to that encoder's counts so that + means "wheel drives forward". */
+static const int8_t motor_enc_sign[NUM_MOTORS] = {
+	MOTOR1_ENC_SIGN, MOTOR2_ENC_SIGN, MOTOR3_ENC_SIGN, MOTOR4_ENC_SIGN
+};
 
-//no overshoot PID ZIEGLER NICHOLS:
-#define K_p 0.74 //Ku = 3.7
-#define K_i 3.7
-#define K_d 0.0644
+/* ------------------------------------------------------------------------- */
+/* Controller state (main-loop only)                                          */
+/* ------------------------------------------------------------------------- */
+static float M_w[NUM_MOTORS];            /* target wheel speed   [rad/s] */
+static float M_w_measured[NUM_MOTORS];   /* measured wheel speed [rad/s] */
+static int   M_pwm[NUM_MOTORS];          /* motor power command  [-100..100] */
 
+typedef struct {
+	float old_int_error;
+	float old_error;
+} pid_state_t;
+static pid_state_t pid_state[NUM_MOTORS];
 
+/* Command timeout bookkeeping (main-loop only, see CMD_TIMEOUT_MS in config.h). */
+static uint8_t cmd_age_ticks;    /* control periods since the last velocity frame (saturates at 255) */
+static uint8_t cmd_active;       /* 1 = the last command was non-zero, i.e. the robot may be moving */
 
+/* ------------------------------------------------------------------------- */
+/* Control time base: Timer3 compare interrupt                                */
+/* ------------------------------------------------------------------------- */
+static volatile int32_t tick_delta[ENC_COUNT];   /* encoder counts accumulated since last consumed */
+static volatile uint8_t tick_periods;            /* control periods elapsed since last consumed   */
+static int32_t last_raw[ENC_COUNT];              /* touched only by the Timer3 ISR */
 
-#define R 0.04f
-#define W 0.165f
-#define H 0.15f
+ISR(TIMER3_COMPA_vect)
+{
+	int32_t raw[ENC_COUNT];
+	encoder_read_raw(raw);
+	for (uint8_t i = 0; i < ENC_COUNT; i++) {
+		tick_delta[i] += raw[i] - last_raw[i];
+		last_raw[i] = raw[i];
+	}
+	if (tick_periods < 255) {
+		tick_periods++;
+	}
+}
 
-char str[200] = {0};
+/* ------------------------------------------------------------------------- */
+/* UART receive: frame parser (same state machine as the original)            */
+/* ------------------------------------------------------------------------- */
+static volatile uint8_t rx_reading;                    /* 1 while collecting the payload */
+static volatile uint8_t rx_count;
+static volatile uint8_t rx_len;                        /* payload length of the frame being collected */
+static volatile uint8_t rx_is_echo;                    /* 1 = echo-control frame, 0 = velocity frame */
+static volatile uint8_t rx_prev;                       /* previous byte, for header detection */
+static volatile int8_t  rx_buf[FRAME_PAYLOAD_LEN];
+static volatile int8_t  cmd_val[FRAME_PAYLOAD_LEN];    /* last complete command: Vx, Vy, w */
+static volatile uint8_t cmd_ready;                     /* 1 = cmd_val holds an unprocessed command */
 
-double M1_w;
-double M2_w;
-double M3_w;
-double M4_w;
-
-double M1_w_measured;
-double M2_w_measured;
-double M3_w_measured;
-double M4_w_measured;
-
-double old_int_error_1 = 0;
-double old_error_1 = 0;
-double old_int_error_2 = 0;
-double old_error_2 = 0;
-double old_int_error_3 = 0;
-double old_error_3 = 0;
-double old_int_error_4 = 0;
-double old_error_4 = 0;
-
-int M1_pwm = 0;
-int M2_pwm = 0;
-int M3_pwm = 0;
-int M4_pwm = 0;
-
-
-//Additional buffer size to accomodate accidental overflows?
-#define BUF_SIZE 5
-
-int8_t inputValues[BUF_SIZE] = {0}; 
-volatile int counter = 0;
-volatile uint8_t prevUARTval = 0;
-volatile bool readVelCmd = false;
+/* Command echo switch (default from config.h, changed by the echo-control frame). */
+static volatile uint8_t echo_enabled = ECHO_COMMAND;
+static volatile uint8_t echo_ack;                      /* 0 = nothing, 1 = announce "off", 2 = announce "on" */
 
 ISR(USART0_RX_vect)
 {
-	uint8_t currUARTval;
-	currUARTval=UDR0;
+	uint8_t b = UDR0;
 
-	// usart_send_str("INSIDE INTERRUPT");
-
-	if(readVelCmd) {
-		inputValues[counter++] = currUARTval;	
-		
-		if(counter >= 3) {
-			counter = 0;
-			readVelCmd = false;
-			prevUARTval = 0; //reset the flag byte checks variables.
-			memset(inputValues, 0, BUF_SIZE);
-			calc_angular_speed(((float) inputValues[0])/100.0f,
-								((float) inputValues[1])/100.0f,
-								((float) inputValues[2])/100.0f
-							);
-		}
-
-		return;
-	} 
-
-	//Start flag = 0x8086
-	if(prevUARTval == 0x80 && currUARTval == 0x86) {
-		readVelCmd = true;
-		counter = 0;
-	}
-
-	prevUARTval = currUARTval;
-	
-}
-
-
-void calc_angular_speed(double Vx,double Vy, double w) //input speed in m/s and angular speed in rad/s
-{
-	sprintf (str, "%f %f %f\n", Vx, Vy, w);
-	usart_send_str(str);
-	M1_w = 1.0f/R*(1.0f*Vx - Vy - (W + H)*w);
-	M2_w = 1.0f/R*(Vx + Vy - (W + H)*w);
-	M3_w = 1.0f/R*(1.0f*Vx - Vy + (W + H)*w);
-	M4_w = 1.0f/R*(Vx + Vy + (W + H)*w);
-	
-	M1_pwm = M1_w*4.0f;
-	M2_pwm = M2_w*4.0f;
-	M3_pwm = M3_w*4.0f;
-	M4_pwm = M4_w*4.0f;
-}
-
-
-void set_motor_speed()
-{
-
-	
-	if(M1_pwm > 100) {M1_pwm = 100;}
-	if(M1_pwm < -100) {M1_pwm = -100;}
-	if(M2_pwm > 100) {M2_pwm = 100;}
-	if(M2_pwm < -100) {M2_pwm = -100;}
-	if(M3_pwm > 100) {M3_pwm = 100;}
-	if(M3_pwm < -100) {M3_pwm = -100;}
-	if(M4_pwm > 100) {M4_pwm = 100;}
-	if(M4_pwm < -100) {M4_pwm = -100;}
-	
-	set_motor_power(M1_pwm, M2_pwm, M3_pwm, M4_pwm);
-}
-
-double omega_measure()
-{
-
-	  		//usart_send_str("in looppp \n");
-			  int aState_1;
-			  int aLastState_1;
-			  int aState_2;
-			  int aLastState_2;
-	  		int aState_3;
-	  		int aLastState_3;
-			int aState_4;
-			int aLastState_4;
-	
-	  		// Reads the initial state of the outputA
-			  aLastState_1 = (PINB & (1 << 3)) >> 3;
-			  aLastState_2 = (PIND & (1 << 2)) >> 2;
-	  		aLastState_3 = (PIND & (1 << 4)) >> 4;
-			aLastState_4 = (PINC & (1 << 2)) >> 2;
-			
-			double M1_Encoder = 0;
-			double M2_Encoder = 0;
-			double M3_Encoder = 0;
-			double M4_Encoder = 0;
-			
-			int a = 0;
-	  		while(a < 1000) { //Add here the time!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-	  			//_delay_ms(0.1);
-				
-	  			aState_3 = (PIND & (1 << 4)) >> 4; // Reads the "current" state of the outputA
-				aState_4 = (PINC & (1 << 2)) >> 2; // Reads the "current" state of the outputA
-				
-// 				while(1)
-// 				{
-// 					aState_4 = (PINC & (1 << 2)) >> 2;
-// 					sprintf (str, "%d \n", aState_4);
-// 					usart_send_str(str);
-// 				}
-				
-	  			// If the previous and the current state of the outputA are different, that means a Pulse has occured
-				  
-				  
-	  			if (aState_3 != aLastState_3){
-	  				// If the outputB state is different to the outputA state, that means the encoder is rotating clockwise
-	  				if (((PIND & (1 << 7)) >> 7 )!= aState_3)
-	  				{
-	  					M3_Encoder = M3_Encoder + 1;
-	  				}
-	  				else
-	  				{
-	  					M3_Encoder = M3_Encoder - 1;
-	  				}
-	  				aLastState_3 = aState_3;
-	  			}
-				  
-				  if (aState_4 != aLastState_4){
-					  // If the outputB state is different to the outputA state, that means the encoder is rotating clockwise
-					  if (((PINC & (1 << 3)) >> 3 )!= aState_4)
-					  {
-						  M4_Encoder = M4_Encoder + 1;
-					  }
-					  else
-					  {
-						  M4_Encoder = M4_Encoder - 1;
-					  }
-					  aLastState_4 = aState_4;
-				  }
-				 a++;
-				 _delay_ms(0.01);
-	 		}
-			a = 0;
-			while(a < 1000)
-			{
-				aState_2 = (PIND & (1 << 2)) >> 2; // Reads the "current" state of the outputA
-				aState_1 = (PINB & (1 << 3)) >> 3; // Reads the "current" state of the outputA
-				
-				
-				if (aState_1 != aLastState_1){
-					// If the outputB state is different to the outputA state, that means the encoder is rotating clockwise
-					if (((PINB & (1 << 4)) >> 4 )!= aState_1)
-					{
-						M1_Encoder = M1_Encoder - 1;
-					}
-					else
-					{
-						M1_Encoder = M1_Encoder + 1;
-					}
-					aLastState_1 = aState_1;
+	if (rx_reading) {
+		rx_buf[rx_count++] = (int8_t)b;
+		if (rx_count >= rx_len) {
+			if (rx_is_echo) {
+				/* Echo-control frame: 0x80 0x87 E   (E = 1 on, 0 off, anything else ignored) */
+				if (rx_buf[0] == 0 || rx_buf[0] == 1) {
+					echo_enabled = (uint8_t)rx_buf[0];
+					echo_ack     = (uint8_t)(1 + rx_buf[0]);
 				}
-				
-								  if (aState_2 != aLastState_2){
-									  // If the outputB state is different to the outputA state, that means the encoder is rotating clockwise
-									  if (((PIND & (1 << 3)) >> 3 )!= aState_2)
-									  {
-										  M2_Encoder = M2_Encoder - 1;
-									  }
-									  else
-									  {
-										  M2_Encoder = M2_Encoder + 1;
-									  }
-									  aLastState_2 = aState_2;
-								  }
-				a++;
-				_delay_ms(0.01);
+			} else {
+				/* Velocity frame: 0x80 0x86 Vx Vy w */
+				for (uint8_t i = 0; i < FRAME_PAYLOAD_LEN; i++) {
+					cmd_val[i] = rx_buf[i];
+				}
+				cmd_ready = 1;       /* a newer frame simply replaces an unprocessed one */
 			}
-			 
-			 
-	  		//sprintf (str, "Position: %f rounds\n", M1_Encoder/768*0.5);
-	  		//usart_send_str(str);
-			M1_w_measured = ((M1_Encoder/1536)/0.010*6.28); //in radians per second
-			M2_w_measured = ((M2_Encoder/1536)/0.010*6.28); //in radians per second
-			M3_w_measured = ((M3_Encoder/1536)/0.010*6.28); //in radians per second
-			M4_w_measured = ((M4_Encoder/1536)/0.010*6.28); //in radians per second
-			//sprintf (str, "speed: %f round/s\n", omega);
-			//usart_send_str(str);
-			
+			rx_reading = 0;
+			rx_count   = 0;
+			rx_prev    = 0;          /* reset the header detection */
+		}
+		return;
+	}
+
+	/* Start flag = 0x80 0x86 (velocity) or 0x80 0x87 (echo control) */
+	if (rx_prev == FRAME_HDR1 && (b == FRAME_HDR2 || b == FRAME_HDR2_ECHO)) {
+		rx_reading = 1;
+		rx_count   = 0;
+		rx_is_echo = (b == FRAME_HDR2_ECHO);
+		rx_len     = rx_is_echo ? FRAME_ECHO_LEN : FRAME_PAYLOAD_LEN;
+	}
+	rx_prev = b;
 }
 
-
-int PID_calc(double w_measured, double time, int motor)
+/* ------------------------------------------------------------------------- */
+/* Kinematics                                                                 */
+/* ------------------------------------------------------------------------- */
+/*
+ * Mecanum inverse kinematics. Vx, Vy in m/s, w in rad/s. Result: target wheel
+ * speeds M_w[] in rad/s (wheel speed = rim speed / radius) and the initial
+ * feed-forward PWM. Rim speed of each wheel = Vx -/+ Vy -/+ (W+H)*w.
+ */
+static void calc_angular_speed(float Vx, float Vy, float w)
 {
-	double err;
-	double u;
-	
-	if(motor == 1)
-	{
-		err = w_measured - M1_w;
-		
-		double integral = err*time + old_int_error_1;
-		double derivative = (err - old_error_1) / time;
-		
-		
-		u =  K_p*err + K_i*integral + K_d*derivative;
-		
-		old_error_1 = err;
-		old_int_error_1 = integral; //setting the old value to enable integrating the total error
+	const float k = 1.0f / WHEEL_RADIUS_M;
+
+	M_w[0] = k * (Vx - Vy - ROT_ARM_M * w);   /* M1 */
+	M_w[1] = k * (Vx + Vy - ROT_ARM_M * w);   /* M2 */
+	M_w[2] = k * (Vx - Vy + ROT_ARM_M * w);   /* M3 */
+	M_w[3] = k * (Vx + Vy + ROT_ARM_M * w);   /* M4 */
+
+	for (uint8_t m = 0; m < NUM_MOTORS; m++) {
+		M_pwm[m] = (int)(M_w[m] * PWM_PER_RAD_S);
 	}
-	
-	if(motor == 2)
-	{
-		err = w_measured - M2_w;
-		
-		double integral = err*time + old_int_error_2;
-		double derivative = (err - old_error_2) / time;
-		
-		
-		u =  K_p*err + K_i*integral + K_d*derivative;
-		
-		old_error_2 = err;
-		old_int_error_2 = integral; //setting the old value to enable integrating the total error
-	}
-	
-	if(motor == 3)
-	{
-		err = w_measured - M3_w;
-		
-		double integral = err*time + old_int_error_3;
-		double derivative = (err - old_error_3) / time;
-		
-		
-		u =  K_p*err + K_i*integral + K_d*derivative;
-		
-		old_error_3 = err;
-		old_int_error_3 = integral; //setting the old value to enable integrating the total error
-	}
-	if(motor == 4)
-	{
-		err = w_measured - M4_w;
-		
-		double integral = err*time + old_int_error_4;
-		double derivative = (err - old_error_4) / time;
-		
-		u =  K_p*err + K_i*integral + K_d*derivative;
-		
-		old_error_4 = err;
-		old_int_error_4 = integral; //setting the old value to enable integrating the total error
-	}
-	return u;
 }
 
+/* Clamp the power commands and send them to the motors. */
+static void set_motor_speed(void)
+{
+	for (uint8_t m = 0; m < NUM_MOTORS; m++) {
+		if (M_pwm[m] >  PWM_LIMIT) M_pwm[m] =  PWM_LIMIT;
+		if (M_pwm[m] < -PWM_LIMIT) M_pwm[m] = -PWM_LIMIT;
+	}
+	set_motor_power(M_pwm[0], M_pwm[1], M_pwm[2], M_pwm[3]);
+}
 
+/* ------------------------------------------------------------------------- */
+/* PID (control law unchanged from the original)                              */
+/* ------------------------------------------------------------------------- */
+/*
+ * The error is defined as  err = measured - target  (opposite of the textbook
+ * sign), so the caller must SUBTRACT the result from the power command:
+ *      M_pwm = M_pwm - u
+ * dt is the real elapsed time of the measurement in seconds.
+ * The result is truncated to int, as in the original.
+ */
+static int PID_calc(float w_measured, float dt, uint8_t motor)
+{
+	pid_state_t *s = &pid_state[motor];
+
+	float err        = w_measured - M_w[motor];
+	float integral   = err * dt + s->old_int_error;
+	float derivative = (err - s->old_error) / dt;
+
+	float u = K_P * err + K_I * integral + K_D * derivative;
+
+	s->old_error     = err;
+	s->old_int_error = integral;   /* keep the running integral of the error */
+	return (int)u;
+}
+
+/* ------------------------------------------------------------------------- */
+/* Main-loop work                                                             */
+/* ------------------------------------------------------------------------- */
+/* A command frame arrived: update the targets (feed-forward) and apply it now. */
+static void handle_command(void)
+{
+	int8_t v[FRAME_PAYLOAD_LEN];
+
+	ATOMIC_BLOCK(ATOMIC_FORCEON) {
+		for (uint8_t i = 0; i < FRAME_PAYLOAD_LEN; i++) {
+			v[i] = cmd_val[i];
+		}
+		cmd_ready = 0;
+	}
+
+	float Vx = v[0] / CMD_SCALE;
+	float Vy = v[1] / CMD_SCALE;
+	float w  = v[2] / CMD_SCALE;
+	calc_angular_speed(Vx, Vy, w);
+
+	/* Any frame (even a zero one) proves the host is alive: restart the timeout. */
+	cmd_age_ticks = 0;
+	cmd_active    = (v[0] != 0 || v[1] != 0 || v[2] != 0);
+
+	if (echo_enabled) {
+		char line[48];
+		int n = snprintf(line, sizeof(line), "%f %f %f\n", Vx, Vy, w);
+		if (n > 0 && n < (int)sizeof(line)) {
+			usart_try_send_buf(line, (uint8_t)n);
+		}
+	}
+
+	/* Output the feed-forward immediately instead of waiting for the next control period. */
+	set_motor_speed();
+}
+
+/* A control period elapsed: measure, run the PID, drive the motors, report. */
+static void control_step(void)
+{
+	int32_t delta[ENC_COUNT];
+	uint8_t periods;
+
+	ATOMIC_BLOCK(ATOMIC_FORCEON) {
+		for (uint8_t i = 0; i < ENC_COUNT; i++) {
+			delta[i] = tick_delta[i];
+			tick_delta[i] = 0;
+		}
+		periods = tick_periods;
+		tick_periods = 0;
+	}
+	if (periods == 0) {
+		return;
+	}
+
+	/* Exact elapsed time (normally exactly one period; more if the loop was late). */
+	const float dt = (float)periods * CONTROL_PERIOD_S;
+
+#if (CMD_TIMEOUT_MS > 0)
+	/* Command timeout: no velocity frame for too long while moving -> stop. */
+	if (cmd_active) {
+		uint16_t age = (uint16_t)cmd_age_ticks + periods;
+		cmd_age_ticks = (age > 255u) ? 255u : (uint8_t)age;
+		if (cmd_age_ticks > CMD_TIMEOUT_TICKS) {
+			calc_angular_speed(0, 0, 0);          /* targets = 0, feed-forward PWM = 0 */
+			cmd_active = 0;                       /* report only once */
+			usart_try_send_buf("cmd timeout\n", 12);
+		}
+	}
+#endif
+
+	for (uint8_t m = 0; m < NUM_MOTORS; m++) {
+		int32_t counts = delta[motor_encoder[m]] * motor_enc_sign[m];
+		M_w_measured[m] = ((float)counts / ENC_COUNTS_PER_REV) / dt * TWO_PI_F;   /* rad/s */
+	}
+
+	for (uint8_t m = 0; m < NUM_MOTORS; m++) {
+		int u = PID_calc(M_w_measured[m], dt, m);
+		M_pwm[m] = M_pwm[m] - u;
+	}
+	set_motor_speed();
+
+	/* Telemetry: same text format as the original; dropped (never blocking) if the TX buffer is full. */
+	static uint8_t tel_count;
+	if (++tel_count >= TELEMETRY_EVERY_N_TICKS) {
+		tel_count = 0;
+		char line[80];
+		int n = snprintf(line, sizeof(line), "%f \t %f \t %f \t %f\n",
+		                 M_w_measured[0], M_w_measured[1], M_w_measured[2], M_w_measured[3]);
+		if (n > 0 && n < (int)sizeof(line)) {
+			usart_try_send_buf(line, (uint8_t)n);
+		}
+	}
+}
+
+/* ------------------------------------------------------------------------- */
+/* Entry point                                                                */
+/* ------------------------------------------------------------------------- */
 int main(void)
 {
-	sei();
-	// cli();
-	adc_init(0); //init with 5V ref
-    usart_enable(9600);
-	usart_send_str("test\n");
-	
-
-	
-	
-	
-	DDRD |= (1 << 6); //pin D6 output
-	PORTD &= ~(1 << 6);
-	DDRD |= (1 << 5); //pin D5 output
-	PORTD &= ~(1 << 5);
-	DDRB |= (1 << 1); //pin D1 output
-	PORTB &= ~(1 << 1);
-	DDRB |= (1 << 2); //pin D2 output
-	PORTB &= ~(1 << 2);
-	
-	DDRE |= (1 << 0); //pin E0 on output
-	PORTE &= ~(1 << 0);
-	DDRE |= (1 << 1); //pin E1 on output
-	PORTE &= ~(1 << 1);
-	DDRE |= (1 << 2); //pin E2 on output
-	PORTE &= ~(1 << 2);
-	DDRE |= (1 << 3); //pin E3 on output
-	PORTE &= ~(1 << 3);
-	
-	DDRB &= ~(1 << 3); //pin 1,2,3,4 : a,b
-	DDRB &= ~(1 << 4);
-	DDRD &= ~(1 << 2);
-	DDRD &= ~(1 << 3);
-	DDRD &= ~(1 << 4);
-	DDRD &= ~(1 << 7);
-	DDRC &= ~(1 << 2);
-	DDRC &= ~(1 << 3);
-	
-	
-	
+	/* Motor outputs: PWM pins (PD6, PD5, PB1, PB2) and direction pins (PORTE), all low. */
 	init_motor_pins();
+	PORTD &= ~(_BV(PD6) | _BV(PD5));
+	PORTB &= ~(_BV(PB1) | _BV(PB2));
+	DDRE  |= _BV(MOTOR1_DIR_BIT) | _BV(MOTOR2_DIR_BIT) | _BV(MOTOR3_DIR_BIT) | _BV(MOTOR4_DIR_BIT);
+	PORTE &= ~(_BV(MOTOR1_DIR_BIT) | _BV(MOTOR2_DIR_BIT) | _BV(MOTOR3_DIR_BIT) | _BV(MOTOR4_DIR_BIT));
+
 	init_motor_timers();
-	set_motor_power(0,0,0,0);
-	
-	
-// 	while(1)
-// 	{
-// 		start_timer3();
-// 		uint16_t st = read_timer3();
-// 		_delay_ms(1);
-// 		
-// 		uint16_t a = read_timer3();
-// 		stop_timer3();
-// 		sprintf (str, "timer: start: %u  end: %u \n",st, a);
-// 		usart_send_str(str);
-// 	}
+	set_motor_power(0, 0, 0, 0);
 
+	usart_enable(UART_BAUD);
+	adc_init(0);                       /* 5 V reference; prints "a\n". The ADC itself is unused. */
+	usart_send_str("test\n");
 
-
-// 
-// int counter = 0;
-// char ibp[8] = {0, 0, 0, 0, 0, 0, 0, 0};
-// while(1) { //old function without PID for christmas holiday debugging
-// 	usart_send_str("in loop \n");
-// 	while(1) {
-// 		int8_t inp = usart_recieve();
-// 		
-// 		// 			sprintf (str, "REC: %i\n", inp);
-// 		// 			usart_send_str(str);
-// 		if(inp == 1) {
-// 			//usart_recieve();
-// 			break;
-// 		}
-// 	}
-// 	ibp[0] = usart_recieve();
-// 	ibp[1] = usart_recieve();
-// 	ibp[2] = usart_recieve();
-// 	//ibp[3] = usart_recieve();
-// 	
-// 	int8_t Vx_cm = ibp[0];
-// 	int8_t Vy_cm = ibp[1];
-// 	int8_t W_mo = ibp[2];
-// 	
-// 	double Vy = Vy_cm/100.0f;
-// 	double Vx = Vx_cm/100.0f;
-// 	double w = W_mo/10.0f;
-// 	
-// 	
-// 	
-// 	calc_angular_speed(Vx, Vy, w);
-// 	set_motor_speed();
-// 	// 		sprintf (str, "%f %f %f | %f %f %f %f\n", Vx, Vy, w, M1_w, M2_w, M3_w, M4_w);
-// 	// 		usart_send_str(str);
-// 	
-// 	//usart_recieve();
-// 	//usart_send_str("in loop 2 \n");
-// 	//usart_send('R');
-// 	
-// 	//usart_recieve();
-// }
-
-
-
-
-	
-	
-	/*
- 	while(1) //while loop for PID testing, do not remove or change!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
- 	{
- 		double Vx = 0.0;
- 		double Vy = 0.1;
-		double w = 0;
- 		
- 		
- 		calc_angular_speed(Vx, Vy, w);
- 		set_motor_speed();
- 		
- 		int m1_old = M1_pwm;
- 		int m2_old = M2_pwm;
- 		int m3_old = M3_pwm;
- 		int m4_old = M4_pwm;
- 		
- 		// 		sprintf (str, "%f\n", M2_w);
- 		// 		usart_send_str(str);
- 		// 		_delay_ms(999999);
- 		int check = 0;
- 		int hu = 0;
- 		while(1)
- 		{
- 			hu++;
- 			
- 			omega_measure();
- 			double time_measured = 0.025;
- 			
- 			int u1 = PID_calc(M1_w_measured, time_measured, 1);
- 			int u2 = PID_calc(M2_w_measured, time_measured, 2);
- 			int u3 = PID_calc(M3_w_measured, time_measured, 3);
- 			int u4 = PID_calc(M4_w_measured, time_measured, 4);
- 			
- 			M1_pwm = M1_pwm - u1;
- 			M2_pwm = M2_pwm - u2;
- 			M3_pwm = M3_pwm - u3;
- 			M4_pwm = M4_pwm - u4;
- 			
- 			if(hu > 100)
- 			{
- 				hu = 0;
- 				check = 1;
- 			}
- 			
- 			
- 			if(check == 1 && (M1_pwm > 40 || M1_pwm < -40 || M2_pwm > 40 || M2_pwm < -40 || M3_pwm > 40 || M3_pwm < -40 || M4_pwm > 40 || M4_pwm < -40))
- 			{
- 				M1_w = -1*M1_w;
- 				M2_w = -1*M2_w;
- 				M3_w = -1*M3_w;
- 				M4_w = -1*M4_w;
- 				check = 0;
- 			}
- 			
- 			
- 			
- 			//sprintf (str, "%d \t %d \t %f \t %f\n", M1_pwm, u1, M1_w_measured, M1_w);
- 			//sprintf (str, "%d \t %d \t %f \t %f\n", M2_pwm, u2, M2_w_measured, M2_w);
- 			//sprintf (str, "%d \t %d \t %f \t %f\n", M3_pwm, u3, M3_w_measured, M3_w);
- 			sprintf (str, "%d \t %d \t %f \t %f\n", M4_pwm, u4, M4_w_measured, M4_w);
- 			//sprintf (str, "%f \t %f \t %f \t %f\n", M1_w_measured, M2_w_measured, M3_w_measured, M4_w_measured);
- 			usart_send_str(str);
- 			set_motor_speed();
- 			_delay_ms(5);
- 		}
- 	}
- 	*/
-
-	
-	
-	
-
-		
-	
-	calc_angular_speed(0, 0, 0);
+	calc_angular_speed(0, 0, 0);       /* start with all targets = 0 */
 	set_motor_speed();
-	while(1)
-	{
-		omega_measure();
-		double time_measured = 0.045;
-		
-		int u1 = PID_calc(M1_w_measured, time_measured, 1);
-		int u2 = PID_calc(M2_w_measured, time_measured, 2);
-		int u3 = PID_calc(M3_w_measured, time_measured, 3);
-		int u4 = PID_calc(M4_w_measured, time_measured, 4);
-		
-		M1_pwm = M1_pwm - u1;
-		M2_pwm = M2_pwm - u2;
-		M3_pwm = M3_pwm - u3;
-		M4_pwm = M4_pwm - u4;
 
-		
-		//sprintf (str, "%d \t %d \t %f \t %f\n", M1_pwm, u1, M1_w_measured, M1_w);
-		//sprintf (str, "%d \t %d \t %f \t %f\n", M2_pwm, u2, M2_w_measured, M2_w);
-		//sprintf (str, "%d \t %d \t %f \t %f\n", M3_pwm, u3, M3_w_measured, M3_w);
-		//sprintf (str, "%d \t %d \t %f \t %f\n", M4_pwm, u4, M4_w_measured, M4_w);
-		sprintf (str, "%f \t %f \t %f \t %f\n", M1_w_measured, M2_w_measured, M3_w_measured, M4_w_measured);
-		usart_send_str(str);
-		set_motor_speed();
-		_delay_ms(20);
+	encoder_init();
+	control_timer_init();
+	sei();
+
+	for (;;) {
+		if (echo_ack) {                /* confirm an echo-control frame (sent from here, not from the ISR) */
+			uint8_t ack;
+			ATOMIC_BLOCK(ATOMIC_FORCEON) {
+				ack = echo_ack;
+				echo_ack = 0;
+			}
+			if (ack == 2) {
+				usart_try_send_buf("echo on\n", 8);
+			} else {
+				usart_try_send_buf("echo off\n", 9);
+			}
+		}
+		if (cmd_ready) {
+			handle_command();
+		}
+		if (tick_periods) {
+			control_step();
+		}
 	}
 }
-

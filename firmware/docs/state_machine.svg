@@ -1,0 +1,153 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 930" width="1240" height="930" font-family="'Segoe UI','Microsoft YaHei',Arial,sans-serif">
+  <title>NALA_v0 firmware: UART frame parser state machine and main-loop event flow</title>
+  <desc>Panel A: the RX parser states IDLE, SEEN_0x80, PAYLOAD_VEL, PAYLOAD_ECHO and their transitions. Panel B: interrupts set flags (cmd_ready, echo_ack, tick_periods) that the main loop services.</desc>
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
+    </marker>
+    <style>
+      .t   { font-size: 14px; font-weight: 600; fill: #0f172a; }
+      .s   { font-size: 12px; fill: #334155; }
+      .l   { font-size: 12px; fill: #1e293b; }
+      .h   { font-size: 16px; font-weight: 700; fill: #0f172a; }
+      .ln  { stroke: #475569; stroke-width: 1.6; fill: none; marker-end: url(#arr); }
+      .ld  { stroke: #94a3b8; stroke-width: 1.4; fill: none; stroke-dasharray: 5 4; marker-end: url(#arr); }
+      .st  { fill: #dbeafe; stroke: #2563eb; stroke-width: 1.6; }
+      .isr { fill: #fef3c7; stroke: #d97706; stroke-width: 1.6; }
+      .flg { fill: #e2e8f0; stroke: #64748b; stroke-width: 1.6; }
+      .act { fill: #dcfce7; stroke: #16a34a; stroke-width: 1.6; }
+      .pnl { fill: #f8fafc; stroke: #cbd5e1; stroke-width: 1.2; }
+    </style>
+  </defs>
+
+  <rect width="1240" height="930" fill="#ffffff"/>
+  <text x="30" y="38" class="h" font-size="20">NALA_v0 固件状态机 / firmware state machines</text>
+
+  <!-- ===================== Panel A ===================== -->
+  <rect x="30" y="60" width="1180" height="350" rx="10" class="pnl"/>
+  <text x="50" y="88" class="h">A. 串口接收帧解析状态机 (ISR USART0_RX_vect)</text>
+
+  <!-- states -->
+  <rect x="110" y="200" width="200" height="74" rx="12" class="st"/>
+  <text x="210" y="231" text-anchor="middle" class="t">IDLE</text>
+  <text x="210" y="252" text-anchor="middle" class="s">等待 0x80</text>
+
+  <rect x="400" y="200" width="200" height="74" rx="12" class="st"/>
+  <text x="500" y="231" text-anchor="middle" class="t">SEEN_0x80</text>
+  <text x="500" y="252" text-anchor="middle" class="s">上一个字节是 0x80</text>
+
+  <rect x="730" y="130" width="200" height="74" rx="12" class="st"/>
+  <text x="830" y="161" text-anchor="middle" class="t">PAYLOAD_VEL</text>
+  <text x="830" y="182" text-anchor="middle" class="s">收 Vx Vy w (3 字节)</text>
+
+  <rect x="730" y="270" width="200" height="74" rx="12" class="st"/>
+  <text x="830" y="301" text-anchor="middle" class="t">PAYLOAD_ECHO</text>
+  <text x="830" y="322" text-anchor="middle" class="s">收 E (1 字节)</text>
+
+  <!-- transitions -->
+  <path d="M310,225 H400" class="ln"/>
+  <text x="355" y="217" text-anchor="middle" class="l">0x80</text>
+  <path d="M400,252 H310" class="ln"/>
+  <text x="355" y="270" text-anchor="middle" class="l">other</text>
+
+  <path d="M110,223 C72,203 72,271 110,251" class="ln"/>
+  <text x="66" y="241" text-anchor="end" class="l">other</text>
+
+  <path d="M470,200 C455,160 545,160 530,200" class="ln"/>
+  <text x="500" y="155" text-anchor="middle" class="l">0x80 (again)</text>
+
+  <path d="M600,225 L730,176" class="ln"/>
+  <text x="640" y="186" text-anchor="middle" class="l">0x86</text>
+  <path d="M600,249 L730,298" class="ln"/>
+  <text x="640" y="296" text-anchor="middle" class="l">0x87</text>
+
+  <path d="M830,130 V108 H250 V200" class="ln"/>
+  <text x="590" y="102" text-anchor="start" class="l">收满 3 字节 → cmd_ready = 1 (主循环取走并执行)</text>
+  <path d="M830,344 V372 H250 V274" class="ln"/>
+  <text x="330" y="366" text-anchor="start" class="l">收满 1 字节 → echo_enabled = E (仅 0 或 1 有效) → echo_ack</text>
+
+  <!-- note box -->
+  <rect x="960" y="130" width="230" height="214" rx="10" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.2"/>
+  <text x="975" y="154" class="t">说明</text>
+  <text x="975" y="178" class="s">• 0x80 0x86 → 速度帧</text>
+  <text x="975" y="198" class="s">• 0x80 0x87 → 回显开关帧</text>
+  <text x="975" y="222" class="s">• 载荷字节不再解析帧头:</text>
+  <text x="985" y="240" class="s">速度帧载荷里出现 80 87</text>
+  <text x="985" y="258" class="s">只是普通数据</text>
+  <text x="975" y="282" class="s">• 新帧覆盖尚未处理的旧帧</text>
+  <text x="975" y="306" class="s">• 丢字节会错位, 直到下一个</text>
+  <text x="985" y="324" class="s">帧头重新同步</text>
+
+  <!-- ===================== Panel B ===================== -->
+  <rect x="30" y="420" width="1180" height="480" rx="10" class="pnl"/>
+  <text x="50" y="448" class="h">B. 中断源 → 标志 → 主循环</text>
+
+  <!-- legend -->
+  <rect x="640" y="436" width="12" height="12" class="isr"/><text x="658" y="447" class="s">中断</text>
+  <rect x="700" y="436" width="12" height="12" class="flg"/><text x="718" y="447" class="s">标志</text>
+  <rect x="760" y="436" width="12" height="12" class="act"/><text x="778" y="447" class="s">主循环动作</text>
+
+  <!-- interrupts -->
+  <rect x="60" y="520" width="250" height="60" rx="10" class="isr"/>
+  <text x="185" y="545" text-anchor="middle" class="t">USART0_RX_vect</text>
+  <text x="185" y="565" text-anchor="middle" class="s">帧解析 (见 A)</text>
+
+  <rect x="60" y="650" width="250" height="60" rx="10" class="isr"/>
+  <text x="185" y="675" text-anchor="middle" class="t">PCINT0/1/2_vect</text>
+  <text x="185" y="695" text-anchor="middle" class="s">编码器 A 相边沿 → enc_raw[]</text>
+
+  <rect x="60" y="740" width="250" height="60" rx="10" class="isr"/>
+  <text x="185" y="765" text-anchor="middle" class="t">TIMER3_COMPA_vect</text>
+  <text x="185" y="785" text-anchor="middle" class="s">每 100 ms: 快照编码器计数</text>
+
+  <path d="M185,710 V740" class="ln"/>
+  <text x="196" y="730" class="l">enc_raw[]</text>
+
+  <!-- flags -->
+  <rect x="400" y="560" width="190" height="50" rx="10" class="flg"/>
+  <text x="495" y="590" text-anchor="middle" class="t">echo_ack</text>
+  <rect x="400" y="645" width="190" height="50" rx="10" class="flg"/>
+  <text x="495" y="675" text-anchor="middle" class="t">cmd_ready</text>
+  <rect x="400" y="745" width="190" height="50" rx="10" class="flg"/>
+  <text x="495" y="768" text-anchor="middle" class="t">tick_periods</text>
+  <text x="495" y="785" text-anchor="middle" class="s">(+1 每个 100 ms)</text>
+
+  <path d="M310,550 L400,585" class="ln"/>
+  <path d="M310,556 L400,668" class="ln"/>
+  <path d="M310,770 H400" class="ln"/>
+
+  <!-- main loop -->
+  <rect x="700" y="470" width="480" height="350" rx="12" fill="#ffffff" stroke="#16a34a" stroke-width="1.4" stroke-dasharray="6 4"/>
+  <text x="716" y="464" class="t">main()  —  for (;;)  无延时、不阻塞</text>
+
+  <rect x="730" y="486" width="420" height="40" rx="10" fill="#f1f5f9" stroke="#64748b" stroke-width="1.4"/>
+  <text x="940" y="511" text-anchor="middle" class="s">BOOT: GPIO · PWM · UART('a','test') · 编码器 · Timer3 · sei()</text>
+  <path d="M940,526 V560" class="ln"/>
+  <text x="950" y="548" class="s">之后循环, 按顺序检查标志</text>
+
+  <rect x="730" y="560" width="420" height="50" rx="10" class="act"/>
+  <text x="940" y="582" text-anchor="middle" class="t">发送 "echo on" / "echo off"</text>
+  <text x="940" y="600" text-anchor="middle" class="s">回复回显开关帧</text>
+
+  <rect x="730" y="630" width="420" height="80" rx="10" class="act"/>
+  <text x="940" y="654" text-anchor="middle" class="t">handle_command()</text>
+  <text x="940" y="674" text-anchor="middle" class="s">calc_angular_speed(Vx,Vy,w) → 前馈 PWM</text>
+  <text x="940" y="692" text-anchor="middle" class="s">set_motor_speed()  (回显开启时再发一行 Vx Vy w)</text>
+
+  <rect x="730" y="730" width="420" height="80" rx="10" class="act"/>
+  <text x="940" y="754" text-anchor="middle" class="t">control_step()</text>
+  <text x="940" y="774" text-anchor="middle" class="s">计数 → rad/s → PID → set_motor_speed()</text>
+  <text x="940" y="792" text-anchor="middle" class="s">回传轮速行 · 指令超时(500 ms)则目标置零停车</text>
+
+  <path d="M590,585 H730" class="ln"/>
+  <path d="M590,670 H730" class="ln"/>
+  <path d="M590,770 H730" class="ln"/>
+
+  <path d="M940,610 V630" class="ld"/>
+  <path d="M940,710 V730" class="ld"/>
+  <path d="M1150,770 H1166 V585 H1150" class="ld"/>
+  <text x="1160" y="690" text-anchor="middle" class="s" transform="rotate(-90 1160 690)">repeat</text>
+
+  <text x="60" y="850" class="s">发往上位机的文本行 (轮速回传 / 回显 / "echo on|off") 先进入 128 字节的发送环形缓冲, 由 USART0_UDRE_vect 逐字节发出。</text>
+  <text x="60" y="872" class="s">缓冲放不下时, 这一行直接丢弃 — 控制循环从不等待串口。</text>
+</svg>

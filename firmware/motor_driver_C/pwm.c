@@ -3,7 +3,13 @@
  *
  * Created: 9/24/2021 2:16:34 PM
  *  Author: Mathan
- */ 
+ *
+ * NALA_v0 revision (HY, v0.1.0, 2026-10-06): only the header include was added;
+ * the PWM setup itself is unchanged.
+ */
+#include "config.h"
+#include "pwm.h"
+
 #include <avr/io.h>
 
 //Motor pins
