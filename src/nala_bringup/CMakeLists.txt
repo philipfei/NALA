@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.8)
-project(nala_bringup)
+project(nala_bringup NONE)   # no C/C++ code, only installs files
 
 find_package(ament_cmake REQUIRED)
 
