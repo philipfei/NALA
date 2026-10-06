@@ -1,0 +1,24 @@
+# colcon workspace output
+build/
+install/
+log/
+
+# Previous team's repos: local reference only, never pushed
+ref/
+
+# Maps are made at runtime and copied between PC and Pi with scp (see README)
+maps/*
+!maps/.gitkeep
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Microchip Studio build output
+firmware/**/Debug/
+firmware/**/Release/
+.vs/
+
+# Editor settings
+.vscode/

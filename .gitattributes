@@ -1,0 +1,2 @@
+# Code runs on Linux: store and check out text files with LF.
+* text=auto eol=lf
