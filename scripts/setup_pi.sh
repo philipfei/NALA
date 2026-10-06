@@ -10,6 +10,9 @@ NALA_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APT="sudo DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a apt-get -y -o DPkg::Lock::Timeout=600"
 
 echo "== Update the system"
+# The Pi image has no noble-updates suite, but ships packages from it (e.g. libacl1).
+# Without it, ROS dependencies cannot be installed. Use the same suites as the PC.
+sudo sed -i 's/^Suites: noble$/Suites: noble noble-updates noble-backports/' /etc/apt/sources.list.d/ubuntu.sources
 $APT update
 $APT upgrade
 
