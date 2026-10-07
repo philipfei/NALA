@@ -3,7 +3,7 @@
 <package format="3">
   <name>nala_bringup</name>
   <version>0.1.0</version>
-  <description>Launch files of the NALA apps. Installs the repo config/ folder.</description>
+  <description>Launch files and RViz layouts of the NALA apps. Installs the repo config/ folder.</description>
   <maintainer email="feijinghao2002@gmail.com">philipfei</maintainer>
   <license>TODO</license>
 
@@ -15,6 +15,10 @@
   <exec_depend>nala_base</exec_depend>
   <exec_depend>joy</exec_depend>
   <exec_depend>teleop_twist_joy</exec_depend>
+  <exec_depend>nala_description</exec_depend>
+  <exec_depend>rplidar_ros</exec_depend>
+  <exec_depend>slam_toolbox</exec_depend>
+  <exec_depend>rviz2</exec_depend>
 
   <export>
     <build_type>ament_cmake</build_type>

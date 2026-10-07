@@ -3,7 +3,7 @@ project(nala_bringup NONE)   # no C/C++ code, only installs files
 
 find_package(ament_cmake REQUIRED)
 
-install(DIRECTORY launch DESTINATION share/${PROJECT_NAME})
+install(DIRECTORY launch rviz DESTINATION share/${PROJECT_NAME})
 
 # The central config folder is at the repo root (../../config).
 # With `colcon build --symlink-install` the installed files are links to it,

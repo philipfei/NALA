@@ -1,0 +1,84 @@
+# slam_toolbox, online async mapping (app 2). Runs on the Pi.
+# Start: slam_toolbox mapper_params_online_async.yaml (Jazzy 2.8.5).
+# Lines marked "NALA" are changed from that file (default in brackets).
+#
+# The house has many similar rooms. The SLAM must not jump to a similar but wrong place, so:
+#  - the scan matcher searches only a small window around the odometry pose,
+#  - loop closure only looks close to the current estimate and needs strong matches,
+#  - a robust (Huber) loss weakens a single wrong constraint.
+# These are start values. Tune them when the robot drives (the wheel odometry must work first).
+# Drive slowly while mapping (turning fast is the worst case for the scan matcher).
+slam_toolbox:
+  ros__parameters:
+
+    # Plugin params
+    solver_plugin: solver_plugins::CeresSolver
+    ceres_linear_solver: SPARSE_NORMAL_CHOLESKY
+    ceres_preconditioner: SCHUR_JACOBI
+    ceres_trust_strategy: LEVENBERG_MARQUARDT
+    ceres_dogleg_type: TRADITIONAL_DOGLEG
+    ceres_loss_function: HuberLoss          # NALA (None): a wrong loop closure pulls less
+
+    # ROS Parameters
+    odom_frame: odom
+    map_frame: map
+    base_frame: base_footprint
+    scan_topic: /scan
+    use_map_saver: true
+    mode: mapping
+
+    debug_logging: false
+    throttle_scans: 1
+    transform_publish_period: 0.02          # s, map -> odom TF
+    map_update_interval: 2.0                # NALA (5.0): s, /map for RViz more often
+    resolution: 0.05                        # m per map cell
+    restamp_tf: false
+    min_laser_range: 0.0
+    max_laser_range: 16.0                   # NALA (20.0): m, A2M8 in Sensitivity mode
+    minimum_time_interval: 0.5
+    transform_timeout: 0.2
+    tf_buffer_duration: 30.0
+    stack_size_to_use: 40000000             # needed to save large maps
+    enable_interactive_mode: false          # NALA (true): no graph editing in RViz, saves CPU on the Pi
+
+    # General Parameters
+    use_scan_matching: true
+    use_scan_barycenter: true
+    minimum_travel_distance: 0.2            # NALA (0.5): m, add a scan more often -> more overlap
+    minimum_travel_heading: 0.2             # NALA (0.5): rad
+    check_min_dist_and_heading_precisely: false
+    scan_buffer_size: 10
+    scan_buffer_maximum_scan_distance: 10.0
+    link_match_minimum_response_fine: 0.1
+    link_scan_maximum_distance: 1.5
+    loop_search_maximum_distance: 2.0       # NALA (3.0): m, loop closure only near the current estimate
+    do_loop_closing: true
+    loop_match_minimum_chain_size: 10
+    loop_match_maximum_variance_coarse: 3.0
+    loop_match_minimum_response_coarse: 0.45  # NALA (0.35): stricter loop closure
+    loop_match_minimum_response_fine: 0.55    # NALA (0.45): stricter loop closure
+
+    # Correlation Parameters - Correlation Parameters
+    correlation_search_space_dimension: 0.3   # NALA (0.5): m, scan match window around the odometry pose
+    correlation_search_space_resolution: 0.01
+    correlation_search_space_smear_deviation: 0.1
+
+    # Correlation Parameters - Loop Closure Parameters
+    loop_search_space_dimension: 4.0          # NALA (8.0): m, loop closure search window
+    loop_search_space_resolution: 0.05
+    loop_search_space_smear_deviation: 0.03
+
+    # Scan Matcher Parameters
+    # Penalty for a match away from the odometry pose.
+    # SMALLER variance penalty = stronger penalty = trust the odometry MORE.
+    distance_variance_penalty: 0.5
+    angle_variance_penalty: 1.0
+
+    fine_search_angle_offset: 0.00349
+    coarse_search_angle_offset: 0.175         # NALA (0.349): rad, +-10 deg instead of +-20 deg
+    coarse_angle_resolution: 0.0349
+    minimum_angle_penalty: 0.9
+    minimum_distance_penalty: 0.5
+    use_response_expansion: false             # NALA (true): do not widen the window when no good match is found
+    min_pass_through: 2
+    occupancy_threshold: 0.1

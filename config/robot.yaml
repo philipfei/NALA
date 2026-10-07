@@ -1,0 +1,13 @@
+# Robot model for the URDF (src/nala_description/urdf/nala.urdf.xacro). Read by xacro on the Pi.
+# Frames: base_footprint and base_link are both on the floor, under the chassis center.
+# So laser z below is the height above the floor.
+# Body axes: x forward, y left, z up. Yaw: counter-clockwise seen from above, in rad.
+
+body_length: 0.410    # m, outer size front-back (only for the picture in RViz)
+body_width: 0.360     # m, outer size left-right (only for the picture in RViz)
+
+laser:                # RPLIDAR A2M8 scan center
+  x: 0.0              # m, at the chassis center
+  y: 0.0              # m
+  z: 0.20             # m above the floor. PLACEHOLDER, not measured yet (verify)
+  yaw: 3.141593       # rad (180 deg): the LiDAR is mounted facing backward

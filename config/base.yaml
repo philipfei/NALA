@@ -12,4 +12,11 @@ base_node:
     cmd_vel_timeout: 0.6        # s, send zero speed if /cmd_vel is older than this.
                                 # Keep it above the PC key-repeat delay (0.5 s), or teleop stutters.
     command_rate: 20.0          # Hz, how often the current command is sent to the MCU.
-                                # The MCU stops after 500 ms without a frame, so keep it >= 5 Hz.
+                                # The MCU stops after 200 ms without a frame (firmware v1), so keep it at 20 Hz (>= 7 Hz).
+
+    # Wheel odometry (/odom and TF odom -> base_footprint) from the measured wheel speeds.
+    # Must match the robot (and the firmware config.h). Careful: radius, not diameter; half, not full.
+    wheel_radius: 0.040         # m (diameter 0.080)
+    half_track_width: 0.160     # m, half of the left-right wheel distance (full 0.320)
+    half_wheelbase: 0.130       # m, half of the front-rear axle distance (full 0.260)
+    feedback_timeout: 0.5       # s, warn if no wheel speeds come for this long (the MCU sends every 0.1 s)

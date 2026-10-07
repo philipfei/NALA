@@ -1,0 +1,11 @@
+# RPLIDAR A2M8 driver (package rplidar_ros, executable rplidar_composition). Runs on the Pi.
+rplidar_node:
+  ros__parameters:
+    channel_type: serial
+    # USB serial adapter (CP2102) of the LiDAR. This name stays the same, /dev/ttyUSB0 may change.
+    serial_port: /dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0
+    serial_baudrate: 115200     # A2M8
+    frame_id: laser             # must match the URDF (config/robot.yaml: laser pose)
+    inverted: false
+    angle_compensate: true      # fixed angle steps in /scan
+    scan_mode: Sensitivity      # A2M8 firmware 1.28: about 7900 points/s, range up to 16 m
