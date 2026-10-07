@@ -3,9 +3,10 @@
 The firmware is written and owned by a teammate. Its own documents are the source of truth:
 
 - [firmware/docs/protocol.md](../firmware/docs/protocol.md) (Chinese): the protocol.
-- [firmware/CHANGES.md](../firmware/CHANGES.md) (English) / `firmware/变化.md` (Chinese): what changed from the old firmware.
+- [firmware/变化_v1.md](../firmware/变化_v1.md) (Chinese): what changed in v1 (from v0).
+- [firmware/CHANGES_v0.md](../firmware/CHANGES_v0.md) (English): what changed in v0 (from the old firmware).
 
-This file is the Pi-side summary, for firmware **v0.1.0 (NALA_v0, 2026-10-06)**.
+This file is the Pi-side summary, for firmware **v1.0.0 (NALA_v1, 2026-10-07)**.
 When the firmware protocol changes, update the Pi code (`src/nala_base/nala_base/mcu_protocol.py`)
 and this file in the same commit.
 
@@ -36,21 +37,23 @@ left 0.10 m/s `80 86 00 05 00`, counter-clockwise 0.50 rad/s `80 86 00 00 19`.
 
 ### MCU command timeout
 
-If the robot is moving and no velocity frame arrives for **500 ms**, the MCU stops and prints `cmd timeout` once.
-A zero frame never times out. So the Pi must keep sending while the robot moves.
+If the robot is moving and no velocity frame arrives for **200 ms**, the MCU stops and prints `cmd timeout` once
+(the stop happens 200-250 ms after the last frame). A zero frame never times out.
+So the Pi must keep sending while the robot moves: 20 Hz, never slower than one frame per 150 ms.
+A stop (target 0) lets the motors coast: no active braking.
 
 ### How the Pi sends (nala_base)
 
 - The Pi sends the current command at a fixed rate (`command_rate` in `config/base.yaml`, 20 Hz), also when it is zero.
-  That is 10 frames in the 500 ms MCU timeout.
-  The teammate is updating the firmware for 20 Hz commands (the feedback stays every 100 ms).
-  When that firmware is pushed, check `firmware/docs/protocol.md` and update this file.
+  That is 4 frames in the 200 ms MCU timeout. The firmware control loop also runs at 20 Hz.
+- Each frame is one `write` of 5 bytes.
 - If `/cmd_vel` is older than `cmd_vel_timeout` (0.6 s), the Pi sends zero.
 - Sending is **not** synced to the wheel speed feedback, on purpose:
   - The UART is full duplex (separate TX and RX wires), so sending and receiving at the same time do not collide.
   - The new firmware never blocks: the RX interrupt only stores bytes, TX uses a ring buffer.
   - The MCU may drop a feedback line when its TX buffer is full. If sending waited for feedback,
     a dropped line would delay the next command and could trigger the MCU timeout. It would also add up to 100 ms delay.
+  - The feedback is 10 Hz, the commands 20 Hz. 20 Hz feedback does not fit into 9600 baud (104 % load).
 - Line load at 9600 baud: commands (20 Hz x 5 bytes) use about 10 % of the Pi -> MCU wire,
   feedback (10 Hz x 42-50 bytes) about 50 % of the MCU -> Pi wire.
 
@@ -58,7 +61,7 @@ A zero frame never times out. So the Pi must keep sending while the robot moves.
 
 | Line | Format | When |
 |---|---|---|
-| **Measured wheel speeds** | `M1 \t M2 \t M3 \t M4` (4 floats, rad/s) | Every 100 ms (hardware timer) |
+| **Measured wheel speeds** | `M1 \t M2 \t M3 \t M4` (4 floats, rad/s) | Every 100 ms (10 Hz, every 2nd control tick) |
 | Boot | `a`, then `test` | Once after reset |
 | Command echo | `Vx Vy w` (3 floats; m/s, m/s, rad/s) | After each velocity frame, only when echo is on |
 | Echo ack | `echo on` / `echo off` | After an echo control frame |
@@ -78,6 +81,8 @@ Lines can be dropped by the MCU, so never depend on every line arriving.
 
 - M1 front-left, M2 rear-left, M3 rear-right, M4 front-right (given by the user; firmware math agrees).
 - Measured wheel speed sign: **positive = the wheel pushes the robot forward** (the firmware corrects the mirrored encoders). **(verify)**
+- v1 inverts the direction pins of M2 and M3 (`MOTORn_DIR_INVERT` in `config.h`), because the wiring changed.
+  Positive power = the wheel turns forward. The encoder signs did not change.
 - Encoder: 1536 counts per wheel revolution (confirmed by the user).
 - Firmware geometry: R = 0.040 m, half track 0.160 m, half wheelbase 0.130 m (k = 0.290 m).
 
@@ -104,5 +109,5 @@ w  = R/(4*k) * (-M1 - M2 + M3 + M4)
 2. Teleop key `i` (forward): all 4 wheels turn forward, all 4 measured speeds positive.
 3. `J` (Shift+j, strafe left), `j` (turn counter-clockwise): the wheels turn as in the formulas above.
 4. Release the key: the wheels stop after about 0.6 s (Pi `/cmd_vel` timeout). There should be no `cmd timeout`,
-   because the Pi keeps sending (zero) frames.
-5. Watch for PID oscillation (the firmware PID gains act differently now, see `firmware/CHANGES.md`).
+   because the Pi keeps sending (zero) frames. The wheels coast to a stop (no braking).
+5. Watch for oscillation. v1 has a new PI speed controller; tuning hints in `firmware/变化_v1.md`.

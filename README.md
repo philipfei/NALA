@@ -36,7 +36,7 @@ All dependencies: [requirements.yaml](requirements.yaml).
 - Motors: M1 front-left, M2 rear-left, M3 rear-right, M4 front-right. Encoders: 1536 counts per wheel revolution.
 - LiDAR: RPLIDAR A2M8 (USB), at the chassis center, facing backward.
 - Motor driver: ATmega328PB on the Pi GPIO UART (`/dev/ttyS0`). It runs a speed PID per wheel and sends back
-  the measured wheel speeds every 100 ms. Protocol: [docs/mcu_protocol.md](docs/mcu_protocol.md).
+  the measured wheel speeds every 100 ms (control loop 20 Hz, stops after 200 ms without a command). Protocol: [docs/mcu_protocol.md](docs/mcu_protocol.md).
 - IMU: none for now (may be added later).
 - Xbox Wireless Controller (`C8:3F:26:93:1B:B2`), paired with the Pi over Bluetooth.
 
@@ -87,13 +87,19 @@ NALA/
 │   └── mcu_protocol.md                    Pi-side summary of the Pi <-> MCU protocol, first hardware test
 │
 ├── firmware/                              MCU motor driver (ATmega328PB), Microchip Studio project.
-│   │                                      Written and owned by a teammate (v0.1.0). Claude does not edit it.
-│   ├── CHANGES.md                         What changed from the old firmware (English)
-│   ├── 变化.md                            Same as CHANGES.md (Chinese)
+│   │                                      Written and owned by a teammate (v1.0.0). Claude does not edit it.
+│   ├── 变化_v1.md                         What changed in v1: 20 Hz control, PI controller, M2/M3 polarity (Chinese)
+│   ├── CHANGES_v0.md                      What changed in v0 from the old firmware (English)
 │   ├── docs/
 │   │   ├── protocol.md                    The protocol, source of truth (Chinese)
 │   │   ├── state_machine.svg              UART frame parser state machine
 │   │   └── 笔记.md                        Refactoring notes (Chinese)
+│   ├── tests/                             Model tests and simulations (Python, run on a PC)
+│   │   ├── rx_parser_model_test.py        UART frame parser
+│   │   ├── timeout_model_test.py          200 ms command timeout
+│   │   ├── motor_polarity_model_test.py   Motor direction pins
+│   │   ├── pid_sim.py                     Speed controller simulation
+│   │   └── tx_budget.py                   Feedback line load at 9600 baud
 │   ├── motor_driver_C.atsln               Studio solution file (open this one)
 │   └── motor_driver_C/
 │       ├── motor_driver_C.cproj           Studio project: device, compiler and linker settings
@@ -104,7 +110,7 @@ NALA/
 │       ├── USART.c / Usart.h              UART driver (9600 baud, 8N1, TX ring buffer)
 │       ├── motor_functions.c / .h         Set PWM duty and direction of each motor
 │       ├── pwm.c / pwm.h                  PWM pin and timer setup
-│       ├── timer.c / timer.h              Timer helpers (Timer3 is the 100 ms control tick)
+│       ├── timer.c / timer.h              Timer helpers (Timer3 is the 50 ms control tick)
 │       ├── ADC.c / ADC.h                  ADC setup and read
 │       └── notused.c                      Old code, all commented out
 │
@@ -298,5 +304,5 @@ App 2 (mapping) and app 3 (coverage): not ready yet.
 
 ## Build and flash the MCU firmware
 
-The firmware is written by a teammate. See [firmware/CHANGES.md](firmware/CHANGES.md):
+The firmware is written by a teammate. See [firmware/变化_v1.md](firmware/变化_v1.md) and [firmware/CHANGES_v0.md](firmware/CHANGES_v0.md):
 open `firmware/motor_driver_C.atsln` in Microchip Studio on Windows (device pack ATmega_DFP 1.7.374), build, flash.

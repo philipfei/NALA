@@ -170,8 +170,10 @@ Everything below is project-specific and must be kept up to date.
 
 ## Firmware
 
-- A teammate writes and owns the firmware (`firmware/`, v0.1.0 since 2026-10-06). **Claude never edits `firmware/`.**
-- Protocol source of truth: `firmware/docs/protocol.md` (and `firmware/CHANGES.md`).
+- A teammate writes and owns the firmware (`firmware/`, v1.0.0 since 2026-10-07). **Claude never edits `firmware/`.**
+- Protocol source of truth: `firmware/docs/protocol.md` (and `firmware/变化_v1.md`, `firmware/CHANGES_v0.md`).
+- v1: control loop 20 Hz, feedback 10 Hz, MCU command timeout 200 ms, stop = coast. M2/M3 direction pins
+  inverted because the wiring changed (user: expected, nothing to do on the Pi).
   When it changes, update the Pi code and `docs/mcu_protocol.md` (Pi-side summary) in the same commit.
 - Open `firmware/motor_driver_C.atsln` in Microchip Studio. The linker needs `-lprintf_flt`.
 
@@ -205,7 +207,7 @@ SLAM must not jump to a wrong but similar-looking place.
 - Frames (REP 105): `map -> odom -> base_footprint -> base_link -> laser`.
   Body frame: x forward, y left, z up. Positive angular z = counter-clockwise seen from above.
 - Keep pure logic (protocol, kinematics, coverage planning) in ROS-free modules with pytest unit tests.
-- Safety: the Pi sends zero if `/cmd_vel` is older than 0.6 s. The firmware stops after 500 ms without a frame.
+- Safety: the Pi sends zero if `/cmd_vel` is older than 0.6 s. The firmware stops after 200 ms without a frame.
 - Maps are saved in `maps/<name>/` and copied between Pi and PC with `scp`.
 
 ### Plan against SLAM pose jumps (tune and verify in stage 2)
@@ -220,8 +222,6 @@ SLAM must not jump to a wrong but similar-looking place.
 
 - [1] Hardware test with the new firmware (wheels off the ground): axes, wheel speed signs, PID behavior.
   Checklist in `docs/mcu_protocol.md`.
-- [1] Firmware update for 20 Hz commands (teammate, not pushed yet; feedback stays 10 Hz).
-  When pushed: read `firmware/docs/protocol.md` and `firmware/CHANGES.md`, sync the Pi code and `docs/mcu_protocol.md`.
 - [2] LiDAR mount height (z above the floor or above `base_link`).
 - [3] Base station: only a pose, or a physical dock or charger? How exact must the return be?
 - [3] Coverage width (tool width) and any coverage pattern requirements.
