@@ -153,7 +153,7 @@ Everything below is project-specific and must be kept up to date.
 | Robot outer size (length x width) | 0.410 m x 0.360 m |
 | Motors | M1 front-left, M2 rear-left, M3 rear-right, M4 front-right |
 | Encoder | 1536 counts per wheel revolution (confirmed: 1.17 m driven = 1.17 m odometry, 2026-10-07) |
-| Teleop speeds | 1.0 m/s linear, 1.0 rad/s angular (keys and full stick; `config/teleop.yaml`) |
+| Teleop speeds | 0.45 m/s linear (= motor limit), 1.0 rad/s angular (keys and full stick; `config/teleop.yaml`) |
 | Motor top speed | Measured 2026-10-07 at 100 % PWM: 12.6-13.1 rad/s = 0.50-0.52 m/s rim speed (M4 slowest), the same with wheels in the air and on the floor. Firmware assumed 25 rad/s. `max_wheel_speed: 0.45` in `config/base.yaml` |
 | Game controller | Xbox Wireless Controller `C8:3F:26:93:1B:B2`, paired with the **Pi** over Bluetooth (`/dev/input/js0`). In `joy` (SDL): LB = button 4, left stick x/y = axes 0/1, right stick x = axis 3, triggers = axes 2/5 (1.0 released). Checked 2026-10-07 |
 | LiDAR | RPLIDAR A2M8 (firmware 1.28), USB CP2102 adapter (`/dev/serial/by-id/usb-Silicon_Labs_CP2102_...`), 115200 baud, driver `rplidar_ros` (`rplidar_composition`). Sensitivity mode: 16 m, about 7900 points/s, about 14 scans/s. Mounted at the chassis center (x = y = 0), facing backward (yaw 180 deg, checked 2026-10-07 with objects behind and right of the robot). Height not measured (placeholder 0.20 m in `config/robot.yaml`) |

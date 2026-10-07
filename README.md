@@ -286,14 +286,14 @@ Shift + U I O J L M < > = drive without turning (J / L = move sideways)
 ```
 
 - **Hold** a key to drive. When you release it, the robot stops after 0.6 s (`cmd_vel_timeout`).
-- Speeds are fixed: 1.0 m/s and 1.0 rad/s (`config/teleop.yaml`). There are no speed keys.
+- Speeds are fixed: 0.45 m/s and 1.0 rad/s (`config/teleop.yaml`). There are no speed keys.
 
 Xbox controller (switch it on; it connects to the Pi by itself):
 
 - **Hold LB** to drive. Release LB = stop at once.
 - Left stick: up / down = forward / backward, left / right = move sideways.
 - Right stick left / right = turn.
-- Full stick = 1.0 m/s and 1.0 rad/s (`config/teleop.yaml`).
+- Full stick = 0.45 m/s and 1.0 rad/s (`config/teleop.yaml`).
 
 Both:
 

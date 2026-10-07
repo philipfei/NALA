@@ -6,7 +6,7 @@
 
 keyboard_teleop:                # PC: nala_teleop keyboard_teleop
   ros__parameters:
-    linear_speed: 1.0           # m/s, speed of the drive keys
+    linear_speed: 0.45          # m/s, speed of the drive keys (= max_wheel_speed in base.yaml: the motors cannot go faster)
     angular_speed: 1.0          # rad/s, speed of the turn keys
 
 joy_node:                       # Pi: reads the Xbox controller (package joy)
@@ -24,8 +24,8 @@ teleop_twist_joy_node:          # Pi: /joy -> /cmd_vel (package teleop_twist_joy
       x: 1                      # left stick up/down: forward/backward
       y: 0                      # left stick left/right: move sideways
     scale_linear:
-      x: 1.0                    # m/s at full stick
-      y: 1.0                    # m/s at full stick
+      x: 0.45                   # m/s at full stick (= max_wheel_speed in base.yaml: the motors cannot go faster)
+      y: 0.45                   # m/s at full stick
     axis_angular:
       yaw: 3                    # right stick left/right: turn (axes 2 and 5 are the triggers)
     scale_angular:
