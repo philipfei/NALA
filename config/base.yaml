@@ -6,8 +6,10 @@ base_node:
     serial_port: /dev/ttyS0     # Pi GPIO UART to the MCU
     baud_rate: 9600             # must match the firmware (UART_BAUD in firmware config.h)
 
-    max_linear_speed: 1.0       # m/s, limit for the (x, y) speed. Protocol max is 2.54
-    max_angular_speed: 1.0      # rad/s, limit for the turn speed. Protocol max is 2.54
+    # Motor limit: the fastest wheel rim speed the motors really reach (= wheel rad/s x wheel radius).
+    # If a command needs a faster wheel (for example strafe + turn at full stick), the Pi scales
+    # vx, vy and wz down together, so the path keeps its shape. The input speeds are in teleop.yaml.
+    max_wheel_speed: 2.5        # m/s. NOT MEASURED YET (2.5 = no limit, protocol max is 2.54)
 
     cmd_vel_timeout: 0.6        # s, send zero speed if /cmd_vel is older than this.
                                 # Keep it above the PC key-repeat delay (0.5 s), or teleop stutters.

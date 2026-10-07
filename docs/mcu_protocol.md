@@ -109,4 +109,5 @@ w  = R/(4*k) * (-M1 - M2 + M3 + M4)
 4. Release the key: the wheels stop after about 0.6 s (Pi `/cmd_vel` timeout). There should be no `cmd timeout`,
    because the Pi keeps sending (zero) frames. The wheels coast to a stop (no braking).
 5. Watch for oscillation. v1 has a new PI speed controller; see `firmware/README.md`.
-6. Top speed: 1.0 m/s needs 25 rad/s = 100 % feed-forward, so the motors may saturate below 1.0 m/s.
+6. Top speed: 1.0 m/s needs 25 rad/s = 100 % feed-forward. The firmware clips each wheel at 100 % on its own,
+   so the Pi keeps every wheel below `max_wheel_speed` (`config/base.yaml`, measured top rim speed).

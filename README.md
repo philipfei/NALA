@@ -56,7 +56,7 @@ RViz <--/map /scan /tf--             rplidar_ros  (/scan)                       
 
 ## Settings: the `config/` folder
 
-All settings you may want to change are in [config/](config/): speed limits, timeouts, serial port,
+All settings you may want to change are in [config/](config/): speeds, motor limit, timeouts, serial port,
 teleop speeds (keyboard and Xbox controller), network, robot model, LiDAR, SLAM, and later Nav2 and coverage.
 Edit them on the PC, push, then `git pull` on the Pi (see below) and restart the app.
 An edited file works without a rebuild. A new file needs a rebuild.
@@ -75,7 +75,7 @@ NALA/
 ├── .gitattributes                         Force LF line endings (the code runs on Linux)
 │
 ├── config/                                All settings the user may change (installed by nala_bringup)
-│   ├── base.yaml                          [1] Pi base driver: serial port, speed limits, /cmd_vel timeout, send rate.
+│   ├── base.yaml                          [1] Pi base driver: serial port, motor limit, /cmd_vel timeout, send rate.
 │   │                                      [2] Wheel geometry for odometry
 │   ├── teleop.yaml                        [1] Fixed teleop speeds: PC keyboard, Pi Xbox controller (buttons, sticks)
 │   ├── ros_env.sh                         [1] ROS environment for PC and Pi: domain ID, Cyclone DDS
@@ -141,8 +141,8 @@ NALA/
     │   ├── nala_base/
     │   │   ├── __init__.py                (empty) [1] Python package marker. Stays empty
     │   │   ├── mcu_protocol.py            [1] Build velocity frames, parse feedback lines (no ROS)
-    │   │   ├── kinematics.py              [1] Speed limits. [2] Wheel speeds -> body speed, pose integration (no ROS)
-    │   │   └── base_node.py               [1] ROS node: serial I/O, limits, /cmd_vel timeout. [2] /odom and TF
+    │   │   ├── kinematics.py              [1] Wheel speed limit. [2] Wheel speeds -> body speed, pose integration (no ROS)
+    │   │   └── base_node.py               [1] ROS node: serial I/O, wheel speed limit, /cmd_vel timeout. [2] /odom and TF
     │   └── test/
     │       ├── test_mcu_protocol.py       [1] Unit tests for mcu_protocol.py
     │       └── test_kinematics.py         [1] Unit tests for kinematics.py
@@ -297,7 +297,8 @@ Xbox controller (switch it on; it connects to the Pi by itself):
 
 Both:
 
-- The Pi limits every command to 1.0 m/s and 1.0 rad/s (`config/base.yaml`).
+- Strafe and turn work at the same time. If a command needs a wheel faster than the motors can go
+  (`max_wheel_speed` in `config/base.yaml`), the Pi slows the whole command down by the same factor.
 - Stop: Ctrl+C in either terminal. The Pi sends a stop frame when it exits.
 
 ### App 2: mapping
