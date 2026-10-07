@@ -1,7 +1,7 @@
 # Driving by hand: keyboard (runs on the PC) and Xbox controller (runs on the Pi,
 # the controller is paired with the Pi over Bluetooth).
 # The speeds are fixed here. They cannot be changed while driving.
-# The robot never goes faster than the limits in base.yaml.
+# The Pi scales a command down only if a wheel would be faster than max_wheel_speed (base.yaml).
 # Write decimal values with a point (1.0, not 1), or the node stops with a type error.
 
 keyboard_teleop:                # PC: nala_teleop keyboard_teleop

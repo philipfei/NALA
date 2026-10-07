@@ -2,23 +2,7 @@ import math
 
 import pytest
 
-from nala_base.kinematics import integrate_pose, limit_twist, wheels_to_body
-
-
-def test_under_limit_unchanged():
-    assert limit_twist(0.5, -0.3, 0.2, 2.0, 1.0) == (0.5, -0.3, 0.2)
-
-
-def test_linear_limit_keeps_direction():
-    vx, vy, wz = limit_twist(3.0, 4.0, 0.0, 2.0, 1.0)   # speed 5.0 -> 2.0
-    assert math.hypot(vx, vy) == pytest.approx(2.0)
-    assert (vx, vy) == pytest.approx((1.2, 1.6))
-    assert wz == 0.0
-
-
-def test_angular_clamp():
-    assert limit_twist(0.0, 0.0, 1.5, 2.0, 1.0)[2] == 1.0
-    assert limit_twist(0.0, 0.0, -1.5, 2.0, 1.0)[2] == -1.0
+from nala_base.kinematics import integrate_pose, limit_wheel_speed, wheels_to_body
 
 
 R = 0.040
@@ -36,6 +20,31 @@ def firmware_wheels(vx, vy, wz):
 @pytest.mark.parametrize('body', [(0.5, 0.0, 0.0), (0.0, 0.3, 0.0), (0.0, 0.0, 1.0), (0.4, -0.2, -0.7)])
 def test_wheels_to_body_inverts_firmware(body):
     assert wheels_to_body(*firmware_wheels(*body), R, K) == pytest.approx(body)
+
+
+def fastest_rim_speed(vx, vy, wz):
+    return max(abs(m) for m in firmware_wheels(vx, vy, wz)) * R
+
+
+def test_under_wheel_limit_unchanged():
+    assert limit_wheel_speed(0.5, -0.3, 0.2, K, 1.0) == (0.5, -0.3, 0.2)
+    assert limit_wheel_speed(1.0, 0.0, 0.0, K, 1.0) == (1.0, 0.0, 0.0)   # exactly at the limit
+
+
+def test_strafe_and_turn_scaled_together():
+    # Full strafe + full turn needs 1.29 m/s on M1 and M4.
+    assert fastest_rim_speed(0.0, 1.0, 1.0) == pytest.approx(1.29)
+    vx, vy, wz = limit_wheel_speed(0.0, 1.0, 1.0, K, 1.0)
+    assert fastest_rim_speed(vx, vy, wz) == pytest.approx(1.0)
+    assert wz / vy == pytest.approx(1.0)   # same ratio: the turn is kept
+    assert vx == 0.0
+
+
+@pytest.mark.parametrize('body', [(-2.0, 0.0, 0.0), (0.0, 0.0, -5.0), (0.7, -0.6, 0.9)])
+def test_limit_is_the_fastest_wheel(body):
+    limited = limit_wheel_speed(*body, K, 1.0)
+    assert fastest_rim_speed(*limited) == pytest.approx(1.0)
+    assert limited[0] * body[1] == pytest.approx(limited[1] * body[0])   # direction kept
 
 
 def test_all_wheels_forward_is_forward():

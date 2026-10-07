@@ -1,20 +1,22 @@
-"""Mecanum chassis math (no ROS): speed limits and odometry."""
+"""Mecanum chassis math (no ROS): wheel speed limit and odometry."""
 
 import math
 
 
-def limit_twist(vx, vy, wz, max_linear, max_angular):
-    """Limit a body speed command.
+def limit_wheel_speed(vx, vy, wz, k, max_wheel_speed):
+    """Limit a body speed command so that no wheel is faster than max_wheel_speed.
 
-    The (vx, vy) vector is scaled down to max_linear, so the driving direction stays the same.
-    wz is clamped to +-max_angular.
+    The wheel rim speeds of a mecanum base are vx +- vy +- k*wz (all 4 sign pairs),
+    so the fastest wheel is |vx| + |vy| + k*|wz|. If that is too fast, vx, vy and wz are
+    scaled down by the same factor: the path keeps its shape, only slower.
+    k: half track width + half wheelbase (m). max_wheel_speed: wheel rim speed (m/s).
     """
-    speed = math.hypot(vx, vy)
-    if speed > max_linear:
-        scale = max_linear / speed
+    peak = abs(vx) + abs(vy) + k * abs(wz)
+    if peak > max_wheel_speed:
+        scale = max_wheel_speed / peak
         vx *= scale
         vy *= scale
-    wz = max(-max_angular, min(max_angular, wz))
+        wz *= scale
     return vx, vy, wz
 
 

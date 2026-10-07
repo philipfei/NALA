@@ -18,7 +18,7 @@ from rclpy.parameter import Parameter
 import serial
 from tf2_ros import TransformBroadcaster
 
-from nala_base.kinematics import integrate_pose, limit_twist, wheels_to_body
+from nala_base.kinematics import integrate_pose, limit_wheel_speed, wheels_to_body
 from nala_base.mcu_protocol import encode_command, parse_line
 
 ODOM_FRAME = 'odom'
@@ -32,8 +32,7 @@ class BaseNode(Node):
         super().__init__('base_node')
         port = self.param('serial_port', Parameter.Type.STRING)
         baud = self.param('baud_rate', Parameter.Type.INTEGER)
-        self.max_linear = self.param('max_linear_speed', Parameter.Type.DOUBLE)
-        self.max_angular = self.param('max_angular_speed', Parameter.Type.DOUBLE)
+        self.max_wheel_speed = self.param('max_wheel_speed', Parameter.Type.DOUBLE)
         self.cmd_timeout = self.param('cmd_vel_timeout', Parameter.Type.DOUBLE)
         rate = self.param('command_rate', Parameter.Type.DOUBLE)
         self.radius = self.param('wheel_radius', Parameter.Type.DOUBLE)
@@ -60,7 +59,7 @@ class BaseNode(Node):
         self.reader.start()
         self.get_logger().info(
             f'{port} at {baud} baud, sending at {rate} Hz. '
-            f'Limits: {self.max_linear} m/s, {self.max_angular} rad/s. '
+            f'Max wheel speed: {self.max_wheel_speed} m/s. '
             f'/cmd_vel timeout: {self.cmd_timeout} s.')
 
     def param(self, name, param_type):
@@ -68,8 +67,8 @@ class BaseNode(Node):
         return self.get_parameter(name).value
 
     def on_cmd_vel(self, msg):
-        self.cmd = limit_twist(msg.linear.x, msg.linear.y, msg.angular.z,
-                               self.max_linear, self.max_angular)
+        self.cmd = limit_wheel_speed(msg.linear.x, msg.linear.y, msg.angular.z,
+                                     self.k, self.max_wheel_speed)
         self.cmd_time = time.monotonic()
 
     def on_command_timer(self):

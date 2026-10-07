@@ -153,7 +153,8 @@ Everything below is project-specific and must be kept up to date.
 | Robot outer size (length x width) | 0.410 m x 0.360 m |
 | Motors | M1 front-left, M2 rear-left, M3 rear-right, M4 front-right |
 | Encoder | 1536 counts per wheel revolution (confirmed) |
-| Teleop speeds and limits | 1.0 m/s linear, 1.0 rad/s angular (keys, full stick and Pi limit; `config/teleop.yaml`, `config/base.yaml`) |
+| Teleop speeds | 1.0 m/s linear, 1.0 rad/s angular (keys and full stick; `config/teleop.yaml`) |
+| Motor top speed | Not measured yet (`max_wheel_speed` in `config/base.yaml`, wheel rim m/s). Firmware assumes 100 % PWM = 25 rad/s = 1.0 m/s |
 | Game controller | Xbox Wireless Controller `C8:3F:26:93:1B:B2`, paired with the **Pi** over Bluetooth (`/dev/input/js0`). In `joy` (SDL): LB = button 4, left stick x/y = axes 0/1, right stick x = axis 3, triggers = axes 2/5 (1.0 released). Checked 2026-10-07 |
 | LiDAR | RPLIDAR A2M8 (firmware 1.28), USB CP2102 adapter (`/dev/serial/by-id/usb-Silicon_Labs_CP2102_...`), 115200 baud, driver `rplidar_ros` (`rplidar_composition`). Sensitivity mode: 16 m, about 7900 points/s, about 14 scans/s. Mounted at the chassis center (x = y = 0), facing backward (yaw 180 deg, checked 2026-10-07 with objects behind and right of the robot). Height not measured (placeholder 0.20 m in `config/robot.yaml`) |
 | Motor driver MCU | ATmega328PB, 16 MHz, on the Pi GPIO UART `/dev/ttyS0` |
@@ -216,6 +217,10 @@ SLAM must not jump to a wrong but similar-looking place.
 - Maps: `scripts/save_map.sh <name>` on the Pi saves `map.pgm/.yaml` (map_saver_cli) and
   `map.posegraph/.data` (slam_toolbox serialize_map). The PC copies the folder with `scp`.
 - Keep pure logic (protocol, kinematics, coverage planning) in ROS-free modules with pytest unit tests.
+- Speeds: input speeds (keys, stick) only in `config/teleop.yaml`; one motor limit `max_wheel_speed` (wheel rim m/s)
+  in `config/base.yaml`. A mecanum command needs |vx| + |vy| + k*|wz| on its fastest wheel; above the limit
+  the Pi scales vx, vy, wz by the same factor. Reason: the firmware clips each wheel at 100 % PWM on its own,
+  which cut the turn when strafing and turning at full stick (2026-10-07). No body speed limits (user decision).
 - Safety: the Pi sends zero if `/cmd_vel` is older than 0.6 s. The firmware stops after 200 ms without a frame.
 - Maps are saved in `maps/<name>/` and copied between Pi and PC with `scp`.
 
@@ -233,6 +238,7 @@ SLAM must not jump to a wrong but similar-looking place.
 
 - [1] Hardware test with the new firmware (wheels off the ground): axes, wheel speed signs, PID behavior.
   Checklist in `docs/mcu_protocol.md`.
+- [1] Measure the motor top speed (wheel rim m/s) and set `max_wheel_speed` in `config/base.yaml`.
 - [2] LiDAR mount height above the floor (placeholder 0.20 m in `config/robot.yaml`).
 - [2] Driving test (motors connected): odometry signs and scale (drive 1 m, turn 360 deg), then SLAM tuning
   in the real house (no jumps between similar rooms).
