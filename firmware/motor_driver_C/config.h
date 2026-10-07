@@ -1,10 +1,15 @@
 /*
- * config.h  --  NALA_v0 central configuration (robot geometry, timing, wiring map)
+ * config.h  --  NALA_v1 central configuration (robot geometry, timing, wiring map)
  *
- * Project : NALA_v0 motor driver (ATmega328PB, 4x mecanum wheels, 4x quadrature encoders)
- * Author  : HY (NALA v0 revision)
- * Version : v0.1.0
- * Date    : 2026-10-06
+ * Project : NALA_v1 motor driver (ATmega328PB, 4x mecanum wheels, 4x quadrature encoders)
+ * Author  : HY (NALA v1 revision)
+ * Version : v1.0.0
+ * Date    : 2026-10-07
+ *
+ * v1 changes vs v0: 20 Hz control/feedback (50 ms period), speed controller
+ * redesigned (positional PI + feed-forward + anti-windup, replaces the old
+ * incremental PID that rang), M2/M3 motor direction polarity inverted, shorter
+ * command timeout (200 ms).
  *
  * Everything that is "a number you may want to change" or "a wire you may want to
  * re-assign" lives in this file. The .c files contain no magic numbers for these.
@@ -57,13 +62,13 @@
  *
  *      measured speed = (encoder counts in one period) / period
  *
- * Default 100 ms: the original loop ran at roughly 90-100 ms per iteration
- * (estimated from the disassembly, never measured), so 100 ms keeps the
- * per-second behaviour of the old PID gains in the same range.
- * Lower values give faster response but REQUIRE re-tuning K_P/K_I/K_D, because
- * the controller adds one correction per period.
+ * Default 50 ms = 20 Hz: control update, speed measurement and the serial
+ * feedback line all run at this rate.
+ * One encoder count is 2*pi/1536/0.05 = 0.082 rad/s at this period.
+ * The PI gains below were checked by simulation for 50 ms (tests/pid_sim.py);
+ * if you change the period, re-run that simulation before trusting the gains.
  */
-#define CONTROL_PERIOD_MS       100UL
+#define CONTROL_PERIOD_MS       50UL
 #define CONTROL_PERIOD_S        ((float)CONTROL_PERIOD_MS / 1000.0f)
 
 #define CONTROL_TIMER_PRESCALER 64UL
@@ -72,8 +77,21 @@
 #error "CONTROL_PERIOD_MS too long for Timer3 with this prescaler (max ~262 ms)"
 #endif
 
-/* Print the 4 measured wheel speeds every N control periods (1 = every period). */
-#define TELEMETRY_EVERY_N_TICKS 1
+/*
+ * Print the 4 measured wheel speeds every N control periods.
+ * v1: N = 2 -> feedback at 10 Hz while control and commands run at 20 Hz.
+ * Why: the feedback line is ~50 characters (~52 ms at 9600 baud). Sent every 100 ms
+ * it leaves the line about half idle and the TX buffer always drains before the
+ * next line is queued - nothing piles up. Sent every 50 ms it would not fit.
+ * If a line does not fit in the TX buffer it is dropped, never waited for.
+ * (Turning the command echo ON at 20 Hz commands adds ~62 % line load, i.e. the total
+ * exceeds the line capacity and some echo/feedback lines will be dropped - never
+ * waited for. Use the echo for debugging only.)
+ */
+#define TELEMETRY_EVERY_N_TICKS 2
+
+/* Feedback line: four tab-separated floats [rad/s], M1..M4 - identical to the original format. */
+#define TELEMETRY_FMT           "%f \t %f \t %f \t %f\n"
 
 /* Command echo: after each received velocity command, send back "Vx Vy w\n"
  * (the original always did this). This is only the power-on DEFAULT; it can be
@@ -83,15 +101,37 @@
 /* ------------------------------------------------------------------------- */
 /* Controller                                                                 */
 /* ------------------------------------------------------------------------- */
-/* PID gains: "no overshoot" Ziegler-Nichols set from the original code (Ku = 3.7).
- * Classic ZN would be Kp 2.22, Ki 11.1, Kd 0.02775. */
-#define K_P                 0.74f
-#define K_I                 3.7f
-#define K_D                 0.0644f
+/*
+ * Per-wheel speed controller (v1): positional PI with feed-forward and anti-windup
+ *
+ *      e   = target - measured                       [rad/s]
+ *      pwm = PWM_PER_RAD_S * target + PI_KP * e + I  [% duty, -100..100]
+ *      I  += PI_KI * e * dt                          (clamped to +-PI_I_LIMIT,
+ *                                                     not integrated while saturated)
+ *
+ * Target 0 -> output 0 and I cleared (no hunting around zero when stopping).
+ * I is also cleared when the target changes sign.
+ *
+ * WHY it replaced the v0 controller: v0 added the PID output to the PWM every
+ * period (pwm -= u) and u already contained an integral term, i.e. a double
+ * integrator; with the int truncation of u and the integral kept after a stop this
+ * rings for a long time. Simulation (tests/pid_sim.py, assumed motor model) shows
+ * v0 ringing in all 24 plant variants and v1 in none.
+ *
+ * Gains were chosen by that simulation; they are NOT tuned on the real robot.
+ * No derivative term: the speed estimate is quantised (0.082 rad/s) so it only adds noise.
+ */
+#define PI_KP               1.0f      /* [% pwm per rad/s] */
+#define PI_KI               8.0f      /* [% pwm per rad/s per s] */
+#define PI_I_LIMIT          25.0f     /* [% pwm] anti-windup clamp of the integral */
 
-/* Feed-forward: initial PWM [-100..100] per rad/s of wheel speed (empirical, from original). */
+/* Feed-forward: PWM [%] per rad/s of target wheel speed. Assumes ~0.25 rad/s per 1 %.
+ * If the wheels overshoot at start-up reduce it, if they lag behind raise it. */
 #define PWM_PER_RAD_S       4.0f
-#define PWM_LIMIT           100
+#define PWM_LIMIT           100.0f
+
+/* A wheel target below this is treated as "stopped" [rad/s]. */
+#define W_ZERO_EPS          0.01f
 
 /* ------------------------------------------------------------------------- */
 /* UART protocol (frame layout as in the original; SCALE CHANGED to 0.02)     */
@@ -134,7 +174,7 @@
  * CMD_TIMEOUT_MS and CMD_TIMEOUT_MS + CONTROL_PERIOD_MS after the last frame.
  * A zero command (stop) never times out - there is nothing to stop.
  */
-#define CMD_TIMEOUT_MS      500UL
+#define CMD_TIMEOUT_MS      200UL   /* v1: 200 ms (v0: 500 ms); stop happens 200..250 ms after the last frame */
 #define CMD_TIMEOUT_TICKS   ((CMD_TIMEOUT_MS + CONTROL_PERIOD_MS - 1UL) / CONTROL_PERIOD_MS)
 #if (CMD_TIMEOUT_TICKS > 250UL)
 #error "CMD_TIMEOUT_MS too long (max 250 control periods)"
@@ -167,6 +207,17 @@
 #define MOTOR2_DIR_BIT      1
 #define MOTOR3_DIR_BIT      2
 #define MOTOR4_DIR_BIT      3
+
+/*
+ * Motor input polarity: 1 inverts the direction pin for that motor, so that a
+ * POSITIVE power drives the wheel FORWARD (the same sense as a positive
+ * encoder speed). v1: M2 and M3 inverted, M1 and M4 unchanged (v0 had none inverted).
+ * If a wheel runs the wrong way, flip its flag here.
+ */
+#define MOTOR1_DIR_INVERT   0
+#define MOTOR2_DIR_INVERT   1
+#define MOTOR3_DIR_INVERT   1
+#define MOTOR4_DIR_INVERT   0
 
 /*
  * --- 2. Encoder channels (silkscreen E1..E4): fixed by the PCB wiring --------

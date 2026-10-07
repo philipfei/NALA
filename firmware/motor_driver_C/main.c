@@ -1,10 +1,14 @@
 /*
- * main.c  --  NALA_v0 motor driver firmware
+ * main.c  --  NALA_v1 motor driver firmware
  *
- * Project  : NALA_v0 (ATmega328PB, 4 mecanum wheels, 4 quadrature encoders)
- * Author   : HY / Claude (NALA v0 revision)
- * Version  : v0.1.0
- * Date     : 2026-10-06
+ * Project  : NALA_v1 (ATmega328PB, 4 mecanum wheels, 4 quadrature encoders)
+ * Author   : HY / Claude (NALA v1 revision)
+ * Version  : v1.0.0
+ * Date     : 2026-10-07
+ *
+ * v1 vs v0: 20 Hz control loop (feedback line at 10 Hz); speed controller replaced
+ * by a positional PI with feed-forward and anti-windup (the v0 incremental PID
+ * rang); M2/M3 motor polarity inverted; command timeout 200 ms.
  *
  * Original : motor_driver_C by Floris van Mourik (created 9/18/2021), with pwm/timer
  *            code by Mathan and UART code by sojim. The untouched original sources
@@ -13,10 +17,10 @@
  * ---------------------------------------------------------------------------
  * OVERVIEW
  *   Receives body velocity commands (Vx, Vy, w) over UART, converts them to four
- *   wheel speed targets with the mecanum inverse kinematics, and runs one PID
- *   loop per wheel on the speed measured from the encoders. The PID output
- *   drives four PWM motor channels. The four measured wheel speeds are printed
- *   back over the UART.
+ *   wheel speed targets with the mecanum inverse kinematics, and runs one speed
+ *   controller (PI + feed-forward) per wheel on the speed measured from the
+ *   encoders. Its output drives four PWM motor channels. The four measured wheel
+ *   speeds are printed back over the UART.
  *
  * STRUCTURE (no blocking loops, no software delays)
  *   - Encoders   : pin-change interrupts count edges continuously     (encoder.c)
@@ -25,8 +29,8 @@
  *   - UART RX    : interrupt, only collects the 5-byte frame and sets a flag.
  *   - UART TX    : ring buffer drained by the UDRE interrupt             (USART.c)
  *   - main loop  : (1) apply a newly received command,
- *                  (2) when a control period has elapsed: compute speeds, PID,
- *                      motor output, telemetry.
+ *                  (2) when a control period has elapsed: compute speeds, run the
+ *                      PI controllers, set the motor output, send telemetry.
  *
  * SPEED MEASUREMENT
  *   speed [rad/s] = (counts in the period / ENC_COUNTS_PER_REV) * 2*pi / period
@@ -35,17 +39,19 @@
  *   the time base is exact. The original code assumed 0.010 s per measurement
  *   window and 0.045 s per loop; the real values were larger (print and delay
  *   included), which made measured speeds and the PID I/D terms inaccurate.
+ *   At the default 50 ms period one encoder count is 0.082 rad/s.
  *
  * UART PROTOCOL (frame layout unchanged; scale now 0.02, see below)
  *   Host -> MCU, 9600 8N1:  0x80 0x86 Vx Vy w   (3x int8; /50 -> m/s, m/s, rad/s; 0.02 per count)
  *   NOTE: the original scale was /100. The host (Pi) must send value*50.
  *   Axes: ROS convention, Vx forward, Vy left, w counter-clockwise positive.
- *   Safety (NALA_v0): no velocity frame for CMD_TIMEOUT_MS while moving -> stop,
- *   MCU prints "cmd timeout\n" once. The host must therefore re-send commands.
+ *   Safety: no velocity frame for CMD_TIMEOUT_MS (v1: 200 ms) while moving -> stop,
+ *   MCU prints "cmd timeout\n" once. The host must therefore re-send commands
+ *   (v1 expects ~20 Hz).
  *   Added in NALA_v0 (separate frame, does not affect the one above):
  *                           0x80 0x87 E          E=1 command echo on, E=0 off
  *                           -> MCU replies "echo on\n" / "echo off\n"
- *   MCU -> host (telemetry, once per TELEMETRY_EVERY_N_TICKS periods):
+ *   MCU -> host (telemetry, once per TELEMETRY_EVERY_N_TICKS periods = 10 Hz in v1):
  *       "<w1> \t <w2> \t <w3> \t <w4>\n"   measured wheel speeds M1..M4 in rad/s
  *   Boot text: "a\n" (ADC init) and "test\n".
  *
@@ -87,13 +93,8 @@ static const int8_t motor_enc_sign[NUM_MOTORS] = {
 /* ------------------------------------------------------------------------- */
 static float M_w[NUM_MOTORS];            /* target wheel speed   [rad/s] */
 static float M_w_measured[NUM_MOTORS];   /* measured wheel speed [rad/s] */
-static int   M_pwm[NUM_MOTORS];          /* motor power command  [-100..100] */
-
-typedef struct {
-	float old_int_error;
-	float old_error;
-} pid_state_t;
-static pid_state_t pid_state[NUM_MOTORS];
+static float M_pwm[NUM_MOTORS];          /* motor power command  [% duty, -100..100] */
+static float M_i[NUM_MOTORS];            /* integral part of the speed controller [% duty] */
 
 /* Command timeout bookkeeping (main-loop only, see CMD_TIMEOUT_MS in config.h). */
 static uint8_t cmd_age_ticks;    /* control periods since the last velocity frame (saturates at 255) */
@@ -177,20 +178,37 @@ ISR(USART0_RX_vect)
 /* ------------------------------------------------------------------------- */
 /*
  * Mecanum inverse kinematics. Vx, Vy in m/s, w in rad/s. Result: target wheel
- * speeds M_w[] in rad/s (wheel speed = rim speed / radius) and the initial
- * feed-forward PWM. Rim speed of each wheel = Vx -/+ Vy -/+ (W+H)*w.
+ * speeds M_w[] in rad/s (wheel speed = rim speed / radius) and the immediate
+ * motor power (feed-forward + the integral already accumulated).
+ * Rim speed of each wheel = Vx -/+ Vy -/+ (W+H)*w.
+ *
+ * The integral M_i[] is cleared when a wheel's target becomes zero or changes sign;
+ * otherwise it is kept, so a stream of similar commands (e.g. 20 per second) does
+ * not throw away what the controller has learned.
  */
 static void calc_angular_speed(float Vx, float Vy, float w)
 {
 	const float k = 1.0f / WHEEL_RADIUS_M;
+	float target[NUM_MOTORS];
 
-	M_w[0] = k * (Vx - Vy - ROT_ARM_M * w);   /* M1 */
-	M_w[1] = k * (Vx + Vy - ROT_ARM_M * w);   /* M2 */
-	M_w[2] = k * (Vx - Vy + ROT_ARM_M * w);   /* M3 */
-	M_w[3] = k * (Vx + Vy + ROT_ARM_M * w);   /* M4 */
+	target[0] = k * (Vx - Vy - ROT_ARM_M * w);   /* M1 */
+	target[1] = k * (Vx + Vy - ROT_ARM_M * w);   /* M2 */
+	target[2] = k * (Vx - Vy + ROT_ARM_M * w);   /* M3 */
+	target[3] = k * (Vx + Vy + ROT_ARM_M * w);   /* M4 */
 
 	for (uint8_t m = 0; m < NUM_MOTORS; m++) {
-		M_pwm[m] = (int)(M_w[m] * PWM_PER_RAD_S);
+		const uint8_t stopped = (target[m] < W_ZERO_EPS && target[m] > -W_ZERO_EPS);
+		if (stopped) {
+			target[m] = 0.0f;
+			M_i[m]    = 0.0f;
+			M_pwm[m]  = 0.0f;
+		} else {
+			if ((target[m] > 0.0f) != (M_w[m] > 0.0f)) {
+				M_i[m] = 0.0f;                    /* direction change (or start from rest) */
+			}
+			M_pwm[m] = PWM_PER_RAD_S * target[m] + M_i[m];
+		}
+		M_w[m] = target[m];
 	}
 }
 
@@ -205,28 +223,40 @@ static void set_motor_speed(void)
 }
 
 /* ------------------------------------------------------------------------- */
-/* PID (control law unchanged from the original)                              */
+/* Speed controller: positional PI + feed-forward + anti-windup (new in v1)   */
 /* ------------------------------------------------------------------------- */
 /*
- * The error is defined as  err = measured - target  (opposite of the textbook
- * sign), so the caller must SUBTRACT the result from the power command:
- *      M_pwm = M_pwm - u
+ * e   = target - measured                         [rad/s]  (textbook sign)
+ * pwm = PWM_PER_RAD_S * target + PI_KP*e + I      [% duty]
+ * I  += PI_KI * e * dt, clamped to +-PI_I_LIMIT, and NOT integrated while the
+ *       output is saturated (unless the error pulls it back out).
+ * A wheel with target 0 gets output 0 and I = 0.
  * dt is the real elapsed time of the measurement in seconds.
- * The result is truncated to int, as in the original.
+ *
+ * The v0 controller added a PID output to the power every period (pwm -= u), which
+ * made the integral term a double integrator; together with truncating u to an int
+ * and keeping the integral after a stop it rang for a long time. See tests/pid_sim.py.
  */
-static int PID_calc(float w_measured, float dt, uint8_t motor)
+static void speed_control(uint8_t m, float dt)
 {
-	pid_state_t *s = &pid_state[motor];
+	if (M_w[m] == 0.0f) {
+		M_i[m]   = 0.0f;
+		M_pwm[m] = 0.0f;
+		return;
+	}
 
-	float err        = w_measured - M_w[motor];
-	float integral   = err * dt + s->old_int_error;
-	float derivative = (err - s->old_error) / dt;
+	const float e  = M_w[m] - M_w_measured[m];
+	const float ff = PWM_PER_RAD_S * M_w[m];
+	const float u  = ff + PI_KP * e + M_i[m];
 
-	float u = K_P * err + K_I * integral + K_D * derivative;
+	/* Anti-windup: integrate unless the output is saturated AND the error would push it further. */
+	if ((u < PWM_LIMIT && u > -PWM_LIMIT) || ((u > 0.0f) != (e > 0.0f))) {
+		M_i[m] += PI_KI * e * dt;
+		if (M_i[m] >  PI_I_LIMIT) M_i[m] =  PI_I_LIMIT;
+		if (M_i[m] < -PI_I_LIMIT) M_i[m] = -PI_I_LIMIT;
+	}
 
-	s->old_error     = err;
-	s->old_int_error = integral;   /* keep the running integral of the error */
-	return (int)u;
+	M_pwm[m] = ff + PI_KP * e + M_i[m];
 }
 
 /* ------------------------------------------------------------------------- */
@@ -265,7 +295,7 @@ static void handle_command(void)
 	set_motor_speed();
 }
 
-/* A control period elapsed: measure, run the PID, drive the motors, report. */
+/* A control period elapsed: measure, run the speed controllers, drive the motors, report. */
 static void control_step(void)
 {
 	int32_t delta[ENC_COUNT];
@@ -305,17 +335,16 @@ static void control_step(void)
 	}
 
 	for (uint8_t m = 0; m < NUM_MOTORS; m++) {
-		int u = PID_calc(M_w_measured[m], dt, m);
-		M_pwm[m] = M_pwm[m] - u;
+		speed_control(m, dt);
 	}
 	set_motor_speed();
 
-	/* Telemetry: same text format as the original; dropped (never blocking) if the TX buffer is full. */
+	/* Telemetry (10 Hz): same text format as the original; dropped (never blocking) if the TX buffer is full. */
 	static uint8_t tel_count;
 	if (++tel_count >= TELEMETRY_EVERY_N_TICKS) {
 		tel_count = 0;
 		char line[80];
-		int n = snprintf(line, sizeof(line), "%f \t %f \t %f \t %f\n",
+		int n = snprintf(line, sizeof(line), TELEMETRY_FMT,
 		                 M_w_measured[0], M_w_measured[1], M_w_measured[2], M_w_measured[3]);
 		if (n > 0 && n < (int)sizeof(line)) {
 			usart_try_send_buf(line, (uint8_t)n);

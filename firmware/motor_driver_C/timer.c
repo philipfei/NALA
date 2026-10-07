@@ -15,7 +15,8 @@
 
 /*
  * Timer3, CTC mode (WGM32), clock = F_CPU / 64 (CS31 + CS30).
- * With the default 100 ms period: 250 kHz tick, OCR3A = 24999.
+ * With the default 50 ms period (v1): 250 kHz tick, OCR3A = 12499 (0x30D3).
+ * (v0 used 100 ms, OCR3A = 24999.) The value is computed from CONTROL_PERIOD_MS in config.h.
  * The compare-match interrupt (TIMER3_COMPA_vect, in main.c) fires every period,
  * exactly, regardless of how long the main loop takes.
  */
