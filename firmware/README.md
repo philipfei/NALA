@@ -157,4 +157,4 @@ Main loop: acknowledge an echo frame, apply a new command, and on each tick do s
 - Stopping is by coasting, so the stopping distance depends on friction.
 
 ---
-Last updated: 2026-10-07 (v1.1.0) · Stiffeel :octocat: · Claude
+Last updated: 2026-10-07 (v1.1.1) · Stiffeel :octocat: · Claude
