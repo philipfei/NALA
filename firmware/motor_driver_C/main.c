@@ -3,7 +3,7 @@
  *
  * Project  : NALA_v1 (ATmega328PB, 4 mecanum wheels, 4 quadrature encoders)
  * Author   : HY / Claude (NALA v1 revision)
- * Version  : v1.1.0
+ * Version  : v1.1.1
  * Date     : 2026-10-07
  *
  * v1 vs v0: 20 Hz control loop; speed controller replaced by a positional PI with
@@ -11,6 +11,7 @@
  * inverted in v1.0.0 and reverted in v1.0.1; command timeout 200 ms.
  * v1.1.0: the feedback line carries the cumulative encoder counts and is sent every
  * period (20 Hz); UART 38400 baud; feed-forward 6.5 %/(rad/s) (measured).
+ * v1.1.1: feed-forward from the measured speed -> PWM table FF_* in config.h.
  *
  * Original : motor_driver_C by Floris van Mourik (created 9/18/2021), with pwm/timer
  *            code by Mathan and UART code by sojim. The untouched original sources
@@ -178,6 +179,27 @@ ISR(USART0_RX_vect)
 }
 
 /* ------------------------------------------------------------------------- */
+/* Feed-forward: measured motor curve (config.h FF_*)                         */
+/* ------------------------------------------------------------------------- */
+static const float ff_speed[FF_TABLE_N] = FF_SPEED_RAD_S;   /* rad/s, increasing */
+static const float ff_pwm[FF_TABLE_N]   = FF_PWM_PCT;       /* % duty */
+
+/* PWM [%] for a wheel target speed [rad/s]: linear interpolation in the table, same sign. */
+static float feed_forward(float target)
+{
+	const float s = (target < 0.0f) ? -target : target;
+	float pwm = ff_pwm[FF_TABLE_N - 1];                     /* faster than the table: 100 % */
+	for (uint8_t i = 1; i < FF_TABLE_N; i++) {
+		if (s <= ff_speed[i]) {
+			pwm = ff_pwm[i - 1] + (ff_pwm[i] - ff_pwm[i - 1]) * (s - ff_speed[i - 1])
+			                      / (ff_speed[i] - ff_speed[i - 1]);
+			break;
+		}
+	}
+	return (target < 0.0f) ? -pwm : pwm;
+}
+
+/* ------------------------------------------------------------------------- */
 /* Kinematics                                                                 */
 /* ------------------------------------------------------------------------- */
 /*
@@ -210,7 +232,7 @@ static void calc_angular_speed(float Vx, float Vy, float w)
 			if ((target[m] > 0.0f) != (M_w[m] > 0.0f)) {
 				M_i[m] = 0.0f;                    /* direction change (or start from rest) */
 			}
-			M_pwm[m] = PWM_PER_RAD_S * target[m] + M_i[m];
+			M_pwm[m] = feed_forward(target[m]) + M_i[m];
 		}
 		M_w[m] = target[m];
 	}
@@ -231,7 +253,7 @@ static void set_motor_speed(void)
 /* ------------------------------------------------------------------------- */
 /*
  * e   = target - measured                         [rad/s]  (textbook sign)
- * pwm = PWM_PER_RAD_S * target + PI_KP*e + I      [% duty]
+ * pwm = FF(target) + PI_KP*e + I                  [% duty]
  * I  += PI_KI * e * dt, clamped to +-PI_I_LIMIT, and NOT integrated while the
  *       output is saturated (unless the error pulls it back out).
  * A wheel with target 0 gets output 0 and I = 0.
@@ -250,7 +272,7 @@ static void speed_control(uint8_t m, float dt)
 	}
 
 	const float e  = M_w[m] - M_w_measured[m];
-	const float ff = PWM_PER_RAD_S * M_w[m];
+	const float ff = feed_forward(M_w[m]);
 	const float u  = ff + PI_KP * e + M_i[m];
 
 	/* Anti-windup: integrate unless the output is saturated AND the error would push it further. */

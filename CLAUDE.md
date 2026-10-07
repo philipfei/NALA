@@ -173,11 +173,13 @@ Everything below is project-specific and must be kept up to date.
 
 - A teammate owns the firmware (`firmware/`) and builds and flashes it. **Claude may edit `firmware/`** (user, 2026-10-07).
   Claude cannot compile it: the PC has no avr-gcc (the user chose not to install it), so review the code carefully.
-- Version in the repo: v1.1.0 (2026-10-07, by Claude). **Not flashed yet**: until the teammate flashes it,
-  the Pi code (38400 baud, counts lines) cannot talk to the MCU (still v1.0.1, 9600 baud).
+- Version in the repo: v1.1.1 (2026-10-07, by Claude). Flashed on the MCU: v1.1.0 (works with the Pi code;
+  v1.1.1 only changes the feed-forward, same protocol). v1.1.1 is not flashed yet.
 - Protocol source of truth: `firmware/README.md` (protocol, parameters, changes per version).
 - v1.1.0: control loop and feedback 20 Hz, feedback = cumulative encoder counts (`c n1 n2 n3 n4`), UART 38400,
-  feed-forward 6.5 %/(rad/s) (estimated from measurements), MCU command timeout 200 ms, stop = coast. M2/M3 direction pins
+  MCU command timeout 200 ms, stop = coast. v1.1.1: feed-forward from a measured speed -> PWM table (`FF_*`):
+  the motor curve is not linear (dead zone ~8 %, 30 % -> 8 rad/s, 100 % -> 13 rad/s); the single factor 6.5 of
+  v1.1.0 overshot by 30-90 % (step tests 2026-10-07). M2/M3 direction pins
   are not inverted in software: the M2/M3 supply cables are wired opposite to M1/M4 in the hardware (nothing to do on the Pi).
   When it changes, update the Pi code and `docs/mcu_protocol.md` (Pi-side summary) in the same commit.
 - Open `firmware/motor_driver_C.atsln` in Microchip Studio. The linker needs `-lprintf_flt`.
@@ -241,9 +243,9 @@ SLAM must not jump to a wrong but similar-looking place.
 
 ## Open questions (ask before the stage that needs them)
 
-- [1] Firmware v1.1.0: the teammate flashes it; then on the Pi: `git pull`, build, check counts lines at 20 Hz,
-  repeat the 1.17 m odometry check, step test for the feed-forward 6.5 (rise time, overshoot), Xbox strafe + turn.
-  Checklist in `docs/mcu_protocol.md`.
+- [1] Firmware v1.1.0 checked 2026-10-07: counts at 20 Hz, odometry 1.10 m = tape 1.10 m.
+  Still open: flash v1.1.1, then step tests (0.05-0.45 m/s, wheels in the air and on the floor) for the
+  feed-forward table (rise time, overshoot), and the Xbox strafe + turn test. Checklist in `docs/mcu_protocol.md`.
 - [2] LiDAR mount height above the floor (placeholder 0.20 m in `config/robot.yaml`).
 - [2] Driving test: forward odometry scale checked (1.17 m, 8 deg). Still open: strafe and 360 deg turn, then SLAM tuning
   in the real house (no jumps between similar rooms).

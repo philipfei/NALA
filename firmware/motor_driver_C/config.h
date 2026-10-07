@@ -3,7 +3,7 @@
  *
  * Project : NALA_v1 motor driver (ATmega328PB, 4x mecanum wheels, 4x quadrature encoders)
  * Author  : HY (NALA v1 revision)
- * Version : v1.1.0
+ * Version : v1.1.1
  * Date    : 2026-10-07
  *
  * v1 changes vs v0: 20 Hz control/feedback (50 ms period), speed controller
@@ -12,6 +12,8 @@
  * v1.0.1: no motor is inverted any more), shorter command timeout (200 ms).
  * v1.1.0: feedback = cumulative encoder counts every period (20 Hz), UART 38400 baud,
  * feed-forward 6.5 %/(rad/s) from measurements on the robot.
+ * v1.1.1: feed-forward from a measured speed -> PWM table (the motor curve is not linear;
+ * 6.5 overshot by 30-90 %).
  *
  * Everything that is "a number you may want to change" or "a wire you may want to
  * re-assign" lives in this file. The .c files contain no magic numbers for these.
@@ -110,7 +112,7 @@
  * Per-wheel speed controller (v1): positional PI with feed-forward and anti-windup
  *
  *      e   = target - measured                       [rad/s]
- *      pwm = PWM_PER_RAD_S * target + PI_KP * e + I  [% duty, -100..100]
+ *      pwm = FF(target) + PI_KP * e + I              [% duty, -100..100]
  *      I  += PI_KI * e * dt                          (clamped to +-PI_I_LIMIT,
  *                                                     not integrated while saturated)
  *
@@ -130,13 +132,17 @@
 #define PI_KI               8.0f      /* [% pwm per rad/s per s] */
 #define PI_I_LIMIT          25.0f     /* [% pwm] anti-windup clamp of the integral */
 
-/* Feed-forward: PWM [%] per rad/s of target wheel speed.
- * Measured on the robot (2026-10-07): 100 % PWM gives only 12.6-13.1 rad/s, with and
- * without load. With the old value 4.0 the integral sat at its +-25 % limit at
- * 11 rad/s (about 69 % output -> 10.7 rad/s) and the wheels needed ~1 s to get there.
- * 6.5 = 69 % / 10.7 rad/s. Check it with a step test after flashing:
- * if the wheels overshoot at start-up reduce it, if they lag behind raise it. */
-#define PWM_PER_RAD_S       6.5f
+/* Feed-forward FF(target): PWM [%] that makes a wheel turn at |target| rad/s, from a table
+ * (linear interpolation between the points, same sign as the target).
+ * The motor curve is NOT linear (measured 2026-10-07, wheels in the air, step tests;
+ * on the floor the speed was only ~0.4 rad/s lower): below ~8 % the wheel does not
+ * turn, 15 % -> 3.5 rad/s, 30 % -> 8 rad/s, but 100 % gives only 13 rad/s. So no single
+ * factor fits (4.0 was too low at high speed, 6.5 overshot by 30-90 % at low speed).
+ * The first point is the dead zone: any non-zero target gets at least 9 %.
+ * If the wheels overshoot at start-up lower the PWM of that speed, if they lag raise it. */
+#define FF_TABLE_N          10
+#define FF_SPEED_RAD_S      { 0.0f, 3.5f, 6.6f, 8.1f, 9.4f, 10.7f, 11.5f, 11.85f, 12.2f, 13.0f }
+#define FF_PWM_PCT          { 9.0f, 15.0f, 21.5f, 29.5f, 37.5f, 45.5f, 54.0f, 63.0f, 72.0f, 100.0f }
 #define PWM_LIMIT           100.0f
 
 /* A wheel target below this is treated as "stopped" [rad/s]. */

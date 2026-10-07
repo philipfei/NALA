@@ -37,7 +37,7 @@ All dependencies: [requirements.yaml](requirements.yaml).
 - LiDAR: RPLIDAR A2M8 (USB, CP2102 adapter, 115200 baud), at the chassis center, facing backward. Height not measured yet.
 - Motor driver: ATmega328PB on the Pi GPIO UART (`/dev/ttyS0`). It runs a speed controller per wheel and sends back
   the cumulative encoder counts every 50 ms at 38400 baud (control loop 20 Hz, stops after 200 ms without a command).
-  Firmware v1.1.0 is needed (not flashed yet). Protocol: [docs/mcu_protocol.md](docs/mcu_protocol.md).
+  Firmware v1.1.0 or newer is needed. Protocol: [docs/mcu_protocol.md](docs/mcu_protocol.md).
 - IMU: none for now (may be added later).
 - Xbox Wireless Controller (`C8:3F:26:93:1B:B2`), paired with the Pi over Bluetooth.
 
@@ -92,7 +92,7 @@ NALA/
 │   └── mcu_protocol.md                    Pi-side summary of the Pi <-> MCU protocol, first hardware test
 │
 ├── firmware/                              MCU motor driver (ATmega328PB), Microchip Studio project.
-│   │                                      Owned by a teammate, who builds and flashes it. v1.1.0 (by Claude).
+│   │                                      Owned by a teammate, who builds and flashes it. v1.1.1 (by Claude).
 │   ├── README.md                          Protocol (source of truth), parameters, build/flash, changes per version
 │   ├── docs/
 │   │   └── state_machine.svg              Firmware state machine (labels in Chinese)

@@ -1,6 +1,6 @@
 # NALA firmware (ATmega328PB motor driver)
 
-Firmware for the NALA base. It receives body-velocity commands from the Pi over UART, runs a speed controller on four mecanum wheels and reports the cumulative encoder counts. Current version: **v1.1.0**. Toolchain: Atmel/Microchip Studio 7 (avr-gcc 5.4.0, ATmega_DFP 1.7.374), 16 MHz external crystal.
+Firmware for the NALA base. It receives body-velocity commands from the Pi over UART, runs a speed controller on four mecanum wheels and reports the cumulative encoder counts. Current version: **v1.1.1**. Toolchain: Atmel/Microchip Studio 7 (avr-gcc 5.4.0, ATmega_DFP 1.7.374), 16 MHz external crystal.
 
 > ### HARDWARE POLARITY NOTE (read before touching the motor wiring)
 >
@@ -76,7 +76,8 @@ UART0, **38400 8N1** (v1.1.0; was 9600), no flow control (MCU RXD0 = PD0, TXD0 =
 | Command timeout | 200 ms |
 | UART / command scale | 38400 baud / 50 counts per unit (0.02) |
 | Speed controller | positional PI + feed-forward + anti-windup: Kp 1.0, Ki 8.0, integral limit 25 % |
-| Feed-forward / output limit | 6.5 % duty per rad/s (measured, v1.1.0) / +-100 % (8-bit PWM, 1/255 resolution) |
+| Feed-forward | table speed -> PWM from step tests (v1.1.1, `FF_*` in `config.h`): 0 -> 9 % (dead zone), 3.5 -> 15 %, 6.6 -> 21.5 %, 8.1 -> 29.5 %, 9.4 -> 37.5 %, 10.7 -> 45.5 %, 11.5 -> 54 %, 11.85 -> 63 %, 12.2 -> 72 %, 13.0 rad/s -> 100 % |
+| Output limit | +-100 % (8-bit PWM, 1/255 resolution) |
 | Measured top speed (100 % PWM) | 12.6-13.1 rad/s = 0.50-0.52 m/s rim speed, with and without load (2026-10-07) |
 | Command echo at power-up | off (`ECHO_COMMAND`) |
 
@@ -146,9 +147,12 @@ Main loop: acknowledge an echo frame, apply a new command, and on each tick do s
 - UART 9600 -> 38400 baud (one line takes ~7 ms instead of ~48 ms, so the odometry time stamps are more exact).
 - Feed-forward 4.0 -> 6.5 % per rad/s: 100 % PWM gives only ~13 rad/s, and with 4.0 the integral sat at its 25 % limit at 11 rad/s (the wheels needed ~1 s to reach the target).
 
+**v1.1.1 (2026-10-07)** - feed-forward from a measured table.
+- The step tests with v1.1.0 showed that the motor curve is not linear: no motion below ~8 %, 15 % -> 3.5 rad/s, 30 % -> 8 rad/s, 100 % -> 13 rad/s. 6.5 % per rad/s overshot by 30-90 % and settled only after ~2.5 s. The feed-forward is now a 10-point table (`FF_SPEED_RAD_S`, `FF_PWM_PCT`) with linear interpolation. Nothing else changed.
+
 ## 7. Known limitations
 
-- The PI gains come from simulation of an *assumed* motor model; the feed-forward 6.5 is estimated from one measurement. Check both with a step test after flashing v1.1.0.
+- The PI gains come from simulation of an *assumed* motor model. The feed-forward table is measured (wheels in the air); check it with step tests after flashing v1.1.1.
 - The motors reach only ~13 rad/s (0.50-0.52 m/s). Faster targets saturate at 100 % PWM; the Pi limits every wheel to 0.45 m/s (`max_wheel_speed` in `config/base.yaml`).
 - Stopping is by coasting, so the stopping distance depends on friction.
 
