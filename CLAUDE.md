@@ -210,7 +210,8 @@ SLAM must not jump to a wrong but similar-looking place.
   `nala_base` publishes `/odom` and TF `odom -> base_footprint`; `robot_state_publisher` the rest of the robot;
   `slam_toolbox` `map -> odom`.
 - Odometry: each MCU wheel speed line (10 Hz) is integrated over the measured time since the line before
-  (UART polled at 100 Hz). After a gap longer than `feedback_timeout` the gap is not integrated.
+  (a reader thread blocks on the UART: exact arrival time, no CPU while waiting; a 100 Hz rclpy timer
+  used 30 % CPU on the Pi). After a gap longer than `feedback_timeout` the gap is not integrated.
 - The URDF reads its numbers from `config/robot.yaml` (xacro `load_yaml`), passed in as launch arg `robot_config`.
 - Maps: `scripts/save_map.sh <name>` on the Pi saves `map.pgm/.yaml` (map_saver_cli) and
   `map.posegraph/.data` (slam_toolbox serialize_map). The PC copies the folder with `scp`.

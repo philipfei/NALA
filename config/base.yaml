@@ -19,5 +19,4 @@ base_node:
     wheel_radius: 0.040         # m (diameter 0.080)
     half_track_width: 0.160     # m, half of the left-right wheel distance (full 0.320)
     half_wheelbase: 0.130       # m, half of the front-rear axle distance (full 0.260)
-    feedback_poll_rate: 100.0   # Hz, how often the UART is read. Higher = more exact time of each line
     feedback_timeout: 0.5       # s, warn if no wheel speeds come for this long (the MCU sends every 0.1 s)

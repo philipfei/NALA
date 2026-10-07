@@ -2,9 +2,11 @@
 
 All parameters come from config/base.yaml (no defaults here).
 Odometry: each measured wheel speed line is integrated over the time since the line before.
+A reader thread blocks on the UART, so each line gets its arrival time and no CPU is used while waiting.
 """
 
 import math
+import threading
 import time
 
 from geometry_msgs.msg import TransformStamped, Twist
@@ -21,6 +23,7 @@ from nala_base.mcu_protocol import encode_command, parse_line
 
 ODOM_FRAME = 'odom'
 BASE_FRAME = 'base_footprint'
+READ_TIMEOUT = 0.1   # s, a blocking read returns after this, so the reader thread can stop
 
 
 class BaseNode(Node):
@@ -36,12 +39,10 @@ class BaseNode(Node):
         self.radius = self.param('wheel_radius', Parameter.Type.DOUBLE)
         self.k = (self.param('half_track_width', Parameter.Type.DOUBLE)
                   + self.param('half_wheelbase', Parameter.Type.DOUBLE))
-        poll_rate = self.param('feedback_poll_rate', Parameter.Type.DOUBLE)
         self.feedback_timeout = self.param('feedback_timeout', Parameter.Type.DOUBLE)
 
-        self.serial = serial.Serial(port, baud, timeout=0)
+        self.serial = serial.Serial(port, baud, timeout=READ_TIMEOUT)
         self.serial.reset_input_buffer()   # drop old lines from before the start
-        self.rx_buffer = b''
         self.cmd = (0.0, 0.0, 0.0)
         self.cmd_time = None      # time.monotonic() of the last /cmd_vel
         self.stopped = True       # True while sending zero because /cmd_vel is too old
@@ -54,7 +55,9 @@ class BaseNode(Node):
         self.tf_broadcaster = TransformBroadcaster(self)
         self.create_subscription(Twist, 'cmd_vel', self.on_cmd_vel, 10)
         self.create_timer(1.0 / rate, self.on_command_timer)
-        self.create_timer(1.0 / poll_rate, self.read_feedback)
+        self.reading = True
+        self.reader = threading.Thread(target=self.read_loop, daemon=True)
+        self.reader.start()
         self.get_logger().info(
             f'{port} at {baud} baud, sending at {rate} Hz. '
             f'Limits: {self.max_linear} m/s, {self.max_angular} rad/s. '
@@ -89,25 +92,31 @@ class BaseNode(Node):
         self.serial.write(frame)
         self.get_logger().debug(f'sent {frame.hex(" ")}')
 
-    def read_feedback(self):
-        self.rx_buffer += self.serial.read(self.serial.in_waiting)
-        *lines, self.rx_buffer = self.rx_buffer.split(b'\n')
-        if len(self.rx_buffer) > 1000:   # noise without any newline
-            self.rx_buffer = b''
-        for raw in lines:
-            result = parse_line(raw.decode('ascii', errors='replace'))
-            if result is None:
-                continue
-            kind, value = result
-            if kind == 'wheels':
-                self.get_logger().debug(f'wheels M1..M4 [rad/s]: {value}')
-                self.on_wheels(value)
-            elif kind == 'echo':
-                self.get_logger().debug(f'echo vx vy wz: {value}')
-            elif value == 'cmd timeout':
-                self.get_logger().warn('MCU: cmd timeout (no velocity frame for 500 ms)')
-            else:
-                self.get_logger().info(f'MCU: {value}')
+    def read_loop(self):
+        """Reader thread: wait for MCU bytes and handle each complete line."""
+        rx_buffer = b''
+        while self.reading:
+            rx_buffer += self.serial.read(self.serial.in_waiting or 1)
+            *lines, rx_buffer = rx_buffer.split(b'\n')
+            if len(rx_buffer) > 1000:   # noise without any newline
+                rx_buffer = b''
+            for raw in lines:
+                self.handle_line(raw.decode('ascii', errors='replace'))
+
+    def handle_line(self, line):
+        result = parse_line(line)
+        if result is None:
+            return
+        kind, value = result
+        if kind == 'wheels':
+            self.get_logger().debug(f'wheels M1..M4 [rad/s]: {value}')
+            self.on_wheels(value)
+        elif kind == 'echo':
+            self.get_logger().debug(f'echo vx vy wz: {value}')
+        elif value == 'cmd timeout':
+            self.get_logger().warn('MCU: cmd timeout (no velocity frame for 200 ms)')
+        else:
+            self.get_logger().info(f'MCU: {value}')
 
     def on_wheels(self, wheels):
         """Integrate one measured wheel speed line and publish /odom and TF."""
@@ -149,7 +158,9 @@ class BaseNode(Node):
         self.tf_broadcaster.sendTransform(tf)
 
     def stop(self):
-        """Send a zero command and close the port."""
+        """Stop the reader thread, send a zero command and close the port."""
+        self.reading = False
+        self.reader.join()
         self.serial.write(encode_command(0.0, 0.0, 0.0))
         self.serial.flush()
         self.serial.close()
