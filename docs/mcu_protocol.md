@@ -79,8 +79,9 @@ Lines can be dropped by the MCU, so never depend on every line arriving.
 
 - M1 front-left, M2 rear-left, M3 rear-right, M4 front-right (given by the user; firmware math agrees).
 - Measured wheel speed sign: **positive = the wheel pushes the robot forward** (the firmware corrects the mirrored encoders). **(verify)**
-- v1 inverts the direction pins of M2 and M3 (`MOTORn_DIR_INVERT` in `config.h`), because the wiring changed.
-  Positive power = the wheel turns forward. The encoder signs did not change.
+- The firmware does **not** invert any motor in software (`MOTORn_DIR_INVERT` is 0 for all four in `config.h`).
+  The supply cables of M2 and M3 are wired with opposite polarity to M1 and M4 in the hardware, and the firmware relies on that: do not invert M2/M3 in software.
+  A positive command turns all four wheels the same way. The encoder signs did not change.
 - Encoder: 1536 counts per wheel revolution (confirmed by the user).
 - Firmware geometry: R = 0.040 m, half track 0.160 m, half wheelbase 0.130 m (k = 0.290 m).
 

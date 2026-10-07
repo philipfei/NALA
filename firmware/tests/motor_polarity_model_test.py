@@ -1,4 +1,6 @@
-"""Model of motor_functions.c (v1) vs the v0 behaviour. Checks the direction-pin level and the PWM compare value."""
+"""Model of motor_functions.c (v1) vs the v0 behaviour. Checks the direction-pin level and the PWM compare value.
+The MOTORn_DIR_INVERT flags are read from ../motor_driver_C/config.h, so the test follows the configuration."""
+import os, re
 def v0(m):                      # original: m integer percent
     mm = -m
     if mm < 0: level, mm = 0, -mm
@@ -12,7 +14,9 @@ def v1(m, invert):              # NALA_v1 (float percent)
     d = min(d, 255.0)
     return level, 255 - int(d)
 
-INV = {1: 0, 2: 1, 3: 1, 4: 0}  # MOTORn_DIR_INVERT in config.h
+_cfg = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'motor_driver_C', 'config.h'), encoding='utf-8').read()
+INV = {n: int(re.search(r'^#define\s+MOTOR%d_DIR_INVERT\s+(\d)' % n, _cfg, re.M).group(1)) for n in (1, 2, 3, 4)}
+print('MOTORn_DIR_INVERT from config.h:', INV)
 ok = True
 for motor, inv in INV.items():
     diff_level = diff_ocr = 0

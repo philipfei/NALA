@@ -2,7 +2,7 @@
  * motor_functions.h  --  motor power output (NALA_v1)
  *
  * Author  : HY (NALA v1 revision)
- * Version : v1.0.0
+ * Version : v1.0.1
  * Date    : 2026-10-07
  */
 

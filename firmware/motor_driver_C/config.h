@@ -3,13 +3,13 @@
  *
  * Project : NALA_v1 motor driver (ATmega328PB, 4x mecanum wheels, 4x quadrature encoders)
  * Author  : HY (NALA v1 revision)
- * Version : v1.0.0
+ * Version : v1.0.1
  * Date    : 2026-10-07
  *
  * v1 changes vs v0: 20 Hz control/feedback (50 ms period), speed controller
  * redesigned (positional PI + feed-forward + anti-windup, replaces the old
- * incremental PID that rang), M2/M3 motor direction polarity inverted, shorter
- * command timeout (200 ms).
+ * incremental PID that rang), M2/M3 motor polarity (inverted in v1.0.0, reverted in
+ * v1.0.1: no motor is inverted any more), shorter command timeout (200 ms).
  *
  * Everything that is "a number you may want to change" or "a wire you may want to
  * re-assign" lives in this file. The .c files contain no magic numbers for these.
@@ -209,14 +209,20 @@
 #define MOTOR4_DIR_BIT      3
 
 /*
- * Motor input polarity: 1 inverts the direction pin for that motor, so that a
- * POSITIVE power drives the wheel FORWARD (the same sense as a positive
- * encoder speed). v1: M2 and M3 inverted, M1 and M4 unchanged (v0 had none inverted).
- * If a wheel runs the wrong way, flip its flag here.
+ * Motor input polarity: 1 inverts the direction pin of that motor.
+ *
+ * HARDWARE NOTE: the supply cables of M2 and M3 are wired with opposite polarity to
+ * M1 and M4. That is how the hardware is built, so no software inversion is needed:
+ * all four flags are 0 and a positive power turns all four wheels the same way.
+ * Do NOT invert M2/M3 here.
+ * If the supply cables of a motor are re-soldered, that wheel reverses: set its flag
+ * to 1 (only then). A wiring/flag mismatch gives positive feedback in the speed loop
+ * and that wheel runs away to full power.
+ * (v1.0.0 had M2/M3 inverted in software; reverted in v1.0.1.)
  */
 #define MOTOR1_DIR_INVERT   0
-#define MOTOR2_DIR_INVERT   1
-#define MOTOR3_DIR_INVERT   1
+#define MOTOR2_DIR_INVERT   0
+#define MOTOR3_DIR_INVERT   0
 #define MOTOR4_DIR_INVERT   0
 
 /*

@@ -1,9 +1,10 @@
 /*
  * motor_functions.c  --  motor power output
  *
- * NALA_v1 revision (HY, v1.0.0, 2026-10-07):
- *   - direction polarity per motor is now configurable (MOTORn_DIR_INVERT in config.h);
- *     v1 inverts M2 and M3;
+ * NALA_v1 revision (HY, v1.0.1, 2026-10-07):
+ *   - direction polarity per motor is configurable (MOTORn_DIR_INVERT in config.h);
+ *     all flags are 0: the M2/M3 supply cables are wired opposite to M1/M4 in the
+ *     hardware, so no software inversion is needed (see the HARDWARE NOTE in config.h);
  *   - power is a float percent and is converted to the 8-bit PWM duty with rounding
  *     (1/255 resolution). v0 used integer percent, i.e. 1 % steps (~0.25 rad/s of wheel
  *     speed), which is coarse enough to make an integral controller hunt by one step.

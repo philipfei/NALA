@@ -3,12 +3,13 @@
  *
  * Project  : NALA_v1 (ATmega328PB, 4 mecanum wheels, 4 quadrature encoders)
  * Author   : HY / Claude (NALA v1 revision)
- * Version  : v1.0.0
+ * Version  : v1.0.1
  * Date     : 2026-10-07
  *
  * v1 vs v0: 20 Hz control loop (feedback line at 10 Hz); speed controller replaced
  * by a positional PI with feed-forward and anti-windup (the v0 incremental PID
- * rang); M2/M3 motor polarity inverted; command timeout 200 ms.
+ * rang); M2/M3 motor polarity inverted in v1.0.0 and reverted in v1.0.1; command
+ * timeout 200 ms.
  *
  * Original : motor_driver_C by Floris van Mourik (created 9/18/2021), with pwm/timer
  *            code by Mathan and UART code by sojim. The untouched original sources

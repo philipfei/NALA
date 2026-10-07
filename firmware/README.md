@@ -1,6 +1,14 @@
 # NALA firmware (ATmega328PB motor driver)
 
-Firmware for the NALA base. It receives body-velocity commands from the Pi over UART, runs a speed controller on four mecanum wheels and reports the measured wheel speeds. Current version: **v1.0.0**. Toolchain: Atmel/Microchip Studio 7 (avr-gcc 5.4.0, ATmega_DFP 1.7.374), 16 MHz external crystal.
+Firmware for the NALA base. It receives body-velocity commands from the Pi over UART, runs a speed controller on four mecanum wheels and reports the measured wheel speeds. Current version: **v1.0.1**. Toolchain: Atmel/Microchip Studio 7 (avr-gcc 5.4.0, ATmega_DFP 1.7.374), 16 MHz external crystal.
+
+> ### HARDWARE POLARITY NOTE (read before touching the motor wiring)
+>
+> - The motor supply cables of **M2 and M3 are wired with opposite polarity to M1 and M4**. This is how the hardware is built and it must stay that way.
+> - The firmware therefore does **no software inversion**: `MOTORn_DIR_INVERT = 0` for all four motors (`config.h`). With the current wiring a positive command turns all four wheels the same way.
+> - **Do not invert M2/M3 in software.** That makes M2 and M3 turn against M1 and M4.
+> - If the supply cables of a motor are re-soldered, that wheel reverses: set that motor's `MOTORn_DIR_INVERT` to 1 (and change nothing else), so wiring and flag stay consistent.
+> - A wiring/flag mismatch gives the speed loop positive feedback on that wheel: it runs away to full power.
 
 **This file is the source of truth for the Pi <-> MCU protocol.** 
 
@@ -53,7 +61,7 @@ UART0, **9600 8N1**, no flow control (MCU RXD0 = PD0, TXD0 = PD1, TTL levels).
 
 - Wheel target: `M1 = (Vx - Vy - k*w)/R`, `M2 = (Vx + Vy - k*w)/R`, `M3 = (Vx - Vy + k*w)/R`, `M4 = (Vx + Vy + k*w)/R`, with `k = half track + half wheelbase = 0.290 m`, `R = 0.040 m`.
 - Assumed layout *(unverified)*: M1 front-left, M2 rear-left, M3 rear-right, M4 front-right.
-- Motor input polarity: **M2 and M3 are inverted** (`MOTORn_DIR_INVERT`), so positive power drives the wheel forward.
+- Motor input polarity: **no motor is inverted in software** (`MOTORn_DIR_INVERT` = 0 for all four). The M2/M3 supply cables are wired opposite to M1/M4 in the hardware; see the **hardware polarity note** at the top.
 - Encoders: only the A pins raise pin-change interrupts; B is sampled in the interrupt. Every A edge counts, direction from B.
 - The motor <-> encoder association (`MOTORn_ENCODER`), encoder signs (`MOTORn_ENC_SIGN`) and all pins are in the "WIRING MAP" of `config.h`. Invalid mappings fail at compile time.
 
@@ -122,19 +130,22 @@ Main loop: acknowledge an echo frame, apply a new command, and on each tick do s
 - Protocol: command scale 0.01 -> 0.02, ROS axes, echo-switch frame, command timeout 500 ms.
 - Fixed a bug where the buffer was cleared before it was used (every command was 0); Release now links floating-point printf.
 
-**v1 (2026-10-07)**
-- M2 and M3 motor input polarity inverted.
+**v1.0.0 (2026-10-07)**
+- M2 and M3 motor input polarity inverted in software.
 - 20 Hz control (50 ms); feedback stays at 10 Hz; timeout 500 -> 200 ms.
 - Speed controller: the v0 incremental PID (a double integrator, `int` truncation, integral kept after a stop) made the wheels oscillate for a long time before stopping. Replaced by positional PI + feed-forward + anti-windup. On 24 assumed motor models the old law (at its 100 ms period) reversed the wheels after a stop in 22 cases, the new one in none. The gains come from that simulation, not from tuning on the robot. A stop now switches the output off and the wheels coast.
 - PWM output resolution 1 % -> 1/255.
 - Added `tests/`; merged all documentation into this README.
 
+**v1.0.1 (2026-10-07)**
+- Software polarity of M2 and M3 reverted (all `MOTORn_DIR_INVERT` = 0): the M2/M3 supply cables are wired with opposite polarity to M1/M4 in the hardware, so no software inversion is needed (see the hardware polarity note). Nothing else changed.
+
 ## 7. Known limitations
 
-- v1 is not flashed or tested on the robot. The controller gains come from simulation of an *assumed* motor model.
+- The controller gains come from simulation of an *assumed* motor model, not from tuning on the robot.
 - Wheel layout, axis directions and the 1536 counts/rev still need to be confirmed on the robot.
 - Speeds above what the motors can do (for example 1.0 m/s needs 25 rad/s = 100 % feed-forward) saturate; the real speed is then lower than commanded.
 - Stopping is by coasting, so the stopping distance depends on friction.
 
 ---
-Last updated: 2026-10-07 12:21 · Stiffeel :octocat:
+Last updated: 2026-10-07 14:57 · Stiffeel :octocat:
