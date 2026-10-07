@@ -155,7 +155,7 @@ Everything below is project-specific and must be kept up to date.
 | Encoder | 1536 counts per wheel revolution (confirmed) |
 | Teleop speeds and limits | 1.0 m/s linear, 1.0 rad/s angular (keys, full stick and Pi limit; `config/teleop.yaml`, `config/base.yaml`) |
 | Game controller | Xbox Wireless Controller `C8:3F:26:93:1B:B2`, paired with the **Pi** over Bluetooth (`/dev/input/js0`) |
-| LiDAR | RPLIDAR A2M8, USB, driver `rplidar_ros`. Mounted at the chassis center (x = y = 0), facing backward (yaw 180 deg). Height unknown |
+| LiDAR | RPLIDAR A2M8 (firmware 1.28), USB CP2102 adapter (`/dev/serial/by-id/usb-Silicon_Labs_CP2102_...`), 115200 baud, driver `rplidar_ros` (`rplidar_composition`). Sensitivity mode: 16 m, about 7900 points/s, about 14 scans/s. Mounted at the chassis center (x = y = 0), facing backward (yaw 180 deg). Height not measured (placeholder 0.20 m in `config/robot.yaml`) |
 | Motor driver MCU | ATmega328PB, 16 MHz, on the Pi GPIO UART `/dev/ttyS0` |
 | IMU | None yet. May be added later (model unknown) |
 
@@ -182,10 +182,10 @@ Everything below is project-specific and must be kept up to date.
 | Stage | App | Goal | Status |
 |---|---|---|---|
 | 1 | Teleop | Drive the chassis with the keyboard or the Xbox controller | Code done (Xbox, fixed speeds, 20 Hz added 2026-10-07). Hardware test pending (motors not connected yet) |
-| 2 | Mapping | Teleop + real-time LiDAR SLAM + RViz on the PC + save the map and copy it back to the PC | Not started |
+| 2 | Mapping | Teleop + real-time LiDAR SLAM + RViz on the PC + save the map and copy it back to the PC | Code done 2026-10-07. Tested without driving (motors not connected). Driving test and SLAM tuning pending |
 | 3 | Coverage | The user sets a base station on the PC, in the map saved by app 2. The robot starts at the base station, covers the whole house, then returns to it | Not started |
 
-**Current stage: 1** (teleop code done, waiting for the hardware test).
+**Current stage: 2** (mapping code done; waiting for the motors for the driving test of apps 1 and 2).
 
 Stage 2 special requirement: the house has many very similar rooms.
 SLAM must not jump to a wrong but similar-looking place.
@@ -206,6 +206,14 @@ SLAM must not jump to a wrong but similar-looking place.
   (reasons in `docs/mcu_protocol.md`).
 - Frames (REP 105): `map -> odom -> base_footprint -> base_link -> laser`.
   Body frame: x forward, y left, z up. Positive angular z = counter-clockwise seen from above.
+  `base_footprint` and `base_link` are the same pose (on the floor under the chassis center).
+  `nala_base` publishes `/odom` and TF `odom -> base_footprint`; `robot_state_publisher` the rest of the robot;
+  `slam_toolbox` `map -> odom`.
+- Odometry: each MCU wheel speed line (10 Hz) is integrated over the measured time since the line before
+  (UART polled at 100 Hz). After a gap longer than `feedback_timeout` the gap is not integrated.
+- The URDF reads its numbers from `config/robot.yaml` (xacro `load_yaml`), passed in as launch arg `robot_config`.
+- Maps: `scripts/save_map.sh <name>` on the Pi saves `map.pgm/.yaml` (map_saver_cli) and
+  `map.posegraph/.data` (slam_toolbox serialize_map). The PC copies the folder with `scp`.
 - Keep pure logic (protocol, kinematics, coverage planning) in ROS-free modules with pytest unit tests.
 - Safety: the Pi sends zero if `/cmd_vel` is older than 0.6 s. The firmware stops after 200 ms without a frame.
 - Maps are saved in `maps/<name>/` and copied between Pi and PC with `scp`.
@@ -213,8 +221,10 @@ SLAM must not jump to a wrong but similar-looking place.
 ### Plan against SLAM pose jumps (tune and verify in stage 2)
 
 - Good wheel odometry from the measured wheel speeds (calibrated).
-- Tune `slam_toolbox` to trust odometry: small scan-match search window, higher odometry variance penalties,
-  loop closure only close to the odometry estimate (small loop search distance) and with strict match thresholds.
+- Tune `slam_toolbox` (`config/slam_mapping.yaml`) to trust odometry: small scan-match search window,
+  no response expansion, loop closure only close to the estimate (small loop search distance and window)
+  and with strict match thresholds, Huber loss in the solver. Start values are set (2026-10-07), not tuned yet.
+  Note: in Karto a SMALLER `distance/angle_variance_penalty` means trusting the odometry MORE.
 - Stage 3: start localization at the known base station pose. No global relocalization.
 - An IMU would help a lot (mecanum wheels slip). Ask the user about adding one if odometry alone is not good enough.
 
@@ -222,7 +232,9 @@ SLAM must not jump to a wrong but similar-looking place.
 
 - [1] Hardware test with the new firmware (wheels off the ground): axes, wheel speed signs, PID behavior.
   Checklist in `docs/mcu_protocol.md`.
-- [2] LiDAR mount height (z above the floor or above `base_link`).
+- [2] LiDAR mount height above the floor (placeholder 0.20 m in `config/robot.yaml`).
+- [2] Driving test (motors connected): odometry signs and scale (drive 1 m, turn 360 deg), then SLAM tuning
+  in the real house (no jumps between similar rooms).
 - [3] Base station: only a pose, or a physical dock or charger? How exact must the return be?
 - [3] Coverage width (tool width) and any coverage pattern requirements.
 - [any] IMU model, if one is added.

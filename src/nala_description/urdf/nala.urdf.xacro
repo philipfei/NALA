@@ -1,0 +1,39 @@
+<?xml version="1.0"?>
+<!--
+  NALA robot frames: base_footprint -> base_link -> laser.
+  All numbers come from config/robot.yaml (xacro argument robot_config).
+-->
+<robot name="nala" xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <xacro:arg name="robot_config" default=""/>
+  <xacro:property name="cfg" value="${xacro.load_yaml('$(arg robot_config)')}"/>
+  <xacro:property name="laser" value="${cfg['laser']}"/>
+
+  <!-- On the floor, under the chassis center. Odometry moves this frame. -->
+  <link name="base_footprint"/>
+
+  <!-- Same pose as base_footprint. The flat plate shows the outer size in RViz. -->
+  <link name="base_link">
+    <visual>
+      <origin xyz="0 0 0.005"/>
+      <geometry>
+        <box size="${cfg['body_length']} ${cfg['body_width']} 0.01"/>
+      </geometry>
+      <material name="grey">
+        <color rgba="0.6 0.6 0.6 1.0"/>
+      </material>
+    </visual>
+  </link>
+
+  <joint name="base_link_joint" type="fixed">
+    <parent link="base_footprint"/>
+    <child link="base_link"/>
+  </joint>
+
+  <link name="laser"/>
+
+  <joint name="laser_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="laser"/>
+    <origin xyz="${laser['x']} ${laser['y']} ${laser['z']}" rpy="0 0 ${laser['yaw']}"/>
+  </joint>
+</robot>

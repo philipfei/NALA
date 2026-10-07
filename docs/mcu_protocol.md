@@ -95,7 +95,7 @@ M3 = (Vx - Vy + k*w) / R
 M4 = (Vx + Vy + k*w) / R
 ```
 
-## Pi forward kinematics (for odometry, stage 2)
+## Pi forward kinematics (odometry: `wheels_to_body` in `src/nala_base/nala_base/kinematics.py`)
 
 ```
 Vx = R/4     * ( M1 + M2 + M3 + M4)

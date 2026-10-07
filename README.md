@@ -9,7 +9,7 @@ The PC runs the keyboard teleop, RViz and the map tools. An Xbox controller (pai
 | App | What it does | Status |
 |---|---|---|
 | 1. Teleop | Drive the chassis with the PC keyboard or an Xbox controller | Code done. Hardware test pending (motors not connected yet) |
-| 2. Mapping | App 1 + real-time LiDAR SLAM on the Pi + RViz on the PC + save the map and copy it to the PC | Not started |
+| 2. Mapping | App 1 + real-time LiDAR SLAM on the Pi + RViz on the PC + save the map and copy it to the PC | Code done. Tested without driving (motors not connected). SLAM tuning needs driving |
 | 3. Coverage | Pick a base station in the saved map on the PC. The robot starts there, covers the whole house, and returns | Not started |
 
 ## System
@@ -34,8 +34,8 @@ All dependencies: [requirements.yaml](requirements.yaml).
 - Chassis: 4 mecanum wheels. Outer size 410 x 360 mm (length x width).
   Track width 320 mm (half: 160 mm). Wheelbase 260 mm (half: 130 mm). Wheel radius 40 mm (diameter: 80 mm).
 - Motors: M1 front-left, M2 rear-left, M3 rear-right, M4 front-right. Encoders: 1536 counts per wheel revolution.
-- LiDAR: RPLIDAR A2M8 (USB), at the chassis center, facing backward.
-- Motor driver: ATmega328PB on the Pi GPIO UART (`/dev/ttyS0`). It runs a speed PID per wheel and sends back
+- LiDAR: RPLIDAR A2M8 (USB, CP2102 adapter, 115200 baud), at the chassis center, facing backward. Height not measured yet.
+- Motor driver: ATmega328PB on the Pi GPIO UART (`/dev/ttyS0`). It runs a speed controller per wheel and sends back
   the measured wheel speeds every 100 ms (control loop 20 Hz, stops after 200 ms without a command). Protocol: [docs/mcu_protocol.md](docs/mcu_protocol.md).
 - IMU: none for now (may be added later).
 - Xbox Wireless Controller (`C8:3F:26:93:1B:B2`), paired with the Pi over Bluetooth.
@@ -46,8 +46,10 @@ All dependencies: [requirements.yaml](requirements.yaml).
 PC                                   Pi (on the robot)                         MCU
 nala_teleop keyboard --/cmd_vel-->   nala_base --UART velocity frame, 20 Hz-->  motor_driver
 Xbox --Bluetooth--> joy_node -> teleop_twist_joy --/cmd_vel--> nala_base
-                                     nala_base <--UART wheel speeds, 10 Hz---   (PID per wheel)
-RViz <--/map /scan /tf /odom--       rplidar_ros  (/scan)                       [stage 2]
+                                     nala_base <--UART wheel speeds, 10 Hz---   (PI per wheel)
+                                     nala_base: wheel odometry (/odom, odom->base_footprint)
+RViz <--/map /scan /tf--             rplidar_ros  (/scan)                       [stage 2]
+                                     robot_state_publisher (base_footprint->base_link->laser)
                                      slam_toolbox (/map, map->odom)             [stage 2]
                                      Nav2 + nala_coverage                       [stage 3]
 ```
@@ -55,7 +57,7 @@ RViz <--/map /scan /tf /odom--       rplidar_ros  (/scan)                       
 ## Settings: the `config/` folder
 
 All settings you may want to change are in [config/](config/): speed limits, timeouts, serial port,
-teleop speeds (keyboard and Xbox controller), network, and later LiDAR, SLAM, Nav2 and coverage.
+teleop speeds (keyboard and Xbox controller), network, robot model, LiDAR, SLAM, and later Nav2 and coverage.
 Edit them on the PC, push, then `git pull` on the Pi (see below) and restart the app.
 An edited file works without a rebuild. A new file needs a rebuild.
 
@@ -73,12 +75,14 @@ NALA/
 ├── .gitattributes                         Force LF line endings (the code runs on Linux)
 │
 ├── config/                                All settings the user may change (installed by nala_bringup)
-│   ├── base.yaml                          [1] Pi base driver: serial port, speed limits, /cmd_vel timeout, send rate
+│   ├── base.yaml                          [1] Pi base driver: serial port, speed limits, /cmd_vel timeout, send rate.
+│   │                                      [2] Wheel geometry for odometry
 │   ├── teleop.yaml                        [1] Fixed teleop speeds: PC keyboard, Pi Xbox controller (buttons, sticks)
 │   ├── ros_env.sh                         [1] ROS environment for PC and Pi: domain ID, Cyclone DDS
 │   ├── cyclonedds.xml                     [1] Cyclone DDS: use only the robot network 10.42.0.0/24
-│   ├── rplidar.yaml                       (empty) [2] RPLIDAR A2M8 driver params: port, frame, scan mode
-│   ├── slam_mapping.yaml                  (empty) [2] slam_toolbox mapping params, tuned against pose jumps
+│   ├── robot.yaml                         [2] Robot model: body size, LiDAR mount pose (read by the URDF)
+│   ├── rplidar.yaml                       [2] RPLIDAR A2M8 driver params: port, baud rate, frame, scan mode
+│   ├── slam_mapping.yaml                  [2] slam_toolbox mapping params, tuned against pose jumps
 │   ├── localization.yaml                  (empty) [3] Localization in the saved map
 │   ├── nav2_params.yaml                   (empty) [3] Nav2 params: holonomic controller, costmaps
 │   └── coverage.yaml                      (empty) [3] Coverage width, overlap, wall margin
@@ -119,20 +123,19 @@ NALA/
 │
 ├── scripts/
 │   ├── setup_pi.sh                        [1] One-time Pi setup: ROS, Cyclone DDS, UART, serial permissions, ~/.bashrc
-│   └── save_map.sh                        (empty) [2] Pi: save the current SLAM map into maps/<name>/
+│   └── save_map.sh                        [2] Pi: save the current SLAM map into maps/<name>/
 │
 └── src/                                   ROS 2 packages. The repo root is the colcon workspace
     │
     ├── nala_description/                  Robot model: frames base_footprint, base_link, laser
-    │   ├── COLCON_IGNORE                  (empty) Skip this package until stage 2 fills it
-    │   ├── CMakeLists.txt                 (empty) [2] Build and install rules
-    │   ├── package.xml                    (empty) [2] Package manifest
+    │   ├── CMakeLists.txt                 [2] Install launch/ and urdf/
+    │   ├── package.xml                    [2] Package manifest
     │   ├── launch/
-    │   │   └── description.launch.py      (empty) [2] Start robot_state_publisher with the URDF
+    │   │   └── description.launch.py      [2] Start robot_state_publisher with the URDF (arg robot_config)
     │   └── urdf/
-    │       └── nala.urdf.xacro            (empty) [2] Robot frames and LiDAR mount pose
+    │       └── nala.urdf.xacro            [2] Robot frames and LiDAR mount pose (numbers from config/robot.yaml)
     │
-    ├── nala_base/                         Pi <-> MCU driver: /cmd_vel to the MCU, measured wheel speeds
+    ├── nala_base/                         Pi <-> MCU driver: /cmd_vel to the MCU, wheel odometry
     │   ├── package.xml                    [1] Package manifest
     │   ├── setup.py                       [1] Python package setup and node entry points
     │   ├── setup.cfg                      [1] Install paths for ros2 run
@@ -141,7 +144,7 @@ NALA/
     │   ├── nala_base/
     │   │   ├── __init__.py                (empty) [1] Python package marker. Stays empty
     │   │   ├── mcu_protocol.py            [1] Build velocity frames, parse feedback lines (no ROS)
-    │   │   ├── kinematics.py              [1] Speed limits. [2] Forward kinematics for odometry (no ROS)
+    │   │   ├── kinematics.py              [1] Speed limits. [2] Wheel speeds -> body speed, pose integration (no ROS)
     │   │   └── base_node.py               [1] ROS node: serial I/O, limits, /cmd_vel timeout. [2] /odom and TF
     │   └── test/
     │       ├── test_mcu_protocol.py       [1] Unit tests for mcu_protocol.py
@@ -161,17 +164,17 @@ NALA/
     │       └── test_keys.py               [1] Unit tests for keys.py
     │
     ├── nala_bringup/                      Launch files and RViz layouts for the 3 apps. Installs config/
-    │   ├── CMakeLists.txt                 [1] Install launch/ and the repo config/ folder
+    │   ├── CMakeLists.txt                 [1] Install launch/, rviz/ and the repo config/ folder
     │   ├── package.xml                    [1] Package manifest
     │   ├── launch/
     │   │   ├── app1_teleop_pi.launch.py   [1] Pi: base driver, Xbox controller (joy + teleop_twist_joy)
-    │   │   ├── app2_slam_pi.launch.py     (empty) [2] Pi: base driver + LiDAR + robot model + SLAM
-    │   │   ├── app2_slam_pc.launch.py     (empty) [2] PC: RViz with slam.rviz
+    │   │   ├── app2_slam_pi.launch.py     [2] Pi: app 1 + robot model + LiDAR + SLAM
+    │   │   ├── app2_slam_pc.launch.py     [2] PC: RViz with slam.rviz
     │   │   ├── app3_base_station_pc.launch.py   (empty) [3] PC: show the saved map, click to set the base station
     │   │   ├── app3_coverage_pi.launch.py (empty) [3] Pi: base driver + LiDAR + localization + Nav2 + coverage mission
     │   │   └── app3_coverage_pc.launch.py (empty) [3] PC: RViz with coverage.rviz to watch the mission
     │   └── rviz/
-    │       ├── slam.rviz                  (empty) [2] RViz layout for mapping
+    │       ├── slam.rviz                  [2] RViz layout for mapping: map, scan, robot, frames
     │       └── coverage.rviz              (empty) [3] RViz layout for base station picking and coverage
     │
     └── nala_coverage/                     Coverage path planning and the base -> coverage -> base mission
@@ -300,7 +303,49 @@ Both:
 - The Pi limits every command to 1.0 m/s and 1.0 rad/s (`config/base.yaml`).
 - Stop: Ctrl+C in either terminal. The Pi sends a stop frame when it exits.
 
-App 2 (mapping) and app 3 (coverage): not ready yet.
+### App 2: mapping
+
+**Pi terminal 1** (`ssh nala@nala.local`): app 1 + robot model + LiDAR + SLAM
+
+```bash
+ros2 launch nala_bringup app2_slam_pi.launch.py
+```
+
+**PC terminal 1** (in the repo folder): RViz shows the map, the LiDAR scan (red) and the robot
+
+```bash
+source config/ros_env.sh
+ros2 launch nala_bringup app2_slam_pc.launch.py
+```
+
+**PC terminal 2** (only for the keyboard): the same keyboard teleop as app 1
+
+```bash
+source config/ros_env.sh
+ros2 run nala_teleop keyboard_teleop --ros-args --params-file config/teleop.yaml
+```
+
+Drive slowly through every room (the Xbox controller with half stick is easiest).
+Turn slowly, and come back through rooms you have already seen. The map grows in RViz.
+
+**Save the map** while app 2 still runs. **Pi terminal 2** (`ssh nala@nala.local`):
+
+```bash
+bash ~/NALA/scripts/save_map.sh house1        # any new name; existing maps are never overwritten
+```
+
+This writes `~/NALA/maps/house1/`: `map.pgm` + `map.yaml` (the map image) and
+`map.posegraph` + `map.data` (the SLAM graph, for localization in app 3).
+
+**Copy the map to the PC**, PC terminal (in the repo folder):
+
+```bash
+scp -r nala@nala.local:NALA/maps/house1 maps/
+```
+
+Then stop app 2 with Ctrl+C in the Pi terminal 1.
+
+App 3 (coverage): not ready yet.
 
 ## Build and flash the MCU firmware
 
