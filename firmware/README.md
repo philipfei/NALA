@@ -90,6 +90,24 @@ Main loop: acknowledge an echo frame, apply a new command, and on each tick do s
 
 - **Build:** open `motor_driver_C.atsln` in Studio and press F7. Output: `motor_driver_C/Release/motor_driver_C.hex` (or `Debug/`). The Studio output folders are git-ignored.
 - **Flash** (ArduinoISP; Studio itself cannot use it): `avrdude -c stk500v1 -P COMx -b 19200 -p m328pb -U flash:w:motor_driver_C.hex:i` (needs a recent avrdude that knows `m328pb`; 8.0 from the Arduino IDE works). Fuses on the board are `lfuse 0xFF, hfuse 0xD1, efuse 0xF7`; do not write them. Wheels off the ground for the first run.
+- **ISP wiring** (an Arduino Uno running the *ArduinoISP* sketch, `File > Examples > 11.ArduinoISP`, as programmer):
+
+  | Uno | Target ATmega328PB | Signal |
+  |---|---|---|
+  | D10 | RESET (PC6) | reset |
+  | D11 | PB3 | MOSI |
+  | D12 | PB4 | MISO |
+  | D13 | PB5 | SCK |
+  | GND | GND | common ground (always) |
+  | 5V | VCC | only if the target has no supply of its own |
+
+  Order:
+  1. Upload ArduinoISP to the Uno (board "Arduino Uno", its COM port), then close the serial monitor.
+  2. Power everything off and unplug the encoder and motor-driver connectors (PB3/PB4 are also encoder E1). Connect **GND first**, then SCK, MISO, MOSI, RESET.
+  3. Power the target: either from its own supply (then do **not** connect the Uno 5V) or from the Uno 5V.
+  4. Test the link without writing anything: `avrdude -c stk500v1 -P COMx -b 19200 -p m328pb -v` must print the signature `1E 95 16`.
+  5. Flash (command above) and wait for `verified`.
+  6. Remove the ISP wires, at least RESET, so the chip runs on its own. Then watch the serial port at 9600 baud: `a`, `test`, then a wheel-speed line every 100 ms.
 - **Tests** (models and simulation, not hardware): `python tests/rx_parser_model_test.py`, `timeout_model_test.py`, `motor_polarity_model_test.py`, `tx_budget.py`, `pid_sim.py`.
 
 ## 6. Changes per version
@@ -119,4 +137,4 @@ Main loop: acknowledge an echo frame, apply a new command, and on each tick do s
 - Stopping is by coasting, so the stopping distance depends on friction.
 
 ---
-Last updated: 2026-10-07 12:01 · Stiffeel :octocat:
+Last updated: 2026-10-07 12:21 · Stiffeel :octocat:
