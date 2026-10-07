@@ -171,7 +171,7 @@ Everything below is project-specific and must be kept up to date.
 ## Firmware
 
 - A teammate writes and owns the firmware (`firmware/`, v1.0.0 since 2026-10-07). **Claude never edits `firmware/`.**
-- Protocol source of truth: `firmware/docs/protocol.md` (and `firmware/变化_v1.md`, `firmware/CHANGES_v0.md`).
+- Protocol source of truth: `firmware/README.md` (protocol, parameters, changes per version).
 - v1: control loop 20 Hz, feedback 10 Hz, MCU command timeout 200 ms, stop = coast. M2/M3 direction pins
   inverted because the wiring changed (user: expected, nothing to do on the Pi).
   When it changes, update the Pi code and `docs/mcu_protocol.md` (Pi-side summary) in the same commit.

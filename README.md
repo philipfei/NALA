@@ -92,12 +92,9 @@ NALA/
 │
 ├── firmware/                              MCU motor driver (ATmega328PB), Microchip Studio project.
 │   │                                      Written and owned by a teammate (v1.0.0). Claude does not edit it.
-│   ├── 变化_v1.md                         What changed in v1: 20 Hz control, PI controller, M2/M3 polarity (Chinese)
-│   ├── CHANGES_v0.md                      What changed in v0 from the old firmware (English)
+│   ├── README.md                          Protocol (source of truth), parameters, build/flash, changes per version
 │   ├── docs/
-│   │   ├── protocol.md                    The protocol, source of truth (Chinese)
-│   │   ├── state_machine.svg              UART frame parser state machine
-│   │   └── 笔记.md                        Refactoring notes (Chinese)
+│   │   └── state_machine.svg              Firmware state machine (labels in Chinese)
 │   ├── tests/                             Model tests and simulations (Python, run on a PC)
 │   │   ├── rx_parser_model_test.py        UART frame parser
 │   │   ├── timeout_model_test.py          200 ms command timeout
@@ -349,5 +346,6 @@ App 3 (coverage): not ready yet.
 
 ## Build and flash the MCU firmware
 
-The firmware is written by a teammate. See [firmware/变化_v1.md](firmware/变化_v1.md) and [firmware/CHANGES_v0.md](firmware/CHANGES_v0.md):
-open `firmware/motor_driver_C.atsln` in Microchip Studio on Windows (device pack ATmega_DFP 1.7.374), build, flash.
+The firmware is written by a teammate. See [firmware/README.md](firmware/README.md):
+build with Microchip Studio on Windows (`firmware/motor_driver_C.atsln`, F7), flash with `avrdude` and an ArduinoISP.
+The exact commands are in section 5 of the firmware README.

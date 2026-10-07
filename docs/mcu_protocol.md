@@ -2,9 +2,7 @@
 
 The firmware is written and owned by a teammate. Its own documents are the source of truth:
 
-- [firmware/docs/protocol.md](../firmware/docs/protocol.md) (Chinese): the protocol.
-- [firmware/变化_v1.md](../firmware/变化_v1.md) (Chinese): what changed in v1 (from v0).
-- [firmware/CHANGES_v0.md](../firmware/CHANGES_v0.md) (English): what changed in v0 (from the old firmware).
+- [firmware/README.md](../firmware/README.md): the protocol, parameters and changes per version.
 
 This file is the Pi-side summary, for firmware **v1.0.0 (NALA_v1, 2026-10-07)**.
 When the firmware protocol changes, update the Pi code (`src/nala_base/nala_base/mcu_protocol.py`)
@@ -110,4 +108,5 @@ w  = R/(4*k) * (-M1 - M2 + M3 + M4)
 3. `J` (Shift+j, strafe left), `j` (turn counter-clockwise): the wheels turn as in the formulas above.
 4. Release the key: the wheels stop after about 0.6 s (Pi `/cmd_vel` timeout). There should be no `cmd timeout`,
    because the Pi keeps sending (zero) frames. The wheels coast to a stop (no braking).
-5. Watch for oscillation. v1 has a new PI speed controller; tuning hints in `firmware/变化_v1.md`.
+5. Watch for oscillation. v1 has a new PI speed controller; see `firmware/README.md`.
+6. Top speed: 1.0 m/s needs 25 rad/s = 100 % feed-forward, so the motors may saturate below 1.0 m/s.
