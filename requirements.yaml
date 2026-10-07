@@ -4,7 +4,7 @@
 #
 # Packages are grouped by the first application (stage) that needs them:
 #   stage_1 = keyboard teleop, stage_2 = SLAM mapping, stage_3 = coverage.
-# stage_2 and stage_3 lists are the current plan. Confirm them when that stage starts.
+# stage_3 lists are the current plan. Confirm them when that stage starts.
 #
 # Python libraries are installed with apt (python3-*), not pip.
 # Ubuntu 24.04 blocks system-wide pip installs (PEP 668).
@@ -55,7 +55,7 @@ apt:
       - avahi-daemon                        # mDNS: ssh nala@nala.local
       - ros-jazzy-joy                       # Xbox controller -> /joy (SDL2). User nala must be in group input
       - ros-jazzy-teleop-twist-joy          # /joy -> /cmd_vel
-    stage_2:
+    stage_2:                                # installed by scripts/setup_pi.sh
       - ros-jazzy-rplidar-ros               # RPLIDAR A2M8 driver
       - ros-jazzy-robot-state-publisher     # publish robot frames from the URDF
       - ros-jazzy-xacro                     # URDF macros

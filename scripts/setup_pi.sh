@@ -36,6 +36,10 @@ $APT install ros-jazzy-joy ros-jazzy-teleop-twist-joy
 # joy reads /dev/input/event*, which belongs to the group input.
 sudo usermod -aG input "$USER"
 
+echo "== LiDAR, robot model, SLAM, map saver (app 2)"
+$APT install ros-jazzy-rplidar-ros ros-jazzy-robot-state-publisher ros-jazzy-xacro \
+  ros-jazzy-slam-toolbox ros-jazzy-nav2-map-server
+
 echo "== UART to the MCU (/dev/ttyS0)"
 sudo usermod -aG dialout "$USER"
 # The Linux serial console uses the same UART. Remove it from the kernel command line
