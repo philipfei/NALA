@@ -135,7 +135,7 @@ Everything below is project-specific and must be kept up to date.
   Set by `config/ros_env.sh`; `config/cyclonedds.xml` limits DDS to the 10.42.0.0/24 network.
 - PC firewall: ufw is active (input policy DROP). It must allow 10.42.0.0/24, or DDS from the Pi is blocked.
 - Install Python libraries with apt (`python3-*`). Ubuntu 24.04 blocks system-wide pip (PEP 668).
-- Firmware is built and flashed with Microchip Studio on Windows.
+- Firmware is built with Microchip Studio on Windows and flashed with avrdude (ArduinoISP), by the teammate.
 
 ## Hardware facts
 
@@ -171,9 +171,13 @@ Everything below is project-specific and must be kept up to date.
 
 ## Firmware
 
-- A teammate writes and owns the firmware (`firmware/`, v1.0.1 since 2026-10-07). **Claude never edits `firmware/`.**
+- A teammate owns the firmware (`firmware/`) and builds and flashes it. **Claude may edit `firmware/`** (user, 2026-10-07).
+  Claude cannot compile it: the PC has no avr-gcc (the user chose not to install it), so review the code carefully.
+- Version in the repo: v1.1.0 (2026-10-07, by Claude). **Not flashed yet**: until the teammate flashes it,
+  the Pi code (38400 baud, counts lines) cannot talk to the MCU (still v1.0.1, 9600 baud).
 - Protocol source of truth: `firmware/README.md` (protocol, parameters, changes per version).
-- v1: control loop 20 Hz, feedback 10 Hz, MCU command timeout 200 ms, stop = coast. M2/M3 direction pins
+- v1.1.0: control loop and feedback 20 Hz, feedback = cumulative encoder counts (`c n1 n2 n3 n4`), UART 38400,
+  feed-forward 6.5 %/(rad/s) (estimated from measurements), MCU command timeout 200 ms, stop = coast. M2/M3 direction pins
   are not inverted in software: the M2/M3 supply cables are wired opposite to M1/M4 in the hardware (nothing to do on the Pi).
   When it changes, update the Pi code and `docs/mcu_protocol.md` (Pi-side summary) in the same commit.
 - Open `firmware/motor_driver_C.atsln` in Microchip Studio. The linker needs `-lprintf_flt`.
@@ -203,16 +207,17 @@ SLAM must not jump to a wrong but similar-looking place.
   no speed keys, speeds only in `config/teleop.yaml`), RViz, base station picker.
 - Keyboard and joystick both publish `/cmd_vel` only while used, so they do not fight (no mux).
 - PC and Pi talk over the LAN with ROS 2 DDS (Cyclone, `ROS_DOMAIN_ID=0`). Their clocks must be in sync (both use NTP).
-- `nala_base` sends the current command to the MCU at a fixed rate (20 Hz), not synced to the MCU feedback (10 Hz)
+- `nala_base` sends the current command to the MCU at a fixed rate (20 Hz), not synced to the MCU feedback (20 Hz)
   (reasons in `docs/mcu_protocol.md`).
 - Frames (REP 105): `map -> odom -> base_footprint -> base_link -> laser`.
   Body frame: x forward, y left, z up. Positive angular z = counter-clockwise seen from above.
   `base_footprint` and `base_link` are the same pose (on the floor under the chassis center).
   `nala_base` publishes `/odom` and TF `odom -> base_footprint`; `robot_state_publisher` the rest of the robot;
   `slam_toolbox` `map -> odom`.
-- Odometry: each MCU wheel speed line (10 Hz) is integrated over the measured time since the line before
-  (a reader thread blocks on the UART: exact arrival time, no CPU while waiting; a 100 Hz rclpy timer
-  used 30 % CPU on the Pi). After a gap longer than `feedback_timeout` the gap is not integrated.
+- Odometry: from the cumulative encoder counts (firmware v1.1.0, 20 Hz): count change -> wheel angle ->
+  body movement -> pose. A dropped line loses no distance. `/odom` speed = movement / MCU periods covered.
+  A reader thread blocks on the UART (exact arrival time, no CPU while waiting; a 100 Hz rclpy timer used
+  30 % CPU on the Pi). Tested on the PC with a fake MCU on a pty (dropped line, MCU restart).
 - The URDF reads its numbers from `config/robot.yaml` (xacro `load_yaml`), passed in as launch arg `robot_config`.
 - Maps: `scripts/save_map.sh <name>` on the Pi saves `map.pgm/.yaml` (map_saver_cli) and
   `map.posegraph/.data` (slam_toolbox serialize_map). The PC copies the folder with `scp`.
@@ -226,7 +231,7 @@ SLAM must not jump to a wrong but similar-looking place.
 
 ### Plan against SLAM pose jumps (tune and verify in stage 2)
 
-- Good wheel odometry from the measured wheel speeds (calibrated).
+- Good wheel odometry from the encoder counts (scale checked 2026-10-07).
 - Tune `slam_toolbox` (`config/slam_mapping.yaml`) to trust odometry: small scan-match search window,
   no response expansion, loop closure only close to the estimate (small loop search distance and window)
   and with strict match thresholds, Huber loss in the solver. Start values are set (2026-10-07), not tuned yet.
@@ -236,7 +241,8 @@ SLAM must not jump to a wrong but similar-looking place.
 
 ## Open questions (ask before the stage that needs them)
 
-- [1] Hardware test with the new firmware (wheels off the ground): axes, wheel speed signs, PID behavior.
+- [1] Firmware v1.1.0: the teammate flashes it; then on the Pi: `git pull`, build, check counts lines at 20 Hz,
+  repeat the 1.17 m odometry check, step test for the feed-forward 6.5 (rise time, overshoot), Xbox strafe + turn.
   Checklist in `docs/mcu_protocol.md`.
 - [2] LiDAR mount height above the floor (placeholder 0.20 m in `config/robot.yaml`).
 - [2] Driving test: forward odometry scale checked (1.17 m, 8 deg). Still open: strafe and 360 deg turn, then SLAM tuning

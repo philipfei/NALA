@@ -26,7 +26,7 @@ The PC runs the keyboard teleop, RViz and the map tools. An Xbox controller (pai
 Network: the PC shares its connection on USB Ethernet (10.42.0.1/24). The Pi is on WiFi in that network.
 ROS uses only this network (`config/cyclonedds.xml`), `ROS_DOMAIN_ID=0`.
 
-MCU firmware: ATmega328PB, written by a teammate, built and flashed with Microchip Studio on Windows.
+MCU firmware: ATmega328PB, owned by a teammate, built with Microchip Studio on Windows and flashed with avrdude.
 All dependencies: [requirements.yaml](requirements.yaml).
 
 ## Hardware
@@ -36,7 +36,8 @@ All dependencies: [requirements.yaml](requirements.yaml).
 - Motors: M1 front-left, M2 rear-left, M3 rear-right, M4 front-right. Encoders: 1536 counts per wheel revolution.
 - LiDAR: RPLIDAR A2M8 (USB, CP2102 adapter, 115200 baud), at the chassis center, facing backward. Height not measured yet.
 - Motor driver: ATmega328PB on the Pi GPIO UART (`/dev/ttyS0`). It runs a speed controller per wheel and sends back
-  the measured wheel speeds every 100 ms (control loop 20 Hz, stops after 200 ms without a command). Protocol: [docs/mcu_protocol.md](docs/mcu_protocol.md).
+  the cumulative encoder counts every 50 ms at 38400 baud (control loop 20 Hz, stops after 200 ms without a command).
+  Firmware v1.1.0 is needed (not flashed yet). Protocol: [docs/mcu_protocol.md](docs/mcu_protocol.md).
 - IMU: none for now (may be added later).
 - Xbox Wireless Controller (`C8:3F:26:93:1B:B2`), paired with the Pi over Bluetooth.
 
@@ -46,7 +47,7 @@ All dependencies: [requirements.yaml](requirements.yaml).
 PC                                   Pi (on the robot)                         MCU
 nala_teleop keyboard --/cmd_vel-->   nala_base --UART velocity frame, 20 Hz-->  motor_driver
 Xbox --Bluetooth--> joy_node -> teleop_twist_joy --/cmd_vel--> nala_base
-                                     nala_base <--UART wheel speeds, 10 Hz---   (PI per wheel)
+                                     nala_base <--UART encoder counts, 20 Hz-   (PI per wheel)
                                      nala_base: wheel odometry (/odom, odom->base_footprint)
 RViz <--/map /scan /tf--             rplidar_ros  (/scan)                       [stage 2]
                                      robot_state_publisher (base_footprint->base_link->laser)
@@ -91,7 +92,7 @@ NALA/
 │   └── mcu_protocol.md                    Pi-side summary of the Pi <-> MCU protocol, first hardware test
 │
 ├── firmware/                              MCU motor driver (ATmega328PB), Microchip Studio project.
-│   │                                      Written and owned by a teammate (v1.0.0). Claude does not edit it.
+│   │                                      Owned by a teammate, who builds and flashes it. v1.1.0 (by Claude).
 │   ├── README.md                          Protocol (source of truth), parameters, build/flash, changes per version
 │   ├── docs/
 │   │   └── state_machine.svg              Firmware state machine (labels in Chinese)
@@ -100,7 +101,7 @@ NALA/
 │   │   ├── timeout_model_test.py          200 ms command timeout
 │   │   ├── motor_polarity_model_test.py   Motor direction pins
 │   │   ├── pid_sim.py                     Speed controller simulation
-│   │   └── tx_budget.py                   Feedback line load at 9600 baud
+│   │   └── tx_budget.py                   Feedback line load at 38400 baud
 │   ├── motor_driver_C.atsln               Studio solution file (open this one)
 │   └── motor_driver_C/
 │       ├── motor_driver_C.cproj           Studio project: device, compiler and linker settings
@@ -108,7 +109,7 @@ NALA/
 │       ├── config.h                       All firmware parameters and the wiring map
 │       ├── main.c                         Command handling, kinematics, PID loop, feedback, timeout
 │       ├── encoder.c / encoder.h          Encoder counting in pin-change interrupts
-│       ├── USART.c / Usart.h              UART driver (9600 baud, 8N1, TX ring buffer)
+│       ├── USART.c / Usart.h              UART driver (8N1, TX ring buffer; baud rate in config.h)
 │       ├── motor_functions.c / .h         Set PWM duty and direction of each motor
 │       ├── pwm.c / pwm.h                  PWM pin and timer setup
 │       ├── timer.c / timer.h              Timer helpers (Timer3 is the 50 ms control tick)
@@ -267,7 +268,7 @@ source ~/NALA/config/ros_env.sh
 ros2 launch nala_bringup app1_teleop_pi.launch.py
 ```
 
-Add `log_level:=debug` to see every frame sent to the MCU and the measured wheel speeds.
+Add `log_level:=debug` to see every frame sent to the MCU and the wheel speeds (from the encoder counts).
 
 **PC terminal** (in the repo folder, for the keyboard; not needed for the Xbox controller):
 
@@ -347,6 +348,6 @@ App 3 (coverage): not ready yet.
 
 ## Build and flash the MCU firmware
 
-The firmware is written by a teammate. See [firmware/README.md](firmware/README.md):
+The firmware is owned by a teammate. See [firmware/README.md](firmware/README.md):
 build with Microchip Studio on Windows (`firmware/motor_driver_C.atsln`, F7), flash with `avrdude` and an ArduinoISP.
 The exact commands are in section 5 of the firmware README.

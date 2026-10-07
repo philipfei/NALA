@@ -1,6 +1,6 @@
 # NALA firmware (ATmega328PB motor driver)
 
-Firmware for the NALA base. It receives body-velocity commands from the Pi over UART, runs a speed controller on four mecanum wheels and reports the measured wheel speeds. Current version: **v1.0.1**. Toolchain: Atmel/Microchip Studio 7 (avr-gcc 5.4.0, ATmega_DFP 1.7.374), 16 MHz external crystal.
+Firmware for the NALA base. It receives body-velocity commands from the Pi over UART, runs a speed controller on four mecanum wheels and reports the cumulative encoder counts. Current version: **v1.1.0**. Toolchain: Atmel/Microchip Studio 7 (avr-gcc 5.4.0, ATmega_DFP 1.7.374), 16 MHz external crystal.
 
 > ### HARDWARE POLARITY NOTE (read before touching the motor wiring)
 >
@@ -16,7 +16,7 @@ Pi side: [`../src/nala_base/nala_base/mcu_protocol.py`](../src/nala_base/nala_ba
 
 ## 1. Protocol
 
-UART0, **9600 8N1**, no flow control (MCU RXD0 = PD0, TXD0 = PD1, TTL levels).
+UART0, **38400 8N1** (v1.1.0; was 9600), no flow control (MCU RXD0 = PD0, TXD0 = PD1, TTL levels).
 
 ### Host -> MCU
 
@@ -42,13 +42,13 @@ UART0, **9600 8N1**, no flow control (MCU RXD0 = PD0, TXD0 = PD1, TTL levels).
 
 | Line | When |
 |---|---|
-| `%f \t %f \t %f \t %f` - measured speed of M1..M4 in rad/s, positive = the wheel pushes the robot forward | :exclamation:every 100 ms (10 Hz) |
+| `c n1 n2 n3 n4` - **cumulative encoder counts** of M1..M4 since power-up (int32, 1536 per wheel turn), positive = the wheel drove the robot forward. The host uses the difference of two lines, so a dropped line loses no distance | :exclamation:every 50 ms (20 Hz) |
 | `a`, `test` | once after reset |
 | `Vx Vy w` (3 floats) | after each velocity frame, only when echo is on (default off) |
 | `echo on` / `echo off` | after an echo frame |
 | `cmd timeout` | once, when the timeout stops the robot |
 
-> **Link budget** (9600 baud = 960 byte/s). A velocity frame is 5 bytes, so 20 Hz uses 10 % of the Pi -> MCU wire. A wheel-speed line is up to 50 bytes (about 52 ms): 10 Hz uses 52 % of the MCU -> Pi wire, 20 Hz would need 104 % and does not fit. A line that does not fit into the 128-byte TX buffer is dropped, never waited for. With echo on and 20 Hz commands the total exceeds the wire capacity, so use echo for debugging only. If the Pi does not read the feedback, its RX buffer fills up (harmless); flush it (`reset_input_buffer()`) before reading.
+> **Link budget** (38400 baud = 3840 byte/s). A velocity frame is 5 bytes, so 20 Hz uses 2.6 % of the Pi -> MCU wire. A counts line is up to 50 bytes (13 ms), about 25 when driving: 20 Hz uses at most 26 % of the MCU -> Pi wire. The command echo at 20 Hz adds about 16 %. A line that does not fit into the 128-byte TX buffer is dropped, never waited for. If the Pi does not read the feedback, its RX buffer fills up (harmless); flush it (`reset_input_buffer()`) before reading.
 
 ## 2. Interface
 
@@ -60,7 +60,7 @@ UART0, **9600 8N1**, no flow control (MCU RXD0 = PD0, TXD0 = PD1, TTL levels).
 | M4 | PB2 (OC1B) | PE3 | E4: PC2 / PC3 | +1 | + / + / + |
 
 - Wheel target: `M1 = (Vx - Vy - k*w)/R`, `M2 = (Vx + Vy - k*w)/R`, `M3 = (Vx - Vy + k*w)/R`, `M4 = (Vx + Vy + k*w)/R`, with `k = half track + half wheelbase = 0.290 m`, `R = 0.040 m`.
-- Assumed layout *(unverified)*: M1 front-left, M2 rear-left, M3 rear-right, M4 front-right.
+- Layout: M1 front-left, M2 rear-left, M3 rear-right, M4 front-right. Forward driving and the odometry scale were verified on the robot (2026-10-07: 1.17 m driven = 1.17 m odometry); strafe and turn worked as expected in the teleop test.
 - Motor input polarity: **no motor is inverted in software** (`MOTORn_DIR_INVERT` = 0 for all four). The M2/M3 supply cables are wired opposite to M1/M4 in the hardware; see the **hardware polarity note** at the top.
 - Encoders: only the A pins raise pin-change interrupts; B is sampled in the interrupt. Every A edge counts, direction from B.
 - The motor <-> encoder association (`MOTORn_ENCODER`), encoder signs (`MOTORn_ENC_SIGN`) and all pins are in the "WIRING MAP" of `config.h`. Invalid mappings fail at compile time.
@@ -70,13 +70,14 @@ UART0, **9600 8N1**, no flow control (MCU RXD0 = PD0, TXD0 = PD1, TTL levels).
 | Parameter | Value |
 |---|---|
 | Wheel radius / half track / half wheelbase | 0.040 / 0.160 / 0.130 m |
-| Encoder counts per wheel revolution | 1536 (inherited; marked as confirmed in `../docs/mcu_protocol.md`) |
+| Encoder counts per wheel revolution | 1536 (verified on the robot, 2026-10-07) |
 | Control period (Timer3, `OCR3A = 12499`) | 50 ms (20 Hz); one encoder count = 0.082 rad/s |
-| Feedback every | 2 periods (10 Hz) |
+| Feedback every | 1 period (20 Hz), cumulative encoder counts |
 | Command timeout | 200 ms |
-| UART / command scale | 9600 baud / 50 counts per unit (0.02) |
+| UART / command scale | 38400 baud / 50 counts per unit (0.02) |
 | Speed controller | positional PI + feed-forward + anti-windup: Kp 1.0, Ki 8.0, integral limit 25 % |
-| Feed-forward / output limit | 4.0 % duty per rad/s / +-100 % (8-bit PWM, 1/255 resolution) |
+| Feed-forward / output limit | 6.5 % duty per rad/s (measured, v1.1.0) / +-100 % (8-bit PWM, 1/255 resolution) |
+| Measured top speed (100 % PWM) | 12.6-13.1 rad/s = 0.50-0.52 m/s rim speed, with and without load (2026-10-07) |
 | Command echo at power-up | off (`ECHO_COMMAND`) |
 
 Controller per wheel: `e = target - measured`, `pwm = 4.0*target + Kp*e + I`, `I += Ki*e*dt` (clamped, not integrated while saturated). Target 0 gives output 0 and clears `I`; `I` is also cleared when the target changes sign.
@@ -115,7 +116,7 @@ Main loop: acknowledge an echo frame, apply a new command, and on each tick do s
   3. Power the target: either from its own supply (then do **not** connect the Uno 5V) or from the Uno 5V.
   4. Test the link without writing anything: `avrdude -c stk500v1 -P COMx -b 19200 -p m328pb -v` must print the signature `1E 95 16`.
   5. Flash (command above) and wait for `verified`.
-  6. Remove the ISP wires, at least RESET, so the chip runs on its own. Then watch the serial port at 9600 baud: `a`, `test`, then a wheel-speed line every 100 ms.
+  6. Remove the ISP wires, at least RESET, so the chip runs on its own. Then watch the serial port at 38400 baud: `a`, `test`, then a counts line (`c 0 0 0 0` at rest) every 50 ms.
 - **Tests** (models and simulation, not hardware): `python tests/rx_parser_model_test.py`, `timeout_model_test.py`, `motor_polarity_model_test.py`, `tx_budget.py`, `pid_sim.py`.
 
 ## 6. Changes per version
@@ -140,12 +141,16 @@ Main loop: acknowledge an echo frame, apply a new command, and on each tick do s
 **v1.0.1 (2026-10-07)**
 - Software polarity of M2 and M3 reverted (all `MOTORn_DIR_INVERT` = 0): the M2/M3 supply cables are wired with opposite polarity to M1/M4 in the hardware, so no software inversion is needed (see the hardware polarity note). Nothing else changed.
 
+**v1.1.0 (2026-10-07)** - from measurements on the robot. **Needs the matching Pi code** (same commit).
+- Feedback: the cumulative encoder counts of M1..M4 (`c n1 n2 n3 n4`) every period (20 Hz), instead of the wheel speeds of every 2nd period (10 Hz). v1.0.x never reported the counts of the other period, and a dropped line lost 100 ms of motion; now the host gets every count.
+- UART 9600 -> 38400 baud (one line takes ~7 ms instead of ~48 ms, so the odometry time stamps are more exact).
+- Feed-forward 4.0 -> 6.5 % per rad/s: 100 % PWM gives only ~13 rad/s, and with 4.0 the integral sat at its 25 % limit at 11 rad/s (the wheels needed ~1 s to reach the target).
+
 ## 7. Known limitations
 
-- The controller gains come from simulation of an *assumed* motor model, not from tuning on the robot.
-- Wheel layout, axis directions and the 1536 counts/rev still need to be confirmed on the robot.
-- Speeds above what the motors can do (for example 1.0 m/s needs 25 rad/s = 100 % feed-forward) saturate; the real speed is then lower than commanded.
+- The PI gains come from simulation of an *assumed* motor model; the feed-forward 6.5 is estimated from one measurement. Check both with a step test after flashing v1.1.0.
+- The motors reach only ~13 rad/s (0.50-0.52 m/s). Faster targets saturate at 100 % PWM; the Pi limits every wheel to 0.45 m/s (`max_wheel_speed` in `config/base.yaml`).
 - Stopping is by coasting, so the stopping distance depends on friction.
 
 ---
-Last updated: 2026-10-07 14:57 · Stiffeel :octocat:
+Last updated: 2026-10-07 (v1.1.0) · Stiffeel :octocat: · Claude

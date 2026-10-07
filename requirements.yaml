@@ -24,8 +24,9 @@ system:
     user: nala
   firmware:
     mcu: ATmega328PB, 16 MHz
-    ide: Microchip Studio (Windows)   # build and flash
-    device_pack: ATmega_DFP 1.7.374   # from motor_driver_C.cproj (firmware v0.1.0, owned by a teammate)
+    ide: Microchip Studio (Windows)   # build
+    device_pack: ATmega_DFP 1.7.374   # from motor_driver_C.cproj (firmware v1.1.0, owned by a teammate)
+    flash_tool: avrdude 8.0 (from the Arduino IDE), ArduinoISP   # see firmware/README.md section 5
     linker_flags: -lprintf_flt        # needed for %f in sprintf
 
 apt:

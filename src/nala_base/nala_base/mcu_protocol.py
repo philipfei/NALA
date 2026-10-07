@@ -25,7 +25,7 @@ def parse_line(line):
     """Parse one text line from the MCU (without the newline).
 
     Returns:
-      ('wheels', [m1, m2, m3, m4])  measured wheel speeds in rad/s
+      ('counts', [m1, m2, m3, m4])  cumulative encoder counts since the MCU start (+ = forward)
       ('echo', [vx, vy, wz])        command echo (only when echo is on in the MCU)
       ('text', line)                any other text, e.g. 'cmd timeout', 'test'
       None                          empty line
@@ -33,12 +33,21 @@ def parse_line(line):
     line = line.strip()
     if not line:
         return None
+    parts = line.split()
+    if parts[0] == 'c' and len(parts) == 5:
+        try:
+            return ('counts', [int(p) for p in parts[1:]])
+        except ValueError:
+            return ('text', line)
     try:
-        values = [float(v) for v in line.split()]
+        values = [float(v) for v in parts]
     except ValueError:
         return ('text', line)
-    if len(values) == 4:
-        return ('wheels', values)
     if len(values) == 3:
         return ('echo', values)
     return ('text', line)
+
+
+def count_delta(new, old):
+    """Encoder counts from old to new. Also correct when the MCU int32 counter wraps around."""
+    return (new - old + 2**31) % 2**32 - 2**31

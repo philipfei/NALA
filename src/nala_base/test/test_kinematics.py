@@ -47,6 +47,12 @@ def test_limit_is_the_fastest_wheel(body):
     assert limited[0] * body[1] == pytest.approx(limited[1] * body[0])   # direction kept
 
 
+def test_one_wheel_turn_is_one_circumference():
+    # Wheel angle changes (rad) give the body movement: one turn of all 4 wheels = 2*pi*R forward.
+    turn = 2 * math.pi
+    assert wheels_to_body(turn, turn, turn, turn, R, K) == pytest.approx((2 * math.pi * R, 0.0, 0.0))
+
+
 def test_all_wheels_forward_is_forward():
     vx, vy, wz = wheels_to_body(2.5, 2.5, 2.5, 2.5, R, K)
     assert (vx, vy, wz) == pytest.approx((0.1, 0.0, 0.0))

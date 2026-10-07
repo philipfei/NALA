@@ -1,7 +1,8 @@
-"""ROS node: /cmd_vel -> MCU velocity frames over the UART, MCU wheel speeds -> /odom and TF.
+"""ROS node: /cmd_vel -> MCU velocity frames over the UART, MCU encoder counts -> /odom and TF.
 
 All parameters come from config/base.yaml (no defaults here).
-Odometry: each measured wheel speed line is integrated over the time since the line before.
+Odometry: the MCU sends cumulative encoder counts; the change between two lines is the exact
+wheel movement, so a dropped line loses no distance.
 A reader thread blocks on the UART, so each line gets its arrival time and no CPU is used while waiting.
 """
 
@@ -19,7 +20,7 @@ import serial
 from tf2_ros import TransformBroadcaster
 
 from nala_base.kinematics import integrate_pose, limit_wheel_speed, wheels_to_body
-from nala_base.mcu_protocol import encode_command, parse_line
+from nala_base.mcu_protocol import count_delta, encode_command, parse_line
 
 ODOM_FRAME = 'odom'
 BASE_FRAME = 'base_footprint'
@@ -38,6 +39,8 @@ class BaseNode(Node):
         self.radius = self.param('wheel_radius', Parameter.Type.DOUBLE)
         self.k = (self.param('half_track_width', Parameter.Type.DOUBLE)
                   + self.param('half_wheelbase', Parameter.Type.DOUBLE))
+        self.rad_per_count = 2 * math.pi / self.param('encoder_counts_per_rev', Parameter.Type.INTEGER)
+        self.feedback_period = self.param('feedback_period', Parameter.Type.DOUBLE)
         self.feedback_timeout = self.param('feedback_timeout', Parameter.Type.DOUBLE)
 
         self.serial = serial.Serial(port, baud, timeout=READ_TIMEOUT)
@@ -47,8 +50,9 @@ class BaseNode(Node):
         self.stopped = True       # True while sending zero because /cmd_vel is too old
 
         self.pose = (0.0, 0.0, 0.0)            # x, y, yaw in the odom frame
-        self.wheels_time = time.monotonic()    # time of the last wheel speed line (or the start)
-        self.feedback_lost = False             # True after feedback_timeout without wheel speeds
+        self.counts = None                     # last counts line (None: the next line is only the reference)
+        self.feedback_time = time.monotonic()  # time of the last counts line (or the start)
+        self.feedback_lost = False             # True after feedback_timeout without counts
 
         self.odom_pub = self.create_publisher(Odometry, 'odom', 10)
         self.tf_broadcaster = TransformBroadcaster(self)
@@ -73,10 +77,10 @@ class BaseNode(Node):
 
     def on_command_timer(self):
         self.send_command()
-        if not self.feedback_lost and time.monotonic() - self.wheels_time > self.feedback_timeout:
+        if not self.feedback_lost and time.monotonic() - self.feedback_time > self.feedback_timeout:
             self.feedback_lost = True
             self.get_logger().warn(
-                f'No wheel speeds from the MCU for {self.feedback_timeout} s: odometry stops.')
+                f'No wheel counts from the MCU for {self.feedback_timeout} s: odometry stops.')
 
     def send_command(self):
         fresh = (self.cmd_time is not None
@@ -107,29 +111,39 @@ class BaseNode(Node):
         if result is None:
             return
         kind, value = result
-        if kind == 'wheels':
-            self.get_logger().debug(f'wheels M1..M4 [rad/s]: {value}')
-            self.on_wheels(value)
+        if kind == 'counts':
+            self.on_counts(value)
         elif kind == 'echo':
             self.get_logger().debug(f'echo vx vy wz: {value}')
         elif value == 'cmd timeout':
             self.get_logger().warn('MCU: cmd timeout (no velocity frame for 200 ms)')
         else:
+            if value == 'test':   # the MCU (re)started: its counters start again at 0
+                self.counts = None
             self.get_logger().info(f'MCU: {value}')
 
-    def on_wheels(self, wheels):
-        """Integrate one measured wheel speed line and publish /odom and TF."""
+    def on_counts(self, counts):
+        """Integrate one line of cumulative encoder counts and publish /odom and TF.
+
+        The speed in /odom is the movement divided by the MCU periods the line covers
+        (normally 1; 2 if a line was dropped), counted from the arrival times.
+        """
         now = time.monotonic()
-        dt = now - self.wheels_time
-        self.wheels_time = now
-        vx, vy, wz = wheels_to_body(*wheels, self.radius, self.k)
+        periods = max(1, round((now - self.feedback_time) / self.feedback_period))
+        self.feedback_time = now
         if self.feedback_lost:
-            # Do not integrate over the gap: the speed during it is unknown.
             self.feedback_lost = False
-            self.get_logger().info('Wheel speeds from the MCU again.')
-        else:
-            self.pose = integrate_pose(*self.pose, vx, vy, wz, dt)
-        self.publish_odom(vx, vy, wz)
+            self.get_logger().info('Wheel counts from the MCU again.')
+        if self.counts is None:
+            self.counts = counts
+            return
+        angles = [count_delta(new, old) * self.rad_per_count for new, old in zip(counts, self.counts)]
+        self.counts = counts
+        dx, dy, dyaw = wheels_to_body(*angles, self.radius, self.k)   # movement in the robot frame
+        self.pose = integrate_pose(*self.pose, dx, dy, dyaw, 1.0)
+        dt = periods * self.feedback_period
+        self.get_logger().debug(f'wheels M1..M4 [rad/s]: {[round(a / dt, 2) for a in angles]}')
+        self.publish_odom(dx / dt, dy / dt, dyaw / dt)
 
     def publish_odom(self, vx, vy, wz):
         x, y, yaw = self.pose

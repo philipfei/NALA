@@ -137,7 +137,7 @@
   <rect x="730" y="730" width="420" height="80" rx="10" class="act"/>
   <text x="940" y="754" text-anchor="middle" class="t">control_step()</text>
   <text x="940" y="774" text-anchor="middle" class="s">计数 → rad/s → PI + 前馈 → set_motor_speed()</text>
-  <text x="940" y="792" text-anchor="middle" class="s">每 2 次回传轮速行(10 Hz) · 指令超时(200 ms)则停车</text>
+  <text x="940" y="792" text-anchor="middle" class="s">每次回传累计计数行(20 Hz) · 指令超时(200 ms)则停车</text>
 
   <path d="M590,585 H730" class="ln"/>
   <path d="M590,670 H730" class="ln"/>
@@ -148,6 +148,6 @@
   <path d="M1150,770 H1166 V585 H1150" class="ld"/>
   <text x="1160" y="690" text-anchor="middle" class="s" transform="rotate(-90 1160 690)">repeat</text>
 
-  <text x="60" y="850" class="s">发往上位机的文本行 (轮速回传 / 回显 / "echo on|off") 先进入 128 字节的发送环形缓冲, 由 USART0_UDRE_vect 逐字节发出。</text>
+  <text x="60" y="850" class="s">发往上位机的文本行 (计数回传 / 回显 / "echo on|off") 先进入 128 字节的发送环形缓冲, 由 USART0_UDRE_vect 逐字节发出。</text>
   <text x="60" y="872" class="s">缓冲放不下时, 这一行直接丢弃 — 控制循环从不等待串口。</text>
 </svg>

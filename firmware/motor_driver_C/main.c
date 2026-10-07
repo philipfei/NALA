@@ -3,13 +3,14 @@
  *
  * Project  : NALA_v1 (ATmega328PB, 4 mecanum wheels, 4 quadrature encoders)
  * Author   : HY / Claude (NALA v1 revision)
- * Version  : v1.0.1
+ * Version  : v1.1.0
  * Date     : 2026-10-07
  *
- * v1 vs v0: 20 Hz control loop (feedback line at 10 Hz); speed controller replaced
- * by a positional PI with feed-forward and anti-windup (the v0 incremental PID
- * rang); M2/M3 motor polarity inverted in v1.0.0 and reverted in v1.0.1; command
- * timeout 200 ms.
+ * v1 vs v0: 20 Hz control loop; speed controller replaced by a positional PI with
+ * feed-forward and anti-windup (the v0 incremental PID rang); M2/M3 motor polarity
+ * inverted in v1.0.0 and reverted in v1.0.1; command timeout 200 ms.
+ * v1.1.0: the feedback line carries the cumulative encoder counts and is sent every
+ * period (20 Hz); UART 38400 baud; feed-forward 6.5 %/(rad/s) (measured).
  *
  * Original : motor_driver_C by Floris van Mourik (created 9/18/2021), with pwm/timer
  *            code by Mathan and UART code by sojim. The untouched original sources
@@ -20,8 +21,8 @@
  *   Receives body velocity commands (Vx, Vy, w) over UART, converts them to four
  *   wheel speed targets with the mecanum inverse kinematics, and runs one speed
  *   controller (PI + feed-forward) per wheel on the speed measured from the
- *   encoders. Its output drives four PWM motor channels. The four measured wheel
- *   speeds are printed back over the UART.
+ *   encoders. Its output drives four PWM motor channels. The cumulative encoder
+ *   counts of the four wheels are printed back over the UART (odometry on the host).
  *
  * STRUCTURE (no blocking loops, no software delays)
  *   - Encoders   : pin-change interrupts count edges continuously     (encoder.c)
@@ -43,7 +44,7 @@
  *   At the default 50 ms period one encoder count is 0.082 rad/s.
  *
  * UART PROTOCOL (frame layout unchanged; scale now 0.02, see below)
- *   Host -> MCU, 9600 8N1:  0x80 0x86 Vx Vy w   (3x int8; /50 -> m/s, m/s, rad/s; 0.02 per count)
+ *   Host -> MCU, 38400 8N1: 0x80 0x86 Vx Vy w   (3x int8; /50 -> m/s, m/s, rad/s; 0.02 per count)
  *   NOTE: the original scale was /100. The host (Pi) must send value*50.
  *   Axes: ROS convention, Vx forward, Vy left, w counter-clockwise positive.
  *   Safety: no velocity frame for CMD_TIMEOUT_MS (v1: 200 ms) while moving -> stop,
@@ -52,8 +53,9 @@
  *   Added in NALA_v0 (separate frame, does not affect the one above):
  *                           0x80 0x87 E          E=1 command echo on, E=0 off
  *                           -> MCU replies "echo on\n" / "echo off\n"
- *   MCU -> host (telemetry, once per TELEMETRY_EVERY_N_TICKS periods = 10 Hz in v1):
- *       "<w1> \t <w2> \t <w3> \t <w4>\n"   measured wheel speeds M1..M4 in rad/s
+ *   MCU -> host (telemetry, once per TELEMETRY_EVERY_N_TICKS periods = 20 Hz in v1.1.0):
+ *       "c <n1> <n2> <n3> <n4>\n"   cumulative encoder counts of M1..M4 since power-up
+ *                                  (int32, + = the wheel drove the robot forward)
  *   Boot text: "a\n" (ADC init) and "test\n".
  *
  * WIRING / MAPPING : see config.h (motor <-> encoder association, signs, pins).
@@ -96,6 +98,7 @@ static float M_w[NUM_MOTORS];            /* target wheel speed   [rad/s] */
 static float M_w_measured[NUM_MOTORS];   /* measured wheel speed [rad/s] */
 static float M_pwm[NUM_MOTORS];          /* motor power command  [% duty, -100..100] */
 static float M_i[NUM_MOTORS];            /* integral part of the speed controller [% duty] */
+static int32_t M_count[NUM_MOTORS];      /* cumulative encoder counts since power-up (+ = forward), sent to the host */
 
 /* Command timeout bookkeeping (main-loop only, see CMD_TIMEOUT_MS in config.h). */
 static uint8_t cmd_age_ticks;    /* control periods since the last velocity frame (saturates at 255) */
@@ -333,6 +336,7 @@ static void control_step(void)
 	for (uint8_t m = 0; m < NUM_MOTORS; m++) {
 		int32_t counts = delta[motor_encoder[m]] * motor_enc_sign[m];
 		M_w_measured[m] = ((float)counts / ENC_COUNTS_PER_REV) / dt * TWO_PI_F;   /* rad/s */
+		M_count[m] += counts;
 	}
 
 	for (uint8_t m = 0; m < NUM_MOTORS; m++) {
@@ -340,13 +344,13 @@ static void control_step(void)
 	}
 	set_motor_speed();
 
-	/* Telemetry (10 Hz): same text format as the original; dropped (never blocking) if the TX buffer is full. */
+	/* Telemetry (20 Hz): cumulative encoder counts; dropped (never blocking) if the TX buffer is full. */
 	static uint8_t tel_count;
 	if (++tel_count >= TELEMETRY_EVERY_N_TICKS) {
 		tel_count = 0;
 		char line[80];
 		int n = snprintf(line, sizeof(line), TELEMETRY_FMT,
-		                 M_w_measured[0], M_w_measured[1], M_w_measured[2], M_w_measured[3]);
+		                 (long)M_count[0], (long)M_count[1], (long)M_count[2], (long)M_count[3]);
 		if (n > 0 && n < (int)sizeof(line)) {
 			usart_try_send_buf(line, (uint8_t)n);
 		}

@@ -21,7 +21,9 @@ def limit_wheel_speed(vx, vy, wz, k, max_wheel_speed):
 
 
 def wheels_to_body(m1, m2, m3, m4, radius, k):
-    """Measured wheel speeds (rad/s) -> body speed (vx, vy, wz).
+    """Wheel speeds (rad/s) -> body speed (vx, vy, wz).
+
+    Also works for movements: wheel angle changes (rad) -> body movement (dx, dy, dyaw).
 
     M1 front-left, M2 rear-left, M3 rear-right, M4 front-right. Positive = the wheel pushes forward.
     radius: wheel radius (m). k: half track width + half wheelbase (m).

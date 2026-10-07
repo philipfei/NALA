@@ -3,13 +3,15 @@
  *
  * Project : NALA_v1 motor driver (ATmega328PB, 4x mecanum wheels, 4x quadrature encoders)
  * Author  : HY (NALA v1 revision)
- * Version : v1.0.1
+ * Version : v1.1.0
  * Date    : 2026-10-07
  *
  * v1 changes vs v0: 20 Hz control/feedback (50 ms period), speed controller
  * redesigned (positional PI + feed-forward + anti-windup, replaces the old
  * incremental PID that rang), M2/M3 motor polarity (inverted in v1.0.0, reverted in
  * v1.0.1: no motor is inverted any more), shorter command timeout (200 ms).
+ * v1.1.0: feedback = cumulative encoder counts every period (20 Hz), UART 38400 baud,
+ * feed-forward 6.5 %/(rad/s) from measurements on the robot.
  *
  * Everything that is "a number you may want to change" or "a wire you may want to
  * re-assign" lives in this file. The .c files contain no magic numbers for these.
@@ -48,7 +50,8 @@
  * Counts per wheel revolution. The firmware counts EVERY edge (rising and
  * falling) of channel A only and takes the direction from channel B, exactly as
  * the original code did. 1536 is the value inherited from the original code
- * (encoder lines x gear ratio); it has NOT been re-verified on this hardware.
+ * (encoder lines x gear ratio). Verified on the robot (2026-10-07): a 1.17 m drive
+ * measured with a tape gave 1.17 m of odometry from these counts.
  */
 #define ENC_COUNTS_PER_REV  1536.0f
 #define TWO_PI_F            6.28318531f
@@ -78,20 +81,22 @@
 #endif
 
 /*
- * Print the 4 measured wheel speeds every N control periods.
- * v1: N = 2 -> feedback at 10 Hz while control and commands run at 20 Hz.
- * Why: the feedback line is ~50 characters (~52 ms at 9600 baud). Sent every 100 ms
- * it leaves the line about half idle and the TX buffer always drains before the
- * next line is queued - nothing piles up. Sent every 50 ms it would not fit.
+ * Send the feedback line every N control periods.
+ * v1.1.0: N = 1 -> 20 Hz. The line carries the CUMULATIVE encoder counts of M1..M4
+ * since power-up, with MOTORn_ENC_SIGN applied (+ = the wheel drove the robot forward).
+ * The host takes the difference of two lines, so a dropped line loses no distance.
+ * (v1.0.x sent the speed of only every 2nd period: the counts of the other period
+ * were never reported, and a dropped line lost 100 ms of motion.)
+ * Line length: "c" + 4 x (space + up to 11 characters) + "\n" <= 50 bytes, about 25
+ * when driving. At 38400 baud one byte takes 0.26 ms, so even the longest line
+ * (13 ms) uses only 26 % of the line at 20 Hz. The command echo at 20 Hz adds ~16 %.
  * If a line does not fit in the TX buffer it is dropped, never waited for.
- * (Turning the command echo ON at 20 Hz commands adds ~62 % line load, i.e. the total
- * exceeds the line capacity and some echo/feedback lines will be dropped - never
- * waited for. Use the echo for debugging only.)
+ * The int32 counters overflow only after about a week of driving in one direction.
  */
-#define TELEMETRY_EVERY_N_TICKS 2
+#define TELEMETRY_EVERY_N_TICKS 1
 
-/* Feedback line: four tab-separated floats [rad/s], M1..M4 - identical to the original format. */
-#define TELEMETRY_FMT           "%f \t %f \t %f \t %f\n"
+/* Feedback line: "c" and the cumulative encoder counts of M1..M4 (int32). */
+#define TELEMETRY_FMT           "c %ld %ld %ld %ld\n"
 
 /* Command echo: after each received velocity command, send back "Vx Vy w\n"
  * (the original always did this). This is only the power-on DEFAULT; it can be
@@ -125,9 +130,13 @@
 #define PI_KI               8.0f      /* [% pwm per rad/s per s] */
 #define PI_I_LIMIT          25.0f     /* [% pwm] anti-windup clamp of the integral */
 
-/* Feed-forward: PWM [%] per rad/s of target wheel speed. Assumes ~0.25 rad/s per 1 %.
- * If the wheels overshoot at start-up reduce it, if they lag behind raise it. */
-#define PWM_PER_RAD_S       4.0f
+/* Feed-forward: PWM [%] per rad/s of target wheel speed.
+ * Measured on the robot (2026-10-07): 100 % PWM gives only 12.6-13.1 rad/s, with and
+ * without load. With the old value 4.0 the integral sat at its +-25 % limit at
+ * 11 rad/s (about 69 % output -> 10.7 rad/s) and the wheels needed ~1 s to get there.
+ * 6.5 = 69 % / 10.7 rad/s. Check it with a step test after flashing:
+ * if the wheels overshoot at start-up reduce it, if they lag behind raise it. */
+#define PWM_PER_RAD_S       6.5f
 #define PWM_LIMIT           100.0f
 
 /* A wheel target below this is treated as "stopped" [rad/s]. */
@@ -137,7 +146,7 @@
 /* UART protocol (frame layout as in the original; SCALE CHANGED to 0.02)     */
 /* ------------------------------------------------------------------------- */
 /*
- * Host -> MCU frame, 9600 8N1, 5 bytes:
+ * Host -> MCU frame, 38400 8N1, 5 bytes:
  *      0x80  0x86  Vx  Vy  w
  *  Vx, Vy, w are int8_t.  Vx/50 -> m/s, Vy/50 -> m/s, w/50 -> rad/s
  *  i.e. 0.02 per count, range -2.56 .. +2.54.
@@ -155,7 +164,8 @@
  *  The MCU answers with the text line "echo on\n" / "echo off\n".
  *  A velocity frame always starts with 0x80 0x86, so the two never collide.
  */
-#define UART_BAUD           9600
+#define UART_BAUD           38400   /* v1.1.0 (was 9600). Normal mode: UBRR = 25, error +0.16 % at 16 MHz.
+                                     * 57600 would give UBRR = 16 and +2.1 % error: do not use it. */
 #define FRAME_HDR1          0x80
 #define FRAME_HDR2          0x86
 #define FRAME_PAYLOAD_LEN   3
@@ -185,8 +195,9 @@
 /* ========================================================================= */
 /*
  * Motors are numbered M1..M4 in the kinematics (main.c: calc_angular_speed).
- * With the ROS convention (x forward, y left) the physical layout is ASSUMED to be
- * (NOT yet verified on the robot):
+ * With the ROS convention (x forward, y left) the physical layout is
+ * (forward driving and odometry verified on the robot 2026-10-07; strafe and turn
+ * worked as expected in the teleop test):
  *
  *            front
  *     M1 (FL)     M4 (FR)
