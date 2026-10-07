@@ -41,15 +41,18 @@ A zero frame never times out. So the Pi must keep sending while the robot moves.
 
 ### How the Pi sends (nala_base)
 
-- The Pi sends the current command at a fixed rate (`command_rate` in `config/base.yaml`, 10 Hz), also when it is zero.
-  10 Hz is 5 times faster than the 500 ms MCU timeout.
+- The Pi sends the current command at a fixed rate (`command_rate` in `config/base.yaml`, 20 Hz), also when it is zero.
+  That is 10 frames in the 500 ms MCU timeout.
+  The teammate is updating the firmware for 20 Hz commands (the feedback stays every 100 ms).
+  When that firmware is pushed, check `firmware/docs/protocol.md` and update this file.
 - If `/cmd_vel` is older than `cmd_vel_timeout` (0.6 s), the Pi sends zero.
 - Sending is **not** synced to the wheel speed feedback, on purpose:
   - The UART is full duplex (separate TX and RX wires), so sending and receiving at the same time do not collide.
   - The new firmware never blocks: the RX interrupt only stores bytes, TX uses a ring buffer.
   - The MCU may drop a feedback line when its TX buffer is full. If sending waited for feedback,
     a dropped line would delay the next command and could trigger the MCU timeout. It would also add up to 100 ms delay.
-- Line load at 9600 baud: commands use about 5 % of the Pi -> MCU wire, feedback about 50 % of the MCU -> Pi wire.
+- Line load at 9600 baud: commands (20 Hz x 5 bytes) use about 10 % of the Pi -> MCU wire,
+  feedback (10 Hz x 42-50 bytes) about 50 % of the MCU -> Pi wire.
 
 ## MCU -> Pi: text lines (end with `\n`)
 

@@ -31,6 +31,11 @@ echo "== ROS 2 Jazzy and tools"
 $APT install ros-jazzy-rmw-cyclonedds-cpp
 $APT install ros-jazzy-ros-base python3-serial python3-pytest python3-colcon-common-extensions git avahi-daemon
 
+echo "== Xbox controller (app 1)"
+$APT install ros-jazzy-joy ros-jazzy-teleop-twist-joy
+# joy reads /dev/input/event*, which belongs to the group input.
+sudo usermod -aG input "$USER"
+
 echo "== UART to the MCU (/dev/ttyS0)"
 sudo usermod -aG dialout "$USER"
 # The Linux serial console uses the same UART. Remove it from the kernel command line

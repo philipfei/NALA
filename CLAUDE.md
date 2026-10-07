@@ -106,9 +106,10 @@ Everything below is project-specific and must be kept up to date.
 - Claude may SSH to the Pi to run setup, `git pull`, build, tests and the apps (code still only comes from GitHub).
 - Build with `colcon build --symlink-install --base-paths src`. `--base-paths src` is needed on the PC,
   because `ref/` contains old ROS 1 / CMake packages.
-- **Do not build on the PC repo drive.** The repo is on an NTFS drive (`/media/philip/新加卷`, ntfs3 driver).
-  A `colcon build` there crashed the ntfs3 kernel driver (kernel 7.0, 2026-10-06). Build on the Pi (ext4).
-  Run the pure-logic tests on the PC with `PYTHONPATH=src/nala_base python3 -m pytest -p no:cacheprovider src/nala_base/test`.
+- The PC repo is at `/home/philip/Documents/NALA` (ext4). Building on the PC is allowed (user, 2026-10-07).
+  Never build on an NTFS drive: a `colcon build` on NTFS crashed the ntfs3 kernel driver (2026-10-06).
+  Pure-logic tests on the PC:
+  `PYTHONPATH=src/nala_base:src/nala_teleop python3 -m pytest -p no:cacheprovider src/nala_base/test src/nala_teleop/test`.
 
 ## Packages and versions
 
@@ -152,7 +153,8 @@ Everything below is project-specific and must be kept up to date.
 | Robot outer size (length x width) | 0.410 m x 0.360 m |
 | Motors | M1 front-left, M2 rear-left, M3 rear-right, M4 front-right |
 | Encoder | 1536 counts per wheel revolution (confirmed) |
-| Teleop speed limits | 2.0 m/s linear, 1.0 rad/s angular (`config/base.yaml`) |
+| Teleop speeds and limits | 1.0 m/s linear, 1.0 rad/s angular (keys, full stick and Pi limit; `config/teleop.yaml`, `config/base.yaml`) |
+| Game controller | Xbox Wireless Controller `C8:3F:26:93:1B:B2`, paired with the **Pi** over Bluetooth (`/dev/input/js0`) |
 | LiDAR | RPLIDAR A2M8, USB, driver `rplidar_ros`. Mounted at the chassis center (x = y = 0), facing backward (yaw 180 deg). Height unknown |
 | Motor driver MCU | ATmega328PB, 16 MHz, on the Pi GPIO UART `/dev/ttyS0` |
 | IMU | None yet. May be added later (model unknown) |
@@ -177,7 +179,7 @@ Everything below is project-specific and must be kept up to date.
 
 | Stage | App | Goal | Status |
 |---|---|---|---|
-| 1 | Teleop | Drive the chassis with the keyboard | Code done. Hardware test pending (MCU not connected yet) |
+| 1 | Teleop | Drive the chassis with the keyboard or the Xbox controller | Code done (Xbox, fixed speeds, 20 Hz added 2026-10-07). Hardware test pending (motors not connected yet) |
 | 2 | Mapping | Teleop + real-time LiDAR SLAM + RViz on the PC + save the map and copy it back to the PC | Not started |
 | 3 | Coverage | The user sets a base station on the PC, in the map saved by app 2. The robot starts at the base station, covers the whole house, then returns to it | Not started |
 
@@ -189,13 +191,16 @@ SLAM must not jump to a wrong but similar-looking place.
 ## Architecture (current decisions)
 
 - The repo root is the colcon workspace. ROS 2 packages are in `src/`. Our nodes are Python (rclpy).
-- Packages: `nala_description` (URDF), `nala_base` (Pi <-> MCU driver, odometry),
+- Packages: `nala_description` (URDF), `nala_base` (Pi <-> MCU driver, odometry), `nala_teleop` (PC keyboard teleop),
   `nala_bringup` (launch files and RViz layouts for all apps; installs `config/`), `nala_coverage` (coverage planner, mission, base station picker).
 - A package that is still empty has a `COLCON_IGNORE` file. Remove it in the stage that fills the package.
-- The Pi runs: `nala_base`, `rplidar_ros`, `robot_state_publisher`, `slam_toolbox`, Nav2, coverage mission.
-- The PC runs: keyboard teleop (`teleop_twist_keyboard`, IJKL keys, Shift = strafe; the user chose it over WASD), RViz, base station picker.
+- The Pi runs: `nala_base`, Xbox controller (`joy` + `teleop_twist_joy`: hold LB, left stick = drive + strafe,
+  right stick = turn), `rplidar_ros`, `robot_state_publisher`, `slam_toolbox`, Nav2, coverage mission.
+- The PC runs: keyboard teleop (`nala_teleop`, own node: IJKL keys, Shift = strafe, the user chose it over WASD;
+  no speed keys, speeds only in `config/teleop.yaml`), RViz, base station picker.
+- Keyboard and joystick both publish `/cmd_vel` only while used, so they do not fight (no mux).
 - PC and Pi talk over the LAN with ROS 2 DDS (Cyclone, `ROS_DOMAIN_ID=0`). Their clocks must be in sync (both use NTP).
-- `nala_base` sends the current command to the MCU at a fixed rate (10 Hz), not synced to the MCU feedback
+- `nala_base` sends the current command to the MCU at a fixed rate (20 Hz), not synced to the MCU feedback (10 Hz)
   (reasons in `docs/mcu_protocol.md`).
 - Frames (REP 105): `map -> odom -> base_footprint -> base_link -> laser`.
   Body frame: x forward, y left, z up. Positive angular z = counter-clockwise seen from above.
@@ -215,6 +220,8 @@ SLAM must not jump to a wrong but similar-looking place.
 
 - [1] Hardware test with the new firmware (wheels off the ground): axes, wheel speed signs, PID behavior.
   Checklist in `docs/mcu_protocol.md`.
+- [1] Firmware update for 20 Hz commands (teammate, not pushed yet; feedback stays 10 Hz).
+  When pushed: read `firmware/docs/protocol.md` and `firmware/CHANGES.md`, sync the Pi code and `docs/mcu_protocol.md`.
 - [2] LiDAR mount height (z above the floor or above `base_link`).
 - [3] Base station: only a pose, or a physical dock or charger? How exact must the return be?
 - [3] Coverage width (tool width) and any coverage pattern requirements.

@@ -1,7 +1,32 @@
-# Keyboard teleop (teleop_twist_keyboard). Runs on the PC.
-# Start values only. Change them while driving with the keys q/z, w/x, e/c.
+# Driving by hand: keyboard (runs on the PC) and Xbox controller (runs on the Pi,
+# the controller is paired with the Pi over Bluetooth).
+# The speeds are fixed here. They cannot be changed while driving.
 # The robot never goes faster than the limits in base.yaml.
-teleop_twist_keyboard:
+# Write decimal values with a point (1.0, not 1), or the node stops with a type error.
+
+keyboard_teleop:                # PC: nala_teleop keyboard_teleop
   ros__parameters:
-    speed: 0.5    # m/s, start linear speed
-    turn: 1.0     # rad/s, start turn speed
+    linear_speed: 1.0           # m/s, speed of the drive keys
+    angular_speed: 1.0          # rad/s, speed of the turn keys
+
+joy_node:                       # Pi: reads the Xbox controller (package joy)
+  ros__parameters:
+    device_id: 0                # first game controller
+    deadzone: 0.1               # stick values below this count as 0 (range 0..1)
+    autorepeat_rate: 20.0       # Hz, repeat /joy while held, so /cmd_vel keeps coming
+
+teleop_twist_joy_node:          # Pi: /joy -> /cmd_vel (package teleop_twist_joy)
+  ros__parameters:
+    require_enable_button: true
+    enable_button: 9            # LB: hold it to drive. Release = stop
+    enable_turbo_button: -1     # no turbo button
+    axis_linear:
+      x: 1                      # left stick up/down: forward/backward
+      y: 0                      # left stick left/right: move sideways
+    scale_linear:
+      x: 1.0                    # m/s at full stick
+      y: 1.0                    # m/s at full stick
+    axis_angular:
+      yaw: 2                    # right stick left/right: turn
+    scale_angular:
+      yaw: 1.0                  # rad/s at full stick

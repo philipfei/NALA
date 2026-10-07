@@ -2,13 +2,13 @@
 
 A 4-wheel mecanum robot that maps a house with a 2D LiDAR and then covers every room on its own.
 Built on ROS 2 Jazzy. The Raspberry Pi on the robot runs the robot software.
-The PC runs the keyboard teleop, RViz and the map tools.
+The PC runs the keyboard teleop, RViz and the map tools. An Xbox controller (paired with the Pi) can drive too.
 
 ## Status
 
 | App | What it does | Status |
 |---|---|---|
-| 1. Teleop | Drive the chassis with the PC keyboard | Code done. Hardware test pending (MCU not connected yet) |
+| 1. Teleop | Drive the chassis with the PC keyboard or an Xbox controller | Code done. Hardware test pending (motors not connected yet) |
 | 2. Mapping | App 1 + real-time LiDAR SLAM on the Pi + RViz on the PC + save the map and copy it to the PC | Not started |
 | 3. Coverage | Pick a base station in the saved map on the PC. The robot starts there, covers the whole house, and returns | Not started |
 
@@ -38,12 +38,14 @@ All dependencies: [requirements.yaml](requirements.yaml).
 - Motor driver: ATmega328PB on the Pi GPIO UART (`/dev/ttyS0`). It runs a speed PID per wheel and sends back
   the measured wheel speeds every 100 ms. Protocol: [docs/mcu_protocol.md](docs/mcu_protocol.md).
 - IMU: none for now (may be added later).
+- Xbox Wireless Controller (`C8:3F:26:93:1B:B2`), paired with the Pi over Bluetooth.
 
 ## How it fits together
 
 ```
 PC                                   Pi (on the robot)                         MCU
-teleop_twist_keyboard --/cmd_vel-->  nala_base --UART velocity frame, 10 Hz-->  motor_driver
+nala_teleop keyboard --/cmd_vel-->   nala_base --UART velocity frame, 20 Hz-->  motor_driver
+Xbox --Bluetooth--> joy_node -> teleop_twist_joy --/cmd_vel--> nala_base
                                      nala_base <--UART wheel speeds, 10 Hz---   (PID per wheel)
 RViz <--/map /scan /tf /odom--       rplidar_ros  (/scan)                       [stage 2]
                                      slam_toolbox (/map, map->odom)             [stage 2]
@@ -53,7 +55,7 @@ RViz <--/map /scan /tf /odom--       rplidar_ros  (/scan)                       
 ## Settings: the `config/` folder
 
 All settings you may want to change are in [config/](config/): speed limits, timeouts, serial port,
-teleop start speeds, network, and later LiDAR, SLAM, Nav2 and coverage.
+teleop speeds (keyboard and Xbox controller), network, and later LiDAR, SLAM, Nav2 and coverage.
 Edit them on the PC, push, then `git pull` on the Pi (see below) and restart the app.
 An edited file works without a rebuild. A new file needs a rebuild.
 
@@ -72,7 +74,7 @@ NALA/
 │
 ├── config/                                All settings the user may change (installed by nala_bringup)
 │   ├── base.yaml                          [1] Pi base driver: serial port, speed limits, /cmd_vel timeout, send rate
-│   ├── teleop.yaml                        [1] PC keyboard teleop start speeds
+│   ├── teleop.yaml                        [1] Fixed teleop speeds: PC keyboard, Pi Xbox controller (buttons, sticks)
 │   ├── ros_env.sh                         [1] ROS environment for PC and Pi: domain ID, Cyclone DDS
 │   ├── cyclonedds.xml                     [1] Cyclone DDS: use only the robot network 10.42.0.0/24
 │   ├── rplidar.yaml                       (empty) [2] RPLIDAR A2M8 driver params: port, frame, scan mode
@@ -139,11 +141,24 @@ NALA/
     │       ├── test_mcu_protocol.py       [1] Unit tests for mcu_protocol.py
     │       └── test_kinematics.py         [1] Unit tests for kinematics.py
     │
+    ├── nala_teleop/                       PC keyboard teleop with fixed speeds (no speed keys)
+    │   ├── package.xml                    [1] Package manifest
+    │   ├── setup.py                       [1] Python package setup and node entry points
+    │   ├── setup.cfg                      [1] Install paths for ros2 run
+    │   ├── resource/
+    │   │   └── nala_teleop                (empty) [1] ament index marker. Stays empty
+    │   ├── nala_teleop/
+    │   │   ├── __init__.py                (empty) [1] Python package marker. Stays empty
+    │   │   ├── keys.py                    [1] Key layout: key -> drive direction, help text (no ROS)
+    │   │   └── keyboard_node.py           [1] ROS node: read keys in the terminal, publish /cmd_vel
+    │   └── test/
+    │       └── test_keys.py               [1] Unit tests for keys.py
+    │
     ├── nala_bringup/                      Launch files and RViz layouts for the 3 apps. Installs config/
     │   ├── CMakeLists.txt                 [1] Install launch/ and the repo config/ folder
     │   ├── package.xml                    [1] Package manifest
     │   ├── launch/
-    │   │   ├── app1_teleop_pi.launch.py   [1] Pi: base driver
+    │   │   ├── app1_teleop_pi.launch.py   [1] Pi: base driver, Xbox controller (joy + teleop_twist_joy)
     │   │   ├── app2_slam_pi.launch.py     (empty) [2] Pi: base driver + LiDAR + robot model + SLAM
     │   │   ├── app2_slam_pc.launch.py     (empty) [2] PC: RViz with slam.rviz
     │   │   ├── app3_base_station_pc.launch.py   (empty) [3] PC: show the saved map, click to set the base station
@@ -175,16 +190,22 @@ NALA/
 
 ### PC
 
-ROS 2 Jazzy is already installed. Missing for app 1 (run in a PC terminal):
+ROS 2 Jazzy is already installed. In a PC terminal:
 
 ```bash
-sudo apt install ros-jazzy-teleop-twist-keyboard
 sudo ufw status                      # is 10.42.0.0/24 allowed? If not:
 sudo ufw allow from 10.42.0.0/24     # DDS traffic from the Pi
 ```
 
-The PC does not need to build anything for app 1.
-Do not run `colcon build` in the repo on the PC: the repo drive is NTFS, and a build there crashed the ntfs3 kernel driver.
+Build the workspace on the PC (again after every pull that adds or changes a package), in the repo folder:
+
+```bash
+source config/ros_env.sh
+colcon build --symlink-install --base-paths src
+source config/ros_env.sh             # now also loads install/setup.bash
+```
+
+`--base-paths src`: build only the packages in `src/` (`ref/` has old ROS 1 packages).
 
 ### Pi
 
@@ -204,7 +225,14 @@ sudo reboot
 ```
 
 `setup_pi.sh` installs ROS 2 and the tools from [requirements.yaml](requirements.yaml), gives `nala` access to
-the UART, removes the Linux serial console from `/dev/ttyS0`, and adds `source ~/NALA/config/ros_env.sh` to `~/.bashrc`.
+the UART and the game controller, removes the Linux serial console from `/dev/ttyS0`,
+and adds `source ~/NALA/config/ros_env.sh` to `~/.bashrc`.
+When a pull changes `setup_pi.sh` (new packages), run it again and log in again (new groups need a new login).
+
+Xbox controller (one time): pair it with the Pi. In the Pi SSH terminal run `bluetoothctl`, then
+`scan on`, hold the pair button on the controller until the Xbox logo blinks fast, then
+`pair C8:3F:26:93:1B:B2`, `trust C8:3F:26:93:1B:B2`, `connect C8:3F:26:93:1B:B2`, `exit`.
+After that it connects by itself when it is switched on.
 
 ## Get new code onto the Pi (git pull over SSH)
 
@@ -225,7 +253,7 @@ source ~/NALA/config/ros_env.sh
 
 ## How to run the applications
 
-### App 1: keyboard teleop
+### App 1: teleop (keyboard or Xbox controller)
 
 **Pi terminal** (`ssh nala@nala.local`):
 
@@ -235,11 +263,11 @@ ros2 launch nala_bringup app1_teleop_pi.launch.py
 
 Add `log_level:=debug` to see every frame sent to the MCU and the measured wheel speeds.
 
-**PC terminal** (in the repo folder):
+**PC terminal** (in the repo folder, for the keyboard; not needed for the Xbox controller):
 
 ```bash
 source config/ros_env.sh
-ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args --params-file config/teleop.yaml
+ros2 run nala_teleop keyboard_teleop --ros-args --params-file config/teleop.yaml
 ```
 
 Keys (keep the teleop terminal focused):
@@ -249,11 +277,21 @@ u  i  o        i = forward, , = backward, j / l = turn left / right
 j  k  l        u o m . = drive and turn at the same time
 m  ,  .        k (or any other key) = stop
 Shift + U I O J L M < > = drive without turning (J / L = move sideways)
-q / z = all speeds +10 % / -10 %,  w / x = linear only,  e / c = turn only
 ```
 
 - **Hold** a key to drive. When you release it, the robot stops after 0.6 s (`cmd_vel_timeout`).
-- Limits: 2.0 m/s and 1.0 rad/s (`config/base.yaml`), even if the teleop shows higher values.
+- Speeds are fixed: 1.0 m/s and 1.0 rad/s (`config/teleop.yaml`). There are no speed keys.
+
+Xbox controller (switch it on; it connects to the Pi by itself):
+
+- **Hold LB** to drive. Release LB = stop at once.
+- Left stick: up / down = forward / backward, left / right = move sideways.
+- Right stick left / right = turn.
+- Full stick = 1.0 m/s and 1.0 rad/s (`config/teleop.yaml`).
+
+Both:
+
+- The Pi limits every command to 1.0 m/s and 1.0 rad/s (`config/base.yaml`).
 - Stop: Ctrl+C in either terminal. The Pi sends a stop frame when it exits.
 
 App 2 (mapping) and app 3 (coverage): not ready yet.
