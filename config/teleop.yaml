@@ -18,7 +18,7 @@ joy_node:                       # Pi: reads the Xbox controller (package joy)
 teleop_twist_joy_node:          # Pi: /joy -> /cmd_vel (package teleop_twist_joy)
   ros__parameters:
     require_enable_button: true
-    enable_button: 9            # LB: hold it to drive. Release = stop
+    enable_button: 4            # LB: hold it to drive. Release = stop (checked 2026-10-07)
     enable_turbo_button: -1     # no turbo button
     axis_linear:
       x: 1                      # left stick up/down: forward/backward
@@ -27,6 +27,6 @@ teleop_twist_joy_node:          # Pi: /joy -> /cmd_vel (package teleop_twist_joy
       x: 1.0                    # m/s at full stick
       y: 1.0                    # m/s at full stick
     axis_angular:
-      yaw: 2                    # right stick left/right: turn
+      yaw: 3                    # right stick left/right: turn (axes 2 and 5 are the triggers)
     scale_angular:
       yaw: 1.0                  # rad/s at full stick
