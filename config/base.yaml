@@ -9,7 +9,8 @@ base_node:
     # Motor limit: the fastest wheel rim speed the motors really reach (= wheel rad/s x wheel radius).
     # If a command needs a faster wheel (for example strafe + turn at full stick), the Pi scales
     # vx, vy and wz down together, so the path keeps its shape. The input speeds are in teleop.yaml.
-    max_wheel_speed: 2.5        # m/s. NOT MEASURED YET (2.5 = no limit, protocol max is 2.54)
+    max_wheel_speed: 0.45       # m/s. Measured top speed at 100 % PWM 0.50-0.52 m/s (slowest M4), minus 10 %
+                                # so the speed controller keeps some room to drive straight (2026-10-07)
 
     cmd_vel_timeout: 0.6        # s, send zero speed if /cmd_vel is older than this.
                                 # Keep it above the PC key-repeat delay (0.5 s), or teleop stutters.

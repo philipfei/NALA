@@ -112,3 +112,4 @@ w  = R/(4*k) * (-M1 - M2 + M3 + M4)
 5. Watch for oscillation. v1 has a new PI speed controller; see `firmware/README.md`.
 6. Top speed: 1.0 m/s needs 25 rad/s = 100 % feed-forward. The firmware clips each wheel at 100 % on its own,
    so the Pi keeps every wheel below `max_wheel_speed` (`config/base.yaml`, measured top rim speed).
+   Measured 2026-10-07: 100 % PWM gives only 12.6-13.1 rad/s (0.50-0.52 m/s), with and without load.

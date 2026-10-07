@@ -152,9 +152,9 @@ Everything below is project-specific and must be kept up to date.
 | Mecanum rotation term = half track + half wheelbase | 0.290 m |
 | Robot outer size (length x width) | 0.410 m x 0.360 m |
 | Motors | M1 front-left, M2 rear-left, M3 rear-right, M4 front-right |
-| Encoder | 1536 counts per wheel revolution (confirmed) |
+| Encoder | 1536 counts per wheel revolution (confirmed: 1.17 m driven = 1.17 m odometry, 2026-10-07) |
 | Teleop speeds | 1.0 m/s linear, 1.0 rad/s angular (keys and full stick; `config/teleop.yaml`) |
-| Motor top speed | Not measured yet (`max_wheel_speed` in `config/base.yaml`, wheel rim m/s). Firmware assumes 100 % PWM = 25 rad/s = 1.0 m/s |
+| Motor top speed | Measured 2026-10-07 at 100 % PWM: 12.6-13.1 rad/s = 0.50-0.52 m/s rim speed (M4 slowest), the same with wheels in the air and on the floor. Firmware assumed 25 rad/s. `max_wheel_speed: 0.45` in `config/base.yaml` |
 | Game controller | Xbox Wireless Controller `C8:3F:26:93:1B:B2`, paired with the **Pi** over Bluetooth (`/dev/input/js0`). In `joy` (SDL): LB = button 4, left stick x/y = axes 0/1, right stick x = axis 3, triggers = axes 2/5 (1.0 released). Checked 2026-10-07 |
 | LiDAR | RPLIDAR A2M8 (firmware 1.28), USB CP2102 adapter (`/dev/serial/by-id/usb-Silicon_Labs_CP2102_...`), 115200 baud, driver `rplidar_ros` (`rplidar_composition`). Sensitivity mode: 16 m, about 7900 points/s, about 14 scans/s. Mounted at the chassis center (x = y = 0), facing backward (yaw 180 deg, checked 2026-10-07 with objects behind and right of the robot). Height not measured (placeholder 0.20 m in `config/robot.yaml`) |
 | Motor driver MCU | ATmega328PB, 16 MHz, on the Pi GPIO UART `/dev/ttyS0` |
@@ -238,9 +238,8 @@ SLAM must not jump to a wrong but similar-looking place.
 
 - [1] Hardware test with the new firmware (wheels off the ground): axes, wheel speed signs, PID behavior.
   Checklist in `docs/mcu_protocol.md`.
-- [1] Measure the motor top speed (wheel rim m/s) and set `max_wheel_speed` in `config/base.yaml`.
 - [2] LiDAR mount height above the floor (placeholder 0.20 m in `config/robot.yaml`).
-- [2] Driving test (motors connected): odometry signs and scale (drive 1 m, turn 360 deg), then SLAM tuning
+- [2] Driving test: forward odometry scale checked (1.17 m, 8 deg). Still open: strafe and 360 deg turn, then SLAM tuning
   in the real house (no jumps between similar rooms).
 - [3] Base station: only a pose, or a physical dock or charger? How exact must the return be?
 - [3] Coverage width (tool width) and any coverage pattern requirements.
