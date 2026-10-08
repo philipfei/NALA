@@ -1,0 +1,34 @@
+# Stage 3 (coverage): localization in the saved map (AMCL) and the map server. Runs on the Pi.
+# frame ids, the map file and the initial pose (the base station) are set at launch by nala_coverage (params.py).
+# AMCL values were tuned in simulation only.
+amcl:
+  ros__parameters:
+    use_sim_time: false
+    base_frame_id: base_footprint
+    odom_frame_id: odom
+    global_frame_id: map
+    scan_topic: /scan
+    robot_model_type: nav2_amcl::DifferentialMotionModel
+    laser_model_type: likelihood_field
+    laser_min_range: 0.2
+    laser_max_range: 12.0
+    max_beams: 120
+    min_particles: 500
+    max_particles: 2000
+    update_min_d: 0.025
+    update_min_a: 0.05
+    alpha1: 0.05
+    alpha2: 0.05
+    alpha3: 0.05
+    alpha4: 0.05
+    alpha5: 0.05
+    transform_tolerance: 0.5
+    tf_broadcast: true
+    set_initial_pose: false
+    always_reset_initial_pose: true
+    save_pose_rate: -1.0
+map_server:
+  ros__parameters:
+    use_sim_time: false
+    frame_id: map
+    topic_name: map

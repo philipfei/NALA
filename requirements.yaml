@@ -4,7 +4,6 @@
 #
 # Packages are grouped by the first application (stage) that needs them:
 #   stage_1 = keyboard teleop, stage_2 = SLAM mapping, stage_3 = coverage.
-# stage_3 lists are the current plan. Confirm them when that stage starts.
 #
 # Python libraries are installed with apt (python3-*), not pip.
 # Ubuntu 24.04 blocks system-wide pip installs (PEP 668).
@@ -42,8 +41,19 @@ apt:
       - git
     stage_2:
       - ros-jazzy-rviz2                     # RViz (installed)
-    stage_3:
+    stage_3:                                # optional on the PC: RViz, base station picker, planning, simulation
       - ros-jazzy-nav2-map-server           # show the saved map to pick the base station
+      - ros-jazzy-nav2-lifecycle-manager    # activates the map server of the base station picker
+      - python3-numpy                       # nala_coverage, coverage_tool
+      - python3-pil                         # map images
+      - python3-yaml
+      - python3-scipy                       # coverage_tool, tools/sim
+      - python3-matplotlib                  # coverage_tool images
+      - python3-tk                          # coverage_tool/app.py (interactive planner)
+      - python3-pyqt5                       # nala_panel tests (offscreen) and the panel on the PC
+      - ros-jazzy-navigation2               # only for tools/sim (app 3 with a fake robot on the PC)
+      - ros-jazzy-robot-state-publisher     # tools/sim (robot model)
+      - ros-jazzy-xacro                     # tools/sim (robot model)
   pi:
     stage_1:                                # installed by scripts/setup_pi.sh, in this order
       - ros2-apt-source 1.3.0               # same version as the PC
@@ -62,9 +72,20 @@ apt:
       - ros-jazzy-xacro                     # URDF macros
       - ros-jazzy-slam-toolbox              # 2D SLAM (mapping and localization)
       - ros-jazzy-nav2-map-server           # map_saver_cli: save the map
-    stage_3:
-      - ros-jazzy-navigation2               # Nav2: path following, costmaps
-      - ros-jazzy-nav2-bringup
+    stage_3:                                # installed by scripts/setup_pi_screen.sh
+      - ros-jazzy-navigation2               # map server, AMCL, planner (NavFn), controller (RPP), lifecycle manager
+      - python3-pyqt5                       # robot screen (nala_panel)
+      - python3-matplotlib                  # map drawing on the robot screen, plan images (coverage_tool)
+      - python3-scipy                       # coverage_tool (planning on the Pi)
+      - python3-pil                         # map images
+      - python3-numpy
+      - python3-yaml
+      - xserver-xorg                        # small desktop for the robot screen (--no-install-recommends)
+      - xinit
+      - xfce4
+      - lightdm                             # automatic login of user nala
+      - lightdm-gtk-greeter
+      - x11-xserver-utils                   # xset: keep the screen on
 
 pip: []   # none
 

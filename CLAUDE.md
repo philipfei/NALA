@@ -110,6 +110,8 @@ Everything below is project-specific and must be kept up to date.
   Never build on an NTFS drive: a `colcon build` on NTFS crashed the ntfs3 kernel driver (2026-10-06).
   Pure-logic tests on the PC:
   `PYTHONPATH=src/nala_base:src/nala_teleop python3 -m pytest -p no:cacheprovider src/nala_base/test src/nala_teleop/test`.
+  App 3 tests (after the build, `source config/ros_env.sh`):
+  `python3 -m pytest -q -p no:cacheprovider src/nala_coverage/test src/nala_panel/test` (about 3 minutes).
 
 ## Packages and versions
 
@@ -159,6 +161,7 @@ Everything below is project-specific and must be kept up to date.
 | LiDAR | RPLIDAR A2M8 (firmware 1.28), USB CP2102 adapter (`/dev/serial/by-id/usb-Silicon_Labs_CP2102_...`), 115200 baud, driver `rplidar_ros` (`rplidar_composition`). Sensitivity mode: 16 m, about 7900 points/s, about 14 scans/s. Mounted at the chassis center (x = y = 0), facing backward (yaw 180 deg, checked 2026-10-07 with objects behind and right of the robot). Height not measured (placeholder 0.20 m in `config/robot.yaml`) |
 | Motor driver MCU | ATmega328PB, 16 MHz, on the Pi GPIO UART `/dev/ttyS0` |
 | IMU | None yet. May be added later (model unknown) |
+| Robot screen (app 3) | Waveshare 7 inch HDMI LCD (C), 1024 x 600, capacitive touch over USB, on the Pi HDMI port. The Pi runs headed for app 3 (user, 2026-10-08) |
 
 ## Reference code (`ref/`, local only)
 
@@ -189,9 +192,9 @@ Everything below is project-specific and must be kept up to date.
 |---|---|---|---|
 | 1 | Teleop | Drive the chassis with the keyboard or the Xbox controller | Code done (Xbox, fixed speeds, 20 Hz added 2026-10-07). Hardware test pending (motors not connected yet) |
 | 2 | Mapping | Teleop + real-time LiDAR SLAM + RViz on the PC + save the map and copy it back to the PC | Code done 2026-10-07. Tested without driving (motors not connected). Driving test and SLAM tuning pending |
-| 3 | Coverage | The user sets a base station on the PC, in the map saved by app 2. The robot starts at the base station, covers the whole house, then returns to it | Not started |
+| 3 | Coverage | On the robot screen: choose a map from app 2, set the base station, plan a path (start at the base station or at another start point; optionally only an area), choose a saved plan and drive it. The robot starts at the base station, covers, then returns to it | Code done 2026-10-08 (coverage stack from a teammate's PC, adapted to this repo). Tested in simulation only (`tools/sim`, panel end to end). Not tested on the robot |
 
-**Current stage: 2** (mapping code done; waiting for the motors for the driving test of apps 1 and 2).
+**Current stage: 3** (coverage code done; robot tests pending). App 2 stays as it is: mapping over ssh (user, 2026-10-08).
 
 Stage 2 special requirement: the house has many very similar rooms.
 SLAM must not jump to a wrong but similar-looking place.
@@ -200,12 +203,16 @@ SLAM must not jump to a wrong but similar-looking place.
 
 - The repo root is the colcon workspace. ROS 2 packages are in `src/`. Our nodes are Python (rclpy).
 - Packages: `nala_description` (URDF), `nala_base` (Pi <-> MCU driver, odometry), `nala_teleop` (PC keyboard teleop),
-  `nala_bringup` (launch files and RViz layouts for all apps; installs `config/`), `nala_coverage` (coverage planner, mission, base station picker).
+  `nala_bringup` (launch files and RViz layouts for all apps; installs `config/`), `nala_coverage` (app 3 mission,
+  velocity gate, coverage meter, base station), `nala_panel` (robot screen for app 3).
+  The coverage planner is `coverage_tool/` (Python, no ROS, not a ROS package), run as `plan_cli.py`.
 - A package that is still empty has a `COLCON_IGNORE` file. Remove it in the stage that fills the package.
 - The Pi runs: `nala_base`, Xbox controller (`joy` + `teleop_twist_joy`: hold LB, left stick = drive + strafe,
-  right stick = turn), `rplidar_ros`, `robot_state_publisher`, `slam_toolbox`, Nav2, coverage mission.
+  right stick = turn), `rplidar_ros`, `robot_state_publisher`, `slam_toolbox` (app 2), AMCL + Nav2 + coverage
+  mission + velocity gate (app 3), the robot screen panel (`nala_panel`, app 3).
 - The PC runs: keyboard teleop (`nala_teleop`, own node: IJKL keys, Shift = strafe, the user chose it over WASD;
-  no speed keys, speeds only in `config/teleop.yaml`), RViz, base station picker.
+  no speed keys, speeds only in `config/teleop.yaml`), RViz, and optionally for app 3 the base station picker and
+  `coverage_tool` (planning on the PC).
 - Keyboard and joystick both publish `/cmd_vel` only while used, so they do not fight (no mux).
 - PC and Pi talk over the LAN with ROS 2 DDS (Cyclone, `ROS_DOMAIN_ID=0`). Their clocks must be in sync (both use NTP).
 - `nala_base` sends the current command to the MCU at a fixed rate (20 Hz), not synced to the MCU feedback (20 Hz)
@@ -230,6 +237,31 @@ SLAM must not jump to a wrong but similar-looking place.
 - Safety: the Pi sends zero if `/cmd_vel` is older than 0.6 s. The firmware stops after 200 ms without a frame.
 - Maps are saved in `maps/<name>/` and copied between Pi and PC with `scp`.
 
+### App 3 (coverage) decisions
+
+- Everything runs on the Pi. The robot screen (`nala_panel`, PyQt5) is the normal way to use it; the PC is optional
+  (RViz, planning with `coverage_tool`). The panel starts at login (`scripts/setup_pi_screen.sh`: Xfce + LightDM
+  autologin, `~/.config/autostart`). `scripts/setup_pi.sh` is unchanged.
+- Map library: `maps/<name>/map.yaml/.pgm` (app 2), `base_station.yaml`, `plans/<time>.yaml/.png`, `runs/<time>/`.
+- Base station = a pose only, no dock or charger (user, 2026-10-08). The robot starts and ends there.
+  Coverage may start at another start point; the robot still stands on the base station and Nav2 drives it
+  to the start first (user, 2026-10-08). A plan records its base station; the robot refuses a plan made for
+  another one (`PLAN_BASE_MISMATCH`).
+- Localization in app 3: AMCL on `map.yaml` (not slam_toolbox), initial pose = the base station, sent by the
+  supervisor with a spread of 0.1 m / 10 deg. No global relocalization.
+- Nav2 without BT navigator and behavior server: the supervisor calls `ComputePathToPose` and `FollowPath`
+  (Regulated Pure Pursuit) itself. Autodrive is forward only; `linear.y` is always 0.
+- Velocity gate (`nala_coverage/gate_node.py`) is the only `/cmd_vel` publisher in app 3: Nav2 -> `/cmd_vel_nav`,
+  manual -> `/cmd_vel_remote` (`coverage_teleop` or the panel's arrows, only while paused). App 3 does not start
+  the Xbox controller; another `/cmd_vel` publisher stops the robot (`VELOCITY_GRAPH_CONFLICT`).
+- Robot outline for coverage: from `config/robot.yaml` (body_length x body_width, centred), never copied.
+  Collision radius = farthest corner + `planning_padding_m` (0.293 m); plans use 0.33 m.
+- The panel runs `plan_cli.py` as a child process: coverage_tool's package is called `coverage`, the same
+  name as the system package `python3-coverage`.
+- Slowest controller speed 0.04 m/s, because the MCU protocol rounds to 0.02 m/s steps.
+- Global costmap robot_radius = collision radius + half a cell: NavFn measures from obstacle cell centres, the
+  supervisor checks planner paths exactly against cell edges (else detours and the way back can be refused).
+
 ### Plan against SLAM pose jumps (tune and verify in stage 2)
 
 - Good wheel odometry from the encoder counts (scale checked 2026-10-07).
@@ -248,6 +280,14 @@ SLAM must not jump to a wrong but similar-looking place.
 - [2] LiDAR mount height above the floor (placeholder 0.20 m in `config/robot.yaml`).
 - [2] Driving test: forward odometry scale checked (1.17 m, 8 deg). Still open: strafe and 360 deg turn, then SLAM tuning
   in the real house (no jumps between similar rooms).
-- [3] Base station: only a pose, or a physical dock or charger? How exact must the return be?
-- [3] Coverage width (tool width) and any coverage pattern requirements.
+- [3] Base station: answered, a pose only (user, 2026-10-08). Still open: how exact must the return be?
+- [3] Coverage sensor (scintillator): position and size unknown. `sensor_offset_m: 0.26` and
+  `coverage_disk_radius_m: 0.6` in `config/coverage.yaml` are placeholders, and the sensor is assumed not to stick
+  out of the 410 x 360 mm box. Change them and plan again when known.
+- [3] First robot tests of app 3: localization at the base station, costmaps, a short plan, an obstacle, the
+  return; coverage speeds (`motion` in `config/coverage.yaml`, placeholders 0.12 m/s, 0.4 rad/s).
+- [3] Obstacles lower or higher than the LiDAR scan plane are not seen (no bumper).
+- [3] Robot screen: check picture and touch of the Waveshare (C) on the Pi; planning time on the Pi 4.
+- [3] DDS on the Pi uses only the 10.42.0.0/24 network (`config/cyclonedds.xml`). Check that app 3 and the
+  panel also work when the PC network is not there.
 - [any] IMU model, if one is added.

@@ -1,0 +1,110 @@
+# Stage 3 (coverage): robot geometry for coverage, speeds, frames, and the coverage mission settings.
+# Read by nala_coverage (params.py) on the Pi and by coverage_tool on the PC.
+# The robot outline is NOT here: it comes from robot.yaml (body_length x body_width, centred on base_link).
+# Write decimal values with a point (2.0, not 2).
+/coverage_config:
+  ros__parameters:
+    geometry:
+      # Margin added to the farthest outline corner. The robot turns on the spot anywhere on its path,
+      # so plans keep its centre at least (corner + this) from walls.
+      planning_padding_m: 0.02
+      # The coverage sensor (scintillator): a disk of this radius around the point sensor_offset_m
+      # straight ahead of base_link.
+      # PLACEHOLDER: the scintillator position and size are not known yet. Change both, then plan again.
+      coverage_disk_radius_m: 0.6
+      sensor_offset_m: 0.26
+    motion:
+      # Coverage driving speeds. Autodrive only drives forwards (the gate passes no negative linear speed
+      # from Nav2); manual driving through the gate may reverse.
+      # The MCU protocol has steps of 0.02 m/s and 0.02 rad/s (docs/mcu_protocol.md).
+      linear_m_s: 0.12
+      angular_rad_s: 0.4
+      linear_accel_m_s2: 0.15
+      angular_accel_rad_s2: 0.6
+      manual_forward_m_s: 0.25
+      manual_reverse_m_s: 0.15
+      manual_angular_rad_s: 0.5
+    runtime:
+      map_frame: map
+      odom_frame: odom
+      base_frame: base_footprint
+      map_yaml: ''
+      # Base station file. Empty = base_station.yaml next to the map.
+      base_station_yaml: ''
+      output_dir: output
+    planning:
+      plan_join_tolerance_m: 0.15
+      stationary_target_length_m: 0.01
+    localization:
+      position_sigma_m: 0.1
+      heading_sigma_deg: 10.0
+      settle_s: 2.0
+      min_endpoints: 60
+      matched_ratio: 0.65
+      match_distance_m: 0.15
+      amcl_max_age_s: 2.0
+      jump_translation_m: 0.1
+      jump_rotation_deg: 10.0
+      min_scan_range_m: 0.2
+      max_scan_range_m: 12.0
+      max_endpoints: 240
+      tf_delay_s: 0.1
+      pose_rate_hz: 10.0
+      tf_cache_s: 10.0
+      nomotion_update_period_s: 0.5
+      # AMCL starts at the base station: the supervisor sends it as /initialpose with this spread
+      # (how exactly the robot is put on the base station), every period until AMCL reports a pose.
+      base_station_sigma_m: 0.1
+      base_station_sigma_deg: 10.0
+      initial_pose_period_s: 2.0
+    health:
+      scan_age_s: 0.5
+      odom_age_s: 0.5
+      battery_age_s: 15.0
+      command_age_s: 0.5
+      lease_age_s: 0.5
+      gate_age_s: 0.5
+      meter_age_s: 2.0
+      stop_linear_m_s: 0.015
+      stop_angular_rad_s: 0.03
+      stop_burst_s: 0.15
+      gate_rate_hz: 20.0
+      graph_period_s: 0.5
+      reset_grace_s: 2.0
+      future_stamp_tolerance_s: 0.1
+      shutdown_stop_messages: 3
+      stop_confirm_timeout_s: 1.0
+    measurement:
+      max_sample_gap_s: 0.3
+      translation_slack_m: 0.05
+      rotation_slack_deg: 5.0
+      publish_period_s: 0.5
+    battery:
+      # Only when the MCU publishes sensor_msgs/BatteryState on /battery_state.
+      enabled: false
+      start_ratio: 0.3
+      critical_ratio: 0.15
+    deadlines:
+      mission_s: 1800.0
+      planning_s: 5.0
+      target_s: 60.0
+      action_accept_s: 5.0
+      action_cancel_s: 2.0
+      no_motion_s: 15.0
+      prepare_s: 15.0
+      dwell_s: 0.7
+    recovery:
+      endpoint_tolerance_m: 0.1
+      plan_endpoint_tolerance_m: 0.05
+      short_test_max_m: 2.0
+      planner_start_tolerance_m: 0.15
+      movement_translation_m: 0.03
+      movement_rotation_rad: 0.05
+      plan_detour_skip_m: 0.5
+      # Failed detours while the robot does not move more than the radius: after this many attempts, or once
+      # this much plan has been skipped, pause (BLOCKED_IN_PLACE) instead of skipping on through the plan.
+      blocked_in_place_attempts: 12
+      blocked_in_place_skip_m: 2.0
+      blocked_in_place_radius_m: 0.1
+    visualization:
+      period_s: 0.5

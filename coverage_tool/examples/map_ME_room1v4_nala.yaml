@@ -1,0 +1,961 @@
+frame_id: map
+map: examples/map_ME_room1v4.yaml
+map_image_sha256: c2630cb1c1f60038c21bde62c76103a3ffc8df23effceb4ea6053b22c3474248
+created: '2026-10-07T14:05:45'
+start: [1.157, -1.875]
+area_polygon: []
+stats: {pattern: 'Boustrophedon cells, no wall loop (97 deg)', cost_total_s: 463.6501, cost_drive_s: 67.0491, cost_turn_s: 234.8788,
+  cost_bend_s: 15.2118, edge_missed_m2: 0.0, cost_reverse_s: 100.0, cost_overlap_s: 61.7222, cost_missed_s: 0.0, sharp_turns: 78,
+  hairpins: 10, overlap_m2: 22.22, missed_m2: 0.0, coverage_pct: 54.1929, coverage_of_reachable_pct: 100.0, area_m2: 17.8575,
+  covered_m2: 9.6775, path_spacing_m: 1.08, overlap_pct: 10.0, regions: 1, rings: 0, loops: 0, working_length_m: 8.6359, connector_length_m: 11.4788,
+  total_length_m: 20.1147, estimated_time_s: 301.9278, goals: 28, wall_segments: 0, spiral_segments: 0, lane_segments: 6,
+  centre_line_segments: 6, gap_goals: 16, skipped_unreachable: 0, uncovered_reachable_cells: 0, uncovered_interior_cells: 0,
+  planning_time_s: 123.1341, drive_stops: 26, drive_arcs: 11, drive_length_m: 14.5056, drive_lost_cells: 0, drive_unsafe_segments: 0,
+  drive_min_arc_radius_m: 0.3242, drive_corners_planned: 110, drive_corners_kept: 49, footprint_hits: 0}
+settings:
+  geometry:
+    robot_radius_m: 0.33
+    coverage_disk_radius_m: 0.6
+    sensor_offset_m: 0.26
+    footprint_m:
+    - [0.205, 0.18]
+    - [0.205, -0.18]
+    - [-0.205, -0.18]
+    - [-0.205, 0.18]
+    footprint_padding_m: 0.02
+  spiral: {overlap_pct: 10.0, obstacle_mode: around, wall_side: right}
+  strategy: {mode: auto, wall_loop_first: true}
+  cost: {smooth_turn_deg: 20.0, bend_s_per_rad: 1.5, stop_penalty_s: 1.0, reverse_angle_deg: 150.0, reverse_penalty_s: 10.0,
+    overlap_weight: 1.0, missed_weight: 10000.0, edge_band_m: 0.1, edge_missed_weight: 10000.0}
+  planning: {max_segment_length_m: 2.0}
+  motion: {linear_m_s: 0.3, angular_rad_s: 0.8}
+  drive: {min_arc_radius_m: 0.2, spacing_m: 0.05, straight_deg: 1.0, max_corner_group: 8}
+  optimizer: {search_time_s: 4.0, polish_time_s: 15.0, neighbours: 8}
+poses:
+- x: 1.157
+  y: -1.875
+  yaw: 2.7328
+  orientation: {z: 0.979183, w: 0.202978}
+  kind: transit
+- x: 0.8924
+  y: -1.7604
+  yaw: 2.7328
+  orientation: {z: 0.979183, w: 0.202978}
+  kind: transit
+- x: 0.857
+  y: -1.725
+  yaw: 2.35619
+  orientation: {z: 0.92388, w: 0.382683}
+  kind: aim
+- x: 1.057
+  y: -1.675
+  yaw: 0.24498
+  orientation: {z: 0.122183, w: 0.992508}
+  kind: transit
+- x: 1.1873
+  y: -1.571
+  yaw: 0.6738
+  orientation: {z: 0.330564, w: 0.943784}
+  kind: transit
+- x: 1.207
+  y: -1.525
+  yaw: 1.1659
+  orientation: {z: 0.550491, w: 0.834841}
+  kind: aim
+- x: 1.2099
+  y: -1.5749
+  yaw: -1.51204
+  orientation: {z: -0.686031, w: 0.727572}
+  kind: transit
+- x: 1.207
+  y: -1.525
+  yaw: 1.62955
+  orientation: {z: 0.727572, w: 0.686031}
+  kind: aim
+- x: 1.184
+  y: -1.6171
+  yaw: -1.81524
+  orientation: {z: -0.78804, w: 0.615624}
+  kind: transit
+- x: 1.157
+  y: -1.575
+  yaw: 2.14213
+  orientation: {z: 0.877712, w: 0.479188}
+  kind: aim
+- x: 1.1593
+  y: -1.5899
+  yaw: -1.41935
+  orientation: {z: -0.651589, w: 0.758572}
+  kind: transit
+- x: 1.207
+  y: -1.575
+  yaw: 0.30288
+  orientation: {z: 0.150864, w: 0.988554}
+  kind: aim
+- x: 1.057
+  y: -1.975
+  yaw: -1.92957
+  orientation: {z: -0.821926, w: 0.569595}
+  kind: transit
+- x: 0.957
+  y: -2.175
+  yaw: -2.03444
+  orientation: {z: -0.850651, w: 0.525731}
+  kind: transit
+- x: 0.957
+  y: -2.375
+  yaw: -1.5708
+  orientation: {z: -0.707107, w: 0.707107}
+  kind: transit
+- x: 1.007
+  y: -2.575
+  yaw: -1.32582
+  orientation: {z: -0.615412, w: 0.788205}
+  kind: transit
+- x: 1.157
+  y: -2.725
+  yaw: -0.7854
+  orientation: {z: -0.382683, w: 0.92388}
+  kind: transit
+- x: 1.357
+  y: -2.775
+  yaw: -0.24498
+  orientation: {z: -0.122183, w: 0.992508}
+  kind: transit
+- x: 1.557
+  y: -2.725
+  yaw: 0.24498
+  orientation: {z: 0.122183, w: 0.992508}
+  kind: transit
+- x: 1.757
+  y: -2.525
+  yaw: 0.7854
+  orientation: {z: 0.382683, w: 0.92388}
+  kind: transit
+- x: 1.807
+  y: -2.475
+  yaw: 0.7854
+  orientation: {z: 0.382683, w: 0.92388}
+  kind: fill
+- x: 1.857
+  y: -2.475
+  yaw: 0.0
+  orientation: {z: 0.0, w: 1.0}
+  kind: fill
+- x: 1.857
+  y: -2.425
+  yaw: 1.5708
+  orientation: {z: 0.707107, w: 0.707107}
+  kind: fill
+- x: 1.907
+  y: -2.375
+  yaw: 0.7854
+  orientation: {z: 0.382683, w: 0.92388}
+  kind: fill
+- x: 1.9333
+  y: -2.319
+  yaw: 1.13164
+  orientation: {z: 0.536108, w: 0.84415}
+  kind: transit
+- x: 1.957
+  y: -2.275
+  yaw: 1.07685
+  orientation: {z: 0.512787, w: 0.858516}
+  kind: aim
+- x: 2.0134
+  y: -2.2543
+  yaw: 0.35154
+  orientation: {z: 0.174865, w: 0.984593}
+  kind: transit
+- x: 2.0309
+  y: -2.4033
+  yaw: -1.45374
+  orientation: {z: -0.664535, w: 0.747257}
+  kind: lane
+- x: 2.007
+  y: -2.625
+  yaw: -1.6783
+  orientation: {z: -0.744076, w: 0.668095}
+  kind: transit
+- x: 2.0543
+  y: -2.6019
+  yaw: 0.45416
+  orientation: {z: 0.225134, w: 0.974328}
+  kind: transit
+- x: 2.0572
+  y: -2.6267
+  yaw: -1.45374
+  orientation: {z: -0.664535, w: 0.747257}
+  kind: lane
+- x: 1.857
+  y: -2.725
+  yaw: -2.68535
+  orientation: {z: -0.974093, w: 0.226147}
+  kind: transit
+- x: 1.657
+  y: -2.875
+  yaw: -2.49809
+  orientation: {z: -0.948683, w: 0.316228}
+  kind: transit
+- x: 1.557
+  y: -3.075
+  yaw: -2.03444
+  orientation: {z: -0.850651, w: 0.525731}
+  kind: transit
+- x: 1.507
+  y: -3.175
+  yaw: -2.03444
+  orientation: {z: -0.850651, w: 0.525731}
+  kind: transit
+- x: 1.507
+  y: -3.325
+  yaw: -1.5708
+  orientation: {z: -0.707107, w: 0.707107}
+  kind: transit
+- x: 1.582
+  y: -3.575
+  yaw: -1.27934
+  orientation: {z: -0.596931, w: 0.802293}
+  kind: fill
+- x: 1.657
+  y: -3.825
+  yaw: -1.27934
+  orientation: {z: -0.596931, w: 0.802293}
+  kind: fill
+- x: 2.057
+  y: -4.025
+  yaw: -0.46365
+  orientation: {z: -0.229753, w: 0.973249}
+  kind: fill
+- x: 2.0084
+  y: -4.0162
+  yaw: 2.96174
+  orientation: {z: 0.995959, w: 0.089806}
+  kind: fill
+- x: 1.6455
+  y: -3.9059
+  yaw: 2.84651
+  orientation: {z: 0.989135, w: 0.147009}
+  kind: transit
+- x: 1.2827
+  y: -3.7956
+  yaw: 2.84651
+  orientation: {z: 0.989135, w: 0.147009}
+  kind: transit
+- x: 0.9198
+  y: -3.6853
+  yaw: 2.84651
+  orientation: {z: 0.989135, w: 0.147009}
+  kind: transit
+- x: 0.557
+  y: -3.575
+  yaw: 2.84651
+  orientation: {z: 0.989135, w: 0.147009}
+  kind: transit
+- x: 0.607
+  y: -3.675
+  yaw: -1.10715
+  orientation: {z: -0.525731, w: 0.850651}
+  kind: fill
+- x: 0.982
+  y: -3.725
+  yaw: -0.13255
+  orientation: {z: -0.066227, w: 0.997805}
+  kind: fill
+- x: 1.357
+  y: -3.775
+  yaw: -0.13255
+  orientation: {z: -0.066227, w: 0.997805}
+  kind: fill
+- x: 1.7491
+  y: -3.9237
+  yaw: -0.36253
+  orientation: {z: -0.180272, w: 0.983617}
+  kind: transit
+- x: 2.1412
+  y: -4.0724
+  yaw: -0.36253
+  orientation: {z: -0.180272, w: 0.983617}
+  kind: transit
+- x: 2.157
+  y: -4.025
+  yaw: 1.24905
+  orientation: {z: 0.58471, w: 0.811242}
+  kind: aim
+- x: 2.1394
+  y: -4.0218
+  yaw: 2.96221
+  orientation: {z: 0.99598, w: 0.089572}
+  kind: transit
+- x: 2.157
+  y: -3.975
+  yaw: 1.21203
+  orientation: {z: 0.569595, w: 0.821926}
+  kind: aim
+- x: 1.6976
+  y: -3.9555
+  yaw: 3.09912
+  orientation: {z: 0.999775, w: 0.021233}
+  kind: transit
+- x: 1.2382
+  y: -3.936
+  yaw: 3.09912
+  orientation: {z: 0.999775, w: 0.021233}
+  kind: transit
+- x: 1.207
+  y: -3.975
+  yaw: -2.24554
+  orientation: {z: -0.901303, w: 0.433189}
+  kind: aim
+- x: 1.2924
+  y: -3.9896
+  yaw: -0.16992
+  orientation: {z: -0.084857, w: 0.996393}
+  kind: transit
+- x: 1.257
+  y: -4.025
+  yaw: -2.35619
+  orientation: {z: -0.92388, w: 0.382683}
+  kind: aim
+- x: 1.207
+  y: -3.925
+  yaw: 2.03444
+  orientation: {z: 0.850651, w: 0.525731}
+  kind: transit
+- x: 1.157
+  y: -3.875
+  yaw: 2.35619
+  orientation: {z: 0.92388, w: 0.382683}
+  kind: transit
+- x: 1.1189
+  y: -3.895
+  yaw: -2.6581
+  orientation: {z: -0.970921, w: 0.239399}
+  kind: transit
+- x: 1.0761
+  y: -3.5308
+  yaw: 1.68785
+  orientation: {z: 0.747257, w: 0.664535}
+  kind: lane
+- x: 1.0333
+  y: -3.1667
+  yaw: 1.68785
+  orientation: {z: 0.747257, w: 0.664535}
+  kind: lane
+- x: 0.9904
+  y: -2.8025
+  yaw: 1.68785
+  orientation: {z: 0.747257, w: 0.664535}
+  kind: lane
+- x: 0.9476
+  y: -2.4384
+  yaw: 1.68785
+  orientation: {z: 0.747257, w: 0.664535}
+  kind: lane
+- x: 0.9048
+  y: -2.0742
+  yaw: 1.68785
+  orientation: {z: 0.747257, w: 0.664535}
+  kind: lane
+- x: 0.862
+  y: -1.7101
+  yaw: 1.68785
+  orientation: {z: 0.747257, w: 0.664535}
+  kind: lane
+- x: 0.7991
+  y: -1.752
+  yaw: -2.55317
+  orientation: {z: -0.957031, w: 0.289986}
+  kind: transit
+- x: 0.757
+  y: -1.725
+  yaw: 2.57026
+  orientation: {z: 0.959473, w: 0.281799}
+  kind: aim
+- x: 0.8063
+  y: -1.7332
+  yaw: -0.16515
+  orientation: {z: -0.082481, w: 0.996593}
+  kind: transit
+- x: 0.757
+  y: -1.725
+  yaw: 2.97644
+  orientation: {z: 0.996593, w: 0.082481}
+  kind: aim
+- x: 0.807
+  y: -1.825
+  yaw: -1.10715
+  orientation: {z: -0.525731, w: 0.850651}
+  kind: transit
+- x: 0.857
+  y: -2.225
+  yaw: -1.44644
+  orientation: {z: -0.661803, w: 0.749678}
+  kind: transit
+- x: 0.857
+  y: -2.425
+  yaw: -1.5708
+  orientation: {z: -0.707107, w: 0.707107}
+  kind: transit
+- x: 0.807
+  y: -2.625
+  yaw: -1.81577
+  orientation: {z: -0.788205, w: 0.615412}
+  kind: transit
+- x: 0.657
+  y: -2.775
+  yaw: -2.35619
+  orientation: {z: -0.92388, w: 0.382683}
+  kind: transit
+- x: 0.457
+  y: -2.825
+  yaw: -2.89661
+  orientation: {z: -0.992508, w: 0.122183}
+  kind: transit
+- x: 0.257
+  y: -2.825
+  yaw: 3.14159
+  orientation: {z: 1.0, w: 0.0}
+  kind: transit
+- x: 0.057
+  y: -2.725
+  yaw: 2.67795
+  orientation: {z: 0.973249, w: 0.229753}
+  kind: transit
+- x: -0.193
+  y: -2.325
+  yaw: 2.1294
+  orientation: {z: 0.874642, w: 0.484769}
+  kind: transit
+- x: -0.243
+  y: -2.275
+  yaw: 2.35619
+  orientation: {z: 0.92388, w: 0.382683}
+  kind: transit
+- x: -0.2219
+  y: -2.2203
+  yaw: 1.20188
+  orientation: {z: 0.565419, w: 0.824804}
+  kind: transit
+- x: -0.243
+  y: -2.175
+  yaw: 2.00742
+  orientation: {z: 0.843471, w: 0.537175}
+  kind: aim
+- x: -0.2272
+  y: -2.4276
+  yaw: -1.50827
+  orientation: {z: -0.68466, w: 0.728862}
+  kind: transit
+- x: -0.243
+  y: -2.475
+  yaw: -1.89255
+  orientation: {z: -0.811242, w: 0.58471}
+  kind: aim
+- x: -0.093
+  y: -2.375
+  yaw: 0.588
+  orientation: {z: 0.289784, w: 0.957092}
+  kind: transit
+- x: -0.243
+  y: -2.325
+  yaw: 2.81984
+  orientation: {z: 0.987087, w: 0.160182}
+  kind: fill
+- x: -0.243
+  y: -2.175
+  yaw: 1.5708
+  orientation: {z: 0.707107, w: 0.707107}
+  kind: fill
+- x: -0.243
+  y: -2.325
+  yaw: -1.5708
+  orientation: {z: -0.707107, w: 0.707107}
+  kind: fill
+- x: -0.161
+  y: -2.2583
+  yaw: 0.68304
+  orientation: {z: 0.334921, w: 0.942246}
+  kind: transit
+- x: -0.1114
+  y: -2.6804
+  yaw: -1.45374
+  orientation: {z: -0.664535, w: 0.747257}
+  kind: lane
+- x: 0.007
+  y: -2.675
+  yaw: 0.04535
+  orientation: {z: 0.022675, w: 0.999743}
+  kind: transit
+- x: 0.007
+  y: -2.725
+  yaw: -1.5708
+  orientation: {z: -0.707107, w: 0.707107}
+  kind: transit
+- x: 0.107
+  y: -2.725
+  yaw: 0.0
+  orientation: {z: 0.0, w: 1.0}
+  kind: fill
+- x: 0.207
+  y: -2.825
+  yaw: -0.7854
+  orientation: {z: -0.382683, w: 0.92388}
+  kind: fill
+- x: 0.257
+  y: -2.825
+  yaw: 0.0
+  orientation: {z: 0.0, w: 1.0}
+  kind: fill
+- x: 0.257
+  y: -2.875
+  yaw: -1.5708
+  orientation: {z: -0.707107, w: 0.707107}
+  kind: fill
+- x: 0.357
+  y: -2.875
+  yaw: 0.0
+  orientation: {z: 0.0, w: 1.0}
+  kind: fill
+- x: 0.357
+  y: -2.925
+  yaw: -1.5708
+  orientation: {z: -0.707107, w: 0.707107}
+  kind: fill
+- x: 0.407
+  y: -2.975
+  yaw: -0.7854
+  orientation: {z: -0.382683, w: 0.92388}
+  kind: fill
+- x: 0.407
+  y: -3.025
+  yaw: -1.5708
+  orientation: {z: -0.707107, w: 0.707107}
+  kind: fill
+- x: 0.457
+  y: -3.025
+  yaw: 0.0
+  orientation: {z: 0.0, w: 1.0}
+  kind: fill
+- x: 0.457
+  y: -3.125
+  yaw: -1.5708
+  orientation: {z: -0.707107, w: 0.707107}
+  kind: fill
+- x: 0.507
+  y: -3.175
+  yaw: -0.7854
+  orientation: {z: -0.382683, w: 0.92388}
+  kind: fill
+- x: 0.507
+  y: -3.3543
+  yaw: -1.5708
+  orientation: {z: -0.707107, w: 0.707107}
+  kind: fill
+- x: 0.507
+  y: -3.575
+  yaw: -1.5708
+  orientation: {z: -0.707107, w: 0.707107}
+  kind: fill
+- x: 0.457
+  y: -3.575
+  yaw: 3.14159
+  orientation: {z: 1.0, w: 0.0}
+  kind: fill
+- x: 0.457
+  y: -3.625
+  yaw: -1.5708
+  orientation: {z: -0.707107, w: 0.707107}
+  kind: fill
+- x: 0.407
+  y: -3.675
+  yaw: -2.35619
+  orientation: {z: -0.92388, w: 0.382683}
+  kind: fill
+- x: 0.357
+  y: -3.675
+  yaw: 3.14159
+  orientation: {z: 1.0, w: 0.0}
+  kind: fill
+- x: 0.357
+  y: -3.725
+  yaw: -1.5708
+  orientation: {z: -0.707107, w: 0.707107}
+  kind: fill
+- x: 0.307
+  y: -3.725
+  yaw: 3.14159
+  orientation: {z: 1.0, w: 0.0}
+  kind: fill
+- x: 0.307
+  y: -3.825
+  yaw: -1.5708
+  orientation: {z: -0.707107, w: 0.707107}
+  kind: fill
+- x: 0.207
+  y: -3.825
+  yaw: 3.14159
+  orientation: {z: 1.0, w: 0.0}
+  kind: fill
+- x: 0.207
+  y: -3.875
+  yaw: -1.5708
+  orientation: {z: -0.707107, w: 0.707107}
+  kind: fill
+- x: 0.107
+  y: -3.875
+  yaw: 3.14159
+  orientation: {z: 1.0, w: 0.0}
+  kind: fill
+- x: 0.107
+  y: -3.925
+  yaw: -1.5708
+  orientation: {z: -0.707107, w: 0.707107}
+  kind: fill
+- x: 0.057
+  y: -3.975
+  yaw: -2.35619
+  orientation: {z: -0.92388, w: 0.382683}
+  kind: fill
+- x: -0.0195
+  y: -4.2191
+  yaw: -1.87437
+  orientation: {z: -0.805894, w: 0.59206}
+  kind: transit
+- x: -0.043
+  y: -4.175
+  yaw: 2.06075
+  orientation: {z: 0.857493, w: 0.514496}
+  kind: aim
+- x: -0.016
+  y: -4.1171
+  yaw: 1.13419
+  orientation: {z: 0.537183, w: 0.843466}
+  kind: transit
+- x: -0.043
+  y: -4.075
+  yaw: 2.14213
+  orientation: {z: 0.877712, w: 0.479188}
+  kind: aim
+- x: 0.0288
+  y: -3.8722
+  yaw: 1.2307
+  orientation: {z: 0.577246, w: 0.81657}
+  kind: transit
+- x: 0.0784
+  y: -4.2943
+  yaw: -1.45374
+  orientation: {z: -0.664535, w: 0.747257}
+  kind: lane
+drive_path:
+  format: 1
+  driving: forward_only
+  spacing_m: 0.05
+  min_arc_radius_m: 0.2
+  stops: [1, 2, 3, 4, 31, 32, 36, 37, 38, 72, 73, 74, 75, 76, 77, 78, 79, 121, 122, 123, 124, 125, 126, 133, 156, 157]
+  points:
+  - [1.157, -1.875]
+  - [1.1873, -1.571]
+  - [1.207, -1.525]
+  - [1.2099, -1.5749]
+  - [1.207, -1.525]
+  - [1.0086, -2.041]
+  - [0.9925, -2.0873]
+  - [0.9796, -2.1347]
+  - [0.97, -2.1828]
+  - [0.9637, -2.2315]
+  - [0.9607, -2.2804]
+  - [0.9611, -2.3295]
+  - [0.9647, -2.3784]
+  - [0.9717, -2.427]
+  - [0.982, -2.475]
+  - [0.9969, -2.522]
+  - [1.0177, -2.5666]
+  - [1.0439, -2.6084]
+  - [1.0751, -2.6465]
+  - [1.1109, -2.6803]
+  - [1.1507, -2.7094]
+  - [1.1938, -2.7332]
+  - [1.2396, -2.7515]
+  - [1.2873, -2.7638]
+  - [1.3362, -2.77]
+  - [1.3855, -2.77]
+  - [1.4343, -2.7637]
+  - [1.4821, -2.7514]
+  - [1.5278, -2.7332]
+  - [1.5709, -2.7093]
+  - [1.6107, -2.6802]
+  - [1.857, -2.475]
+  - [1.857, -2.425]
+  - [1.9187, -2.3393]
+  - [1.9326, -2.3186]
+  - [1.9451, -2.297]
+  - [1.957, -2.275]
+  - [2.007, -2.625]
+  - [2.0572, -2.6267]
+  - [1.9692, -2.6699]
+  - [1.9249, -2.6927]
+  - [1.8814, -2.7172]
+  - [1.8389, -2.7432]
+  - [1.7974, -2.7708]
+  - [1.757, -2.8]
+  - [1.7182, -2.8314]
+  - [1.6819, -2.8657]
+  - [1.6482, -2.9026]
+  - [1.6174, -2.9419]
+  - [1.5896, -2.9834]
+  - [1.5651, -3.0269]
+  - [1.5438, -3.072]
+  - [1.526, -3.1187]
+  - [1.5117, -3.1665]
+  - [1.5011, -3.2153]
+  - [1.4942, -3.2648]
+  - [1.4909, -3.3146]
+  - [1.4915, -3.3646]
+  - [1.4957, -3.4143]
+  - [1.5037, -3.4636]
+  - [1.5154, -3.5122]
+  - [1.5306, -3.5597]
+  - [1.5494, -3.606]
+  - [1.5716, -3.6507]
+  - [1.5971, -3.6936]
+  - [1.6257, -3.7345]
+  - [1.6574, -3.7732]
+  - [1.6918, -3.8094]
+  - [1.7288, -3.8429]
+  - [1.7683, -3.8735]
+  - [1.8099, -3.901]
+  - [1.8535, -3.9254]
+  - [2.1412, -4.0724]
+  - [2.157, -3.975]
+  - [1.2924, -3.9896]
+  - [1.257, -4.025]
+  - [0.7991, -1.752]
+  - [0.757, -1.725]
+  - [0.8063, -1.7332]
+  - [0.757, -1.725]
+  - [0.778, -1.7694]
+  - [0.797, -1.8146]
+  - [0.8139, -1.8607]
+  - [0.8288, -1.9074]
+  - [0.8416, -1.9548]
+  - [0.8524, -2.0027]
+  - [0.8609, -2.051]
+  - [0.8674, -2.0997]
+  - [0.8717, -2.1486]
+  - [0.8738, -2.1976]
+  - [0.8737, -2.2467]
+  - [0.8714, -2.2957]
+  - [0.867, -2.3446]
+  - [0.8605, -2.3932]
+  - [0.8518, -2.4415]
+  - [0.8409, -2.4894]
+  - [0.822, -2.5652]
+  - [0.8077, -2.6105]
+  - [0.7882, -2.6538]
+  - [0.7636, -2.6945]
+  - [0.7344, -2.732]
+  - [0.7009, -2.7657]
+  - [0.6636, -2.7952]
+  - [0.6231, -2.82]
+  - [0.5799, -2.8399]
+  - [0.5347, -2.8545]
+  - [0.4881, -2.8636]
+  - [0.4407, -2.867]
+  - [0.3932, -2.8649]
+  - [0.3463, -2.857]
+  - [0.3007, -2.8437]
+  - [0.257, -2.825]
+  - [0.2142, -2.802]
+  - [0.1728, -2.7766]
+  - [0.1329, -2.7489]
+  - [0.0947, -2.7189]
+  - [0.0583, -2.6868]
+  - [0.0239, -2.6526]
+  - [-0.0086, -2.6165]
+  - [-0.0389, -2.5786]
+  - [-0.067, -2.5389]
+  - [-0.243, -2.275]
+  - [-0.2219, -2.2203]
+  - [-0.243, -2.175]
+  - [-0.2272, -2.4276]
+  - [-0.243, -2.475]
+  - [-0.243, -2.175]
+  - [-0.2407, -2.2236]
+  - [-0.234, -2.2718]
+  - [-0.2227, -2.3192]
+  - [-0.2072, -2.3653]
+  - [-0.1873, -2.4098]
+  - [-0.1635, -2.4522]
+  - [0.007, -2.725]
+  - [0.0561, -2.7279]
+  - [0.1045, -2.7365]
+  - [0.1516, -2.7506]
+  - [0.1966, -2.7702]
+  - [0.2391, -2.795]
+  - [0.2785, -2.8245]
+  - [0.3141, -2.8584]
+  - [0.3455, -2.8962]
+  - [0.3722, -2.9374]
+  - [0.394, -2.9815]
+  - [0.4104, -3.0278]
+  - [0.4214, -3.0758]
+  - [0.4266, -3.1247]
+  - [0.4262, -3.1738]
+  - [0.42, -3.2226]
+  - [0.3339, -3.6817]
+  - [0.3223, -3.7259]
+  - [0.3047, -3.768]
+  - [0.2813, -3.8071]
+  - [0.2527, -3.8427]
+  - [0.2194, -3.8738]
+  - [0.182, -3.9]
+  - [0.057, -3.975]
+  - [0.0288, -3.8722]
+  - [0.0784, -4.2943]
+segments:
+- kind: aim
+  points:
+  - [0.8924, -1.7604]
+  - [0.857, -1.725]
+- kind: aim
+  points:
+  - [1.1873, -1.571]
+  - [1.207, -1.525]
+- kind: aim
+  points:
+  - [1.2099, -1.5749]
+  - [1.207, -1.525]
+- kind: aim
+  points:
+  - [1.184, -1.6171]
+  - [1.157, -1.575]
+- kind: aim
+  points:
+  - [1.1593, -1.5899]
+  - [1.207, -1.575]
+- kind: fill
+  points:
+  - [1.757, -2.525]
+  - [1.807, -2.475]
+  - [1.857, -2.475]
+  - [1.857, -2.425]
+  - [1.907, -2.375]
+- kind: aim
+  points:
+  - [1.9333, -2.319]
+  - [1.957, -2.275]
+- kind: lane
+  points:
+  - [2.0134, -2.2543]
+  - [2.0309, -2.4033]
+- kind: lane
+  points:
+  - [2.0543, -2.6019]
+  - [2.0572, -2.6267]
+- kind: fill
+  points:
+  - [1.507, -3.325]
+  - [1.657, -3.825]
+  - [2.057, -4.025]
+  - [2.0084, -4.0162]
+- kind: fill
+  points:
+  - [0.557, -3.575]
+  - [0.607, -3.675]
+  - [1.357, -3.775]
+- kind: aim
+  points:
+  - [2.1412, -4.0724]
+  - [2.157, -4.025]
+- kind: aim
+  points:
+  - [2.1394, -4.0218]
+  - [2.157, -3.975]
+- kind: aim
+  points:
+  - [1.2382, -3.936]
+  - [1.207, -3.975]
+- kind: aim
+  points:
+  - [1.2924, -3.9896]
+  - [1.257, -4.025]
+- kind: lane
+  points:
+  - [1.1189, -3.895]
+  - [0.9904, -2.8025]
+- kind: lane
+  points:
+  - [0.9904, -2.8025]
+  - [0.862, -1.7101]
+- kind: aim
+  points:
+  - [0.7991, -1.752]
+  - [0.757, -1.725]
+- kind: aim
+  points:
+  - [0.8063, -1.7332]
+  - [0.757, -1.725]
+- kind: aim
+  points:
+  - [-0.2219, -2.2203]
+  - [-0.243, -2.175]
+- kind: aim
+  points:
+  - [-0.2272, -2.4276]
+  - [-0.243, -2.475]
+- kind: fill
+  points:
+  - [-0.093, -2.375]
+  - [-0.243, -2.325]
+  - [-0.243, -2.175]
+  - [-0.243, -2.325]
+- kind: lane
+  points:
+  - [-0.161, -2.2583]
+  - [-0.1114, -2.6804]
+- kind: fill
+  points:
+  - [0.007, -2.725]
+  - [0.107, -2.725]
+  - [0.207, -2.825]
+  - [0.257, -2.825]
+  - [0.257, -2.875]
+  - [0.357, -2.875]
+  - [0.357, -2.925]
+  - [0.407, -2.975]
+  - [0.407, -3.025]
+  - [0.457, -3.025]
+  - [0.457, -3.125]
+  - [0.507, -3.175]
+  - [0.507, -3.3543]
+  - [0.507, -3.3543]
+- kind: fill
+  points:
+  - [0.507, -3.3543]
+  - [0.507, -3.575]
+  - [0.457, -3.575]
+  - [0.457, -3.625]
+  - [0.407, -3.675]
+  - [0.357, -3.675]
+  - [0.357, -3.725]
+  - [0.307, -3.725]
+  - [0.307, -3.825]
+  - [0.207, -3.825]
+  - [0.207, -3.875]
+  - [0.107, -3.875]
+  - [0.107, -3.925]
+  - [0.057, -3.975]
+- kind: aim
+  points:
+  - [-0.0195, -4.2191]
+  - [-0.043, -4.175]
+- kind: aim
+  points:
+  - [-0.016, -4.1171]
+  - [-0.043, -4.075]
+- kind: lane
+  points:
+  - [0.0288, -3.8722]
+  - [0.0784, -4.2943]
+base_station: {x: 1.157, y: -1.875, yaw: 0.0}
