@@ -260,10 +260,13 @@ SLAM must not jump to a wrong but similar-looking place.
   in the real house (no jumps between similar rooms).
 - [3] Base station: only a pose, or a physical dock or charger? How exact must the return be?
 - [3] Coverage width (tool width) and any coverage pattern requirements.
-- [2] First robot test of the new hardware (2026-10-09): firmware v2.0.0 flashed? `i2cdetect -y 1` shows 10,
-  no I2C/CRC errors; reboot with miniuart-bt + core_freq=250: `/dev/ttyAMA0`, `vcgencmd measure_clock core`
-  constant, Xbox controller still connects; `setup_imu.py`; gyro sign (counter-clockwise = positive);
-  EKF: no TF warnings at start, 360 deg turn by hand = 360 deg in `/odometry/filtered`; gyro bias at rest.
+- [2] Checked 2026-10-09: reboot with miniuart-bt + core_freq=250 -> `/dev/ttyAMA0`, core clock fixed 250 MHz,
+  Bluetooth hci0 up; `setup_imu.py` -> 115200 baud, 50 Hz, only 0x51/0x52; `/imu` 50 Hz; gyro sign correct
+  (counter-clockwise = positive); EKF 30 Hz without TF warnings, 360 deg turns by hand tracked.
+  Firmware v2.0.0 compiles without warnings (Pi, avr-gcc 7.3 + DFP).
+  Still open: flash v2.0.0, then `i2cdetect -y 1` shows 10 and no I2C/CRC errors; Xbox controller reconnect test.
+- [2] IMU gyro bias at rest: about -0.0015 rad/s = -5 deg/min of yaw drift while standing (2026-10-09).
+  Not compensated yet (idea: average the gyro while standing still at start, or while the wheels do not move).
 - [2] IMU mount position and x direction (placeholders in `config/robot.yaml`; do not change the turn rate).
 - [2] EKF variances (`odom_twist_variance`, `angular_velocity_variance`) are start values: tune while driving.
 - [3] When App 3 (branch `stage3-coverage`) is merged: start `imu_node` + EKF in its launch too (or keep
