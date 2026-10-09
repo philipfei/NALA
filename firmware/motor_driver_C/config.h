@@ -3,7 +3,7 @@
  *
  * Project : NALA_v1 motor driver (ATmega328PB, 4x mecanum wheels, 4x quadrature encoders)
  * Author  : HY (NALA v1 revision)
- * Version : v1.1.1
+ * Version : v2.0.0
  * Date    : 2026-10-07
  *
  * v1 changes vs v0: 20 Hz control/feedback (50 ms period), speed controller
@@ -14,6 +14,8 @@
  * feed-forward 6.5 %/(rad/s) from measurements on the robot.
  * v1.1.1: feed-forward from a measured speed -> PWM table (the motor curve is not linear;
  * 6.5 overshot by 30-90 %).
+ * v2.0.0: the Pi link is I2C (TWI0, MCU = slave), not UART: the UART pins of the Pi now
+ * belong to the IMU. Commands in int16 mm/s and mrad/s, state frame with CRC-8.
  *
  * Everything that is "a number you may want to change" or "a wire you may want to
  * re-assign" lives in this file. The .c files contain no magic numbers for these.
@@ -67,8 +69,8 @@
  *
  *      measured speed = (encoder counts in one period) / period
  *
- * Default 50 ms = 20 Hz: control update, speed measurement and the serial
- * feedback line all run at this rate.
+ * Default 50 ms = 20 Hz: control update, speed measurement and the state frame
+ * for the Pi all run at this rate.
  * One encoder count is 2*pi/1536/0.05 = 0.082 rad/s at this period.
  * The PI gains below were checked by simulation for 50 ms (tests/pid_sim.py);
  * if you change the period, re-run that simulation before trusting the gains.
@@ -81,29 +83,6 @@
 #if (CONTROL_TIMER_OCR > 65535UL)
 #error "CONTROL_PERIOD_MS too long for Timer3 with this prescaler (max ~262 ms)"
 #endif
-
-/*
- * Send the feedback line every N control periods.
- * v1.1.0: N = 1 -> 20 Hz. The line carries the CUMULATIVE encoder counts of M1..M4
- * since power-up, with MOTORn_ENC_SIGN applied (+ = the wheel drove the robot forward).
- * The host takes the difference of two lines, so a dropped line loses no distance.
- * (v1.0.x sent the speed of only every 2nd period: the counts of the other period
- * were never reported, and a dropped line lost 100 ms of motion.)
- * Line length: "c" + 4 x (space + up to 11 characters) + "\n" <= 50 bytes, about 25
- * when driving. At 38400 baud one byte takes 0.26 ms, so even the longest line
- * (13 ms) uses only 26 % of the line at 20 Hz. The command echo at 20 Hz adds ~16 %.
- * If a line does not fit in the TX buffer it is dropped, never waited for.
- * The int32 counters overflow only after about a week of driving in one direction.
- */
-#define TELEMETRY_EVERY_N_TICKS 1
-
-/* Feedback line: "c" and the cumulative encoder counts of M1..M4 (int32). */
-#define TELEMETRY_FMT           "c %ld %ld %ld %ld\n"
-
-/* Command echo: after each received velocity command, send back "Vx Vy w\n"
- * (the original always did this). This is only the power-on DEFAULT; it can be
- * switched at run time with the echo-control frame (see UART protocol below). */
-#define ECHO_COMMAND            0
 
 /* ------------------------------------------------------------------------- */
 /* Controller                                                                 */
@@ -149,42 +128,48 @@
 #define W_ZERO_EPS          0.01f
 
 /* ------------------------------------------------------------------------- */
-/* UART protocol (frame layout as in the original; SCALE CHANGED to 0.02)     */
+/* Pi link: I2C (v2.0.0)                                                      */
 /* ------------------------------------------------------------------------- */
 /*
- * Host -> MCU frame, 38400 8N1, 5 bytes:
- *      0x80  0x86  Vx  Vy  w
- *  Vx, Vy, w are int8_t.  Vx/50 -> m/s, Vy/50 -> m/s, w/50 -> rad/s
- *  i.e. 0.02 per count, range -2.56 .. +2.54.
- *  The ORIGINAL scale was /100 (0.01 per count): the host must now send value*50.
- *  Axes follow the ROS convention (REP-103): Vx = forward, Vy = LEFT,
- *  w = counter-clockwise positive. The host sends linear.x, linear.y, angular.z.
- *  Not verified on the robot.
+ * TWI0: PC4 = SDA0, PC5 = SCL0. The MCU is the slave, the Pi the master.
+ * The Pi runs I2C at 3.3 V, the MCU at 5 V: a level shifter on the board converts
+ * and has the pull-ups, so the internal pull-ups stay off.
  *
- *  Safety: if no velocity frame arrives for CMD_TIMEOUT_MS the robot stops
- *  (see below), so the host must keep re-sending the command while driving.
- * MCU -> host: text lines, see TELEMETRY in main.c.
+ * Pi writes a command, I2C_CMD_LEN = 8 bytes:
+ *      0x01  vx_lo vx_hi  vy_lo vy_hi  w_lo w_hi  crc
+ *  vx, vy [mm/s], w [mrad/s], int16 little endian. ROS axes (REP-103): vx forward,
+ *  vy LEFT, w counter-clockwise positive. crc = CRC-8 (poly 0x07, init 0) of the
+ *  first 7 bytes. A frame with a wrong id or crc is ignored.
+ *  Safety: if no valid command arrives for CMD_TIMEOUT_MS the robot stops (see
+ *  below), so the Pi must keep sending the command while driving (20 Hz).
  *
- * NALA_v0 ADDITION (does not touch the frame above): echo-control frame, 3 bytes:
- *      0x80  0x87  E          E = 0x01: echo ON, 0x00: echo OFF (other values ignored)
- *  The MCU answers with the text line "echo on\n" / "echo off\n".
- *  A velocity frame always starts with 0x80 0x86, so the two never collide.
+ * Pi reads the state, I2C_STATE_LEN = 19 bytes (plain read, no register address):
+ *      seq  flags  M1[4]  M2[4]  M3[4]  M4[4]  crc
+ *  seq   : control period counter (uint8, wraps). The difference of two reads is the
+ *          number of control periods between them (exact time base for the speeds).
+ *  flags : bit0 = first frame after power-up (the counters started at 0),
+ *          bit1 = stopped by the command timeout (until the next valid command).
+ *  Mn    : cumulative encoder counts since power-up, int32 little endian,
+ *          MOTORn_ENC_SIGN applied (+ = the wheel drove the robot forward).
+ *          They overflow only after about a week of driving in one direction.
+ *  crc   : CRC-8 of the first 18 bytes.
+ *
+ * UART: not used by the Pi any more. It only prints debug text ("a", "test",
+ * "cmd timeout") for a USB-serial adapter on PD1.
  */
-#define UART_BAUD           38400   /* v1.1.0 (was 9600). Normal mode: UBRR = 25, error +0.16 % at 16 MHz.
-                                     * 57600 would give UBRR = 16 and +2.1 % error: do not use it. */
-#define FRAME_HDR1          0x80
-#define FRAME_HDR2          0x86
-#define FRAME_PAYLOAD_LEN   3
-#define CMD_SCALE           50.0f   /* counts per unit: 50 -> 0.02 m/s (or rad/s) per count */
+#define I2C_ADDRESS         0x10    /* 7-bit slave address */
+#define I2C_CMD_ID          0x01
+#define I2C_CMD_LEN         8
+#define I2C_STATE_LEN       19
+#define CMD_SCALE           1000.0f /* command units per m/s (or rad/s): mm/s, mrad/s */
 
-#define FRAME_HDR2_ECHO     0x87    /* second header byte of the echo-control frame */
-#define FRAME_ECHO_LEN      1
+#define UART_BAUD           38400   /* debug text only. Normal mode: UBRR = 25, error +0.16 % at 16 MHz. */
 
 /*
- * Command timeout (NALA_v0 addition): if the robot is moving and no velocity
- * frame has arrived for CMD_TIMEOUT_MS, all targets are set to zero (stop) and
- * the line "cmd timeout\n" is sent once. Any new velocity frame resumes normal
- * operation. 0 disables the timeout (the last command is then held forever, as
+ * Command timeout (NALA_v0 addition): if the robot is moving and no valid command
+ * has arrived for CMD_TIMEOUT_MS, all targets are set to zero (stop), flags bit1 is
+ * set and the debug line "cmd timeout\n" is sent once. Any new valid command resumes
+ * normal operation. 0 disables the timeout (the last command is then held forever, as
  * in the original).
  * The check runs once per control period, so the stop happens between
  * CMD_TIMEOUT_MS and CMD_TIMEOUT_MS + CONTROL_PERIOD_MS after the last frame.

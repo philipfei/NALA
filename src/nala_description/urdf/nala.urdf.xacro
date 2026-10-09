@@ -1,12 +1,13 @@
 <?xml version="1.0"?>
 <!--
-  NALA robot frames: base_footprint -> base_link -> laser.
+  NALA robot frames: base_footprint -> base_link -> laser, imu_link.
   All numbers come from config/robot.yaml (xacro argument robot_config).
 -->
 <robot name="nala" xmlns:xacro="http://www.ros.org/wiki/xacro">
   <xacro:arg name="robot_config" default=""/>
   <xacro:property name="cfg" value="${xacro.load_yaml('$(arg robot_config)')}"/>
   <xacro:property name="laser" value="${cfg['laser']}"/>
+  <xacro:property name="imu" value="${cfg['imu']}"/>
 
   <!-- On the floor, under the chassis center. Odometry moves this frame. -->
   <link name="base_footprint"/>
@@ -35,5 +36,14 @@
     <parent link="base_link"/>
     <child link="laser"/>
     <origin xyz="${laser['x']} ${laser['y']} ${laser['z']}" rpy="0 0 ${laser['yaw']}"/>
+  </joint>
+
+  <!-- IMU, flat with the chip side up. Published on /tf_static, so the EKF can use /imu. -->
+  <link name="imu_link"/>
+
+  <joint name="imu_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="imu_link"/>
+    <origin xyz="${imu['x']} ${imu['y']} ${imu['z']}" rpy="0 0 ${imu['yaw']}"/>
   </joint>
 </robot>

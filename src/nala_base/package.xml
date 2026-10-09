@@ -3,15 +3,17 @@
 <package format="3">
   <name>nala_base</name>
   <version>0.1.0</version>
-  <description>Pi to MCU driver of the NALA mecanum base: /cmd_vel to UART velocity frames, wheel odometry (/odom, TF).</description>
+  <description>NALA mecanum base: Pi to MCU driver over I2C (/cmd_vel, wheel odometry /odom), WT901 IMU driver (/imu).</description>
   <maintainer email="feijinghao2002@gmail.com">philipfei</maintainer>
   <license>TODO</license>
 
   <exec_depend>rclpy</exec_depend>
   <exec_depend>geometry_msgs</exec_depend>
   <exec_depend>nav_msgs</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
   <exec_depend>tf2_ros_py</exec_depend>
   <exec_depend>python3-serial</exec_depend>
+  <exec_depend>python3-smbus2</exec_depend>
 
   <test_depend>python3-pytest</test_depend>
 

@@ -14,12 +14,13 @@ setup(
     zip_safe=True,
     maintainer='philipfei',
     maintainer_email='feijinghao2002@gmail.com',
-    description='Pi to MCU driver of the NALA mecanum base',
+    description='NALA mecanum base: MCU driver over I2C, wheel odometry, WT901 IMU driver',
     license='TODO',
     extras_require={'test': ['pytest']},
     entry_points={
         'console_scripts': [
             'base_node = nala_base.base_node:main',
+            'imu_node = nala_base.imu_node:main',
         ],
     },
 )

@@ -4,79 +4,70 @@ The firmware is owned by a teammate, who builds and flashes it (Claude may edit 
 
 - [firmware/README.md](../firmware/README.md): the protocol, parameters and changes per version.
 
-This file is the Pi-side summary, for firmware **v1.1.1 (NALA_v1, 2026-10-07)**.
-v1.1.0 changed the baud rate and the feedback line: the Pi code only works with v1.1.0 or newer.
+This file is the Pi-side summary, for firmware **v2.0.0 (NALA_v1, 2026-10-09)**.
+v2.0.0 moved the link from UART to I2C: the Pi code only works with v2.0.0 or newer.
 When the firmware protocol changes, update the Pi code (`src/nala_base/nala_base/mcu_protocol.py`)
 and this file in the same commit.
-
-Items marked **(verify)** are not confirmed on the robot yet.
 
 ## Link
 
 | Item | Value |
 |---|---|
-| MCU | ATmega328PB, 16 MHz, USART0 (RXD0 = PD0, TXD0 = PD1, TTL level) |
-| Port on Pi | `/dev/ttyS0` (GPIO UART). `scripts/setup_pi.sh` removes the Linux serial console from it |
-| Settings | 38400 baud (v1.1.0; was 9600), 8N1, no flow control |
+| Bus | I2C bus 1 (`/dev/i2c-1`, `dtparam=i2c_arm=on`), 100 kHz, Pi = master |
+| Pins | Pi GPIO2 SDA / GPIO3 SCL (3.3 V) <-> level shifter <-> MCU PC4 SDA0 / PC5 SCL0 (5 V) |
+| MCU address | `0x10` (`i2c_address: 16` in `config/base.yaml`, `I2C_ADDRESS` in firmware `config.h`) |
+| Check | `i2cdetect -y 1` shows `10` |
 
-## Pi -> MCU
+The Pi UART on GPIO14/15 belongs to the IMU (`docs/imu_ekf.md`).
 
-| Frame | Bytes | Use |
-|---|---|---|
-| Velocity | `80 86 Vx Vy w` | Set the body speed |
-| Echo control | `80 87 E` | `E=01` echo on, `E=00` echo off. **The Pi does not send it** (echo is off by default) |
+## Pi -> MCU: command (I2C write, 8 bytes)
 
-- `Vx`, `Vy`, `w` are **int8**, **0.02 per count** (`count = value * 50`, rounded, limited to +-127, so at most +-2.54).
+`0x01, vx, vy, w, crc`: vx, vy in mm/s, w in mrad/s, each **int16 little endian**, then CRC-8 of the first 7 bytes.
+
 - Axes are the **ROS axes** (REP 103), so a `geometry_msgs/Twist` maps 1:1:
-  `Vx = linear.x` (forward), `Vy = linear.y` (left), `w = angular.z` (counter-clockwise).
+  `vx = linear.x` (forward), `vy = linear.y` (left), `w = angular.z` (counter-clockwise).
   Checked on the robot 2026-10-07 (forward, strafe left, turn).
-- No checksum. The MCU finds frames by the `80 86` / `80 87` header.
-
-Examples: stop `80 86 00 00 00`, forward 0.10 m/s `80 86 05 00 00`, backward 0.10 m/s `80 86 FB 00 00`,
-left 0.10 m/s `80 86 00 05 00`, counter-clockwise 0.50 rad/s `80 86 00 00 19`.
+- Resolution 1 mm/s and 1 mrad/s (`encode_command` rounds and clamps to +-32767).
+- A frame with a wrong id or CRC is ignored by the MCU.
 
 ### MCU command timeout
 
-If the robot is moving and no velocity frame arrives for **200 ms**, the MCU stops and prints `cmd timeout` once
-(the stop happens 200-250 ms after the last frame). A zero frame never times out.
-So the Pi must keep sending while the robot moves: 20 Hz, never slower than one frame per 150 ms.
-A stop (target 0) lets the motors coast: no active braking.
+If the robot is moving and no valid command arrives for **200 ms**, the MCU stops (state flag bit1 until the next
+valid command). A zero command never times out. A stop lets the motors coast: no active braking.
 
-### How the Pi sends (nala_base)
+## MCU -> Pi: state (I2C read, 19 bytes, no register address)
 
-- The Pi sends the current command at a fixed rate (`command_rate` in `config/base.yaml`, 20 Hz), also when it is zero.
-  That is 4 frames in the 200 ms MCU timeout. The firmware control loop also runs at 20 Hz.
-- Each frame is one `write` of 5 bytes.
-- If `/cmd_vel` is older than `cmd_vel_timeout` (0.6 s), the Pi sends zero.
-- Sending is **not** synced to the counts feedback, on purpose:
-  - The UART is full duplex (separate TX and RX wires), so sending and receiving at the same time do not collide.
-  - The new firmware never blocks: the RX interrupt only stores bytes, TX uses a ring buffer.
-  - The MCU may drop a feedback line when its TX buffer is full. If sending waited for feedback,
-    a dropped line would delay the next command and could trigger the MCU timeout. It would also add delay.
-- Line load at 38400 baud: commands (20 Hz x 5 bytes) use about 3 % of the Pi -> MCU wire,
-  feedback (20 Hz x up to 50 bytes, about 25 when driving) at most 26 % of the MCU -> Pi wire.
+`seq, flags, M1, M2, M3, M4, crc`: seq uint8, flags uint8, Mn int32 little endian, CRC-8 of the first 18 bytes.
 
-## MCU -> Pi: text lines (end with `\n`)
+| Field | Meaning |
+|---|---|
+| seq | MCU control period counter (50 ms, wraps at 256) |
+| flags bit0 | first frame after the MCU started: its counters start at 0 |
+| flags bit1 | stopped by the command timeout |
+| M1..M4 | cumulative encoder counts since the MCU start, + = the wheel drove the robot forward |
 
-| Line | Format | When |
-|---|---|---|
-| **Encoder counts** | `c n1 n2 n3 n4` (4 int32: cumulative counts of M1..M4 since the MCU start) | Every 50 ms (20 Hz, every control tick) |
-| Boot | `a`, then `test` | Once after reset |
-| Command echo | `Vx Vy w` (3 floats; m/s, m/s, rad/s) | After each velocity frame, only when echo is on |
-| Echo ack | `echo on` / `echo off` | After an echo control frame |
-| Timeout | `cmd timeout` | Once, when the MCU stops because of the timeout |
+CRC-8: polynomial 0x07, initial value 0 (`crc8("123456789") = 0xF4`), same code on both sides.
 
-Parsing rule (`parse_line`): split on whitespace. `c` + 4 integers = counts, 3 floats = echo, other text = message.
-Lines can be dropped by the MCU. The counts are cumulative, so a dropped line loses no distance.
+## How the Pi talks to the MCU (`base_node`)
+
+- A timer at `command_rate` (20 Hz) does **two separate I2C transfers** (`smbus2.i2c_rdwr`), each with its own STOP:
+  first the write (the current command, zero if `/cmd_vel` is older than `cmd_vel_timeout` 0.6 s),
+  then the read (the state frame). No repeated START.
+- The kernel I2C timeout is set to `i2c_timeout` (20 ms) and retries to 0, so a hanging transfer does not block.
+  Every transfer is in `try/except OSError`: a NACK or timeout skips this period (counted, throttled warning).
+- A state frame with a wrong CRC is skipped (counted, throttled warning).
+- No valid state for `feedback_timeout` (0.5 s): warning, odometry stops until frames come again.
 
 ## Odometry from the counts (`base_node`)
 
-- The first counts line after the start (or after `test`, an MCU restart: the counters start again at 0)
-  is only the reference.
-- Each next line: count change per wheel (`count_delta`, int32 wrap-around safe)
+- The first frame after the start (or a frame with flags bit0: the MCU restarted) is only the reference.
+- Each next frame with a new seq: count change per wheel (`count_delta`, int32 wrap-around safe)
   x 2*pi / 1536 = wheel angle change -> `wheels_to_body` -> body movement (dx, dy, dyaw) -> pose.
-- `/odom` speed = movement / (MCU periods covered x 0.05 s). The periods come from the arrival time
-  (normally 1, 2 after a dropped line). Parameters: `encoder_counts_per_rev`, `feedback_period` in `config/base.yaml`.
+  A failed read loses no distance (the counts are cumulative).
+- Speed in `/odom` = movement / (periods x 0.05 s): periods = seq difference (exact MCU time).
+  `header.stamp` = Pi time of the read. Twist covariance: `odom_twist_variance` (vx, vy) for the EKF.
+- `publish_tf`: TF odom -> base_footprint from the wheels. App 2 turns it off; there the EKF publishes it
+  (wheel vx, vy + IMU turn rate, `docs/imu_ekf.md`).
 
 ## Motors and wheel speeds
 
@@ -114,13 +105,12 @@ w  = R/(4*k) * (-M1 - M2 + M3 + M4)
 
 ## First test on the robot (wheels off the ground)
 
-1. After reset the Pi log shows `MCU: a` and `MCU: test`. Then counts lines at 20 Hz (`log_level:=debug`).
-2. Teleop key `i` (forward): all 4 wheels turn forward, all 4 wheel speeds in the debug log positive.
-3. `J` (Shift+j, strafe left), `j` (turn counter-clockwise): the wheels turn as in the formulas above.
-4. Release the key: the wheels stop after about 0.6 s (Pi `/cmd_vel` timeout). There should be no `cmd timeout`,
-   because the Pi keeps sending (zero) frames. The wheels coast to a stop (no braking).
-5. Watch for oscillation. v1 has a new PI speed controller; v1.1.1 takes the feed-forward from a measured
-   speed -> PWM table: step tests (0.05-0.45 m/s) to check the rise time and overshoot. See `firmware/README.md`.
-6. Top speed: 1.0 m/s needs 25 rad/s = 100 % feed-forward. The firmware clips each wheel at 100 % on its own,
-   so the Pi keeps every wheel below `max_wheel_speed` (`config/base.yaml`, measured top rim speed).
-   Measured 2026-10-07: 100 % PWM gives only 12.6-13.1 rad/s (0.50-0.52 m/s), with and without load.
+1. `i2cdetect -y 1` shows `10`. App 1 with `log_level:=debug`: no I2C or CRC warnings, `wheels M1..M4` lines at 20 Hz.
+2. Turn each wheel forward by hand: its value in the debug log is positive.
+3. Teleop key `i` (forward): all 4 wheels turn forward, all 4 wheel speeds positive.
+4. `J` (Shift+j, strafe left), `j` (turn counter-clockwise): the wheels turn as in the formulas above.
+5. Release the key: the wheels stop after about 0.6 s (Pi `/cmd_vel` timeout). No MCU timeout warning,
+   because the Pi keeps sending (zero) commands. The wheels coast to a stop (no braking).
+6. Speed control: v1.1.1 feed-forward table, step tests 0.05-0.45 m/s (see `firmware/README.md`).
+7. Top speed: 100 % PWM gives only 12.6-13.1 rad/s (0.50-0.52 m/s, measured 2026-10-07). The firmware clips each
+   wheel at 100 % on its own, so the Pi keeps every wheel below `max_wheel_speed` (`config/base.yaml`).

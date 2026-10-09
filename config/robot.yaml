@@ -11,3 +11,9 @@ laser:                # RPLIDAR A2M8 scan center
   y: 0.0              # m
   z: 0.20             # m above the floor. PLACEHOLDER, not measured yet (verify)
   yaw: 3.141593       # rad (180 deg): the LiDAR is mounted facing backward
+
+imu:                  # WT901C-TTL, mounted flat with the chip side up (roll = pitch = 0)
+  x: 0.0              # m. PLACEHOLDER, not measured (does not change the turn rate)
+  y: 0.0              # m. PLACEHOLDER, not measured
+  z: 0.0              # m. PLACEHOLDER, not measured
+  yaw: 0.0            # rad. PLACEHOLDER: direction of the IMU x axis (does not change the turn rate)

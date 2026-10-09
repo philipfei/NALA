@@ -9,7 +9,7 @@ The PC runs the keyboard teleop, RViz and the map tools. An Xbox controller (pai
 | App | What it does | Status |
 |---|---|---|
 | 1. Teleop | Drive the chassis with the PC keyboard or an Xbox controller | Code done. Hardware test pending (motors not connected yet) |
-| 2. Mapping | App 1 + real-time LiDAR SLAM on the Pi + RViz on the PC + save the map and copy it to the PC | Code done. Tested without driving (motors not connected). SLAM tuning needs driving |
+| 2. Mapping | App 1 + real-time LiDAR SLAM on the Pi (wheel odometry + IMU in an EKF) + RViz on the PC + save the map and copy it to the PC | Code done. IMU, EKF and the I2C link (firmware v2.0.0) not tested on the robot yet. SLAM tuning needs driving |
 | 3. Coverage | Pick a base station in the saved map on the PC. The robot starts there, covers the whole house, and returns | Not started |
 
 ## System
@@ -35,22 +35,25 @@ All dependencies: [requirements.yaml](requirements.yaml).
   Track width 320 mm (half: 160 mm). Wheelbase 260 mm (half: 130 mm). Wheel radius 40 mm (diameter: 80 mm).
 - Motors: M1 front-left, M2 rear-left, M3 rear-right, M4 front-right. Encoders: 1536 counts per wheel revolution.
 - LiDAR: RPLIDAR A2M8 (USB, CP2102 adapter, 115200 baud), at the chassis center, facing backward. Height not measured yet.
-- Motor driver: ATmega328PB on the Pi GPIO UART (`/dev/ttyS0`). It runs a speed controller per wheel and sends back
-  the cumulative encoder counts every 50 ms at 38400 baud (control loop 20 Hz, stops after 200 ms without a command).
-  Firmware v1.1.0 or newer is needed. Protocol: [docs/mcu_protocol.md](docs/mcu_protocol.md).
-- IMU: none for now (may be added later).
+- Motor driver: ATmega328PB, I2C slave 0x10 on the Pi I2C bus 1 (GPIO2/3, level shifter to 5 V). It runs a speed
+  controller per wheel (control loop 20 Hz, stops after 200 ms without a command); the Pi reads the cumulative
+  encoder counts. Firmware v2.0.0 or newer is needed. Protocol: [docs/mcu_protocol.md](docs/mcu_protocol.md).
+- IMU: WitMotion WT901C-TTL (3.3 V) on the Pi UART GPIO14/15 (`/dev/ttyAMA0`), flat, chip side up.
+  Only its turn rate is used (EKF in app 2): [docs/imu_ekf.md](docs/imu_ekf.md).
 - Xbox Wireless Controller (`C8:3F:26:93:1B:B2`), paired with the Pi over Bluetooth.
 
 ## How it fits together
 
 ```
 PC                                   Pi (on the robot)                         MCU
-nala_teleop keyboard --/cmd_vel-->   nala_base --UART velocity frame, 20 Hz-->  motor_driver
+nala_teleop keyboard --/cmd_vel-->   nala_base --I2C command, 20 Hz------->  motor_driver
 Xbox --Bluetooth--> joy_node -> teleop_twist_joy --/cmd_vel--> nala_base
-                                     nala_base <--UART encoder counts, 20 Hz-   (PI per wheel)
-                                     nala_base: wheel odometry (/odom, odom->base_footprint)
+                                     nala_base <--I2C encoder counts, 20 Hz--  (PI per wheel)
+                                     nala_base: wheel odometry (/odom; TF odom->base_footprint in app 1)
+WT901 IMU --UART--> imu_node (/imu)                                            [stage 2]
+                                     ekf_node: /odom vx,vy + /imu turn rate -> TF odom->base_footprint
 RViz <--/map /scan /tf--             rplidar_ros  (/scan)                       [stage 2]
-                                     robot_state_publisher (base_footprint->base_link->laser)
+                                     robot_state_publisher (base_footprint->base_link->laser, imu_link)
                                      slam_toolbox (/map, map->odom)             [stage 2]
                                      Nav2 + nala_coverage                       [stage 3]
 ```
@@ -76,12 +79,14 @@ NALA/
 ├── .gitattributes                         Force LF line endings (the code runs on Linux)
 │
 ├── config/                                All settings the user may change (installed by nala_bringup)
-│   ├── base.yaml                          [1] Pi base driver: serial port, motor limit, /cmd_vel timeout, send rate.
-│   │                                      [2] Wheel geometry for odometry
+│   ├── base.yaml                          [1] Pi base driver: I2C bus/address, motor limit, /cmd_vel timeout, send rate.
+│   │                                      [2] Wheel geometry for odometry, odometry TF on/off, odometry variances
 │   ├── teleop.yaml                        [1] Fixed teleop speeds: PC keyboard, Pi Xbox controller (buttons, sticks)
 │   ├── ros_env.sh                         [1] ROS environment for PC and Pi: domain ID, Cyclone DDS
 │   ├── cyclonedds.xml                     [1] Cyclone DDS: use only the robot network 10.42.0.0/24
-│   ├── robot.yaml                         [2] Robot model: body size, LiDAR mount pose (read by the URDF)
+│   ├── robot.yaml                         [2] Robot model: body size, LiDAR and IMU mount poses (read by the URDF)
+│   ├── imu.yaml                           [2] WT901 IMU: UART port, baud rate, gyro variance; rate written by setup_imu.py
+│   ├── ekf.yaml                           [2] robot_localization EKF: wheel vx, vy + IMU turn rate -> odom TF
 │   ├── rplidar.yaml                       [2] RPLIDAR A2M8 driver params: port, baud rate, frame, scan mode
 │   ├── slam_mapping.yaml                  [2] slam_toolbox mapping params, tuned against pose jumps
 │   ├── localization.yaml                  (empty) [3] Localization in the saved map
@@ -89,7 +94,8 @@ NALA/
 │   └── coverage.yaml                      (empty) [3] Coverage width, overlap, wall margin
 │
 ├── docs/
-│   └── mcu_protocol.md                    Pi-side summary of the Pi <-> MCU protocol, first hardware test
+│   ├── mcu_protocol.md                    Pi-side summary of the Pi <-> MCU I2C protocol, first hardware test
+│   └── imu_ekf.md                         [2] IMU wiring and setup, EKF design: why only the gyro turn rate
 │
 ├── firmware/                              MCU motor driver (ATmega328PB), Microchip Studio project.
 │   │                                      Owned by a teammate, who builds and flashes it. v1.1.1 (by Claude).
@@ -97,11 +103,10 @@ NALA/
 │   ├── docs/
 │   │   └── state_machine.svg              Firmware state machine (labels in Chinese)
 │   ├── tests/                             Model tests and simulations (Python, run on a PC)
-│   │   ├── rx_parser_model_test.py        UART frame parser
+│   │   ├── i2c_frame_model_test.py        I2C command and state frames, CRC-8 (same bytes as the Pi)
 │   │   ├── timeout_model_test.py          200 ms command timeout
 │   │   ├── motor_polarity_model_test.py   Motor direction pins
 │   │   ├── pid_sim.py                     Speed controller simulation
-│   │   └── tx_budget.py                   Feedback line load at 38400 baud
 │   ├── motor_driver_C.atsln               Studio solution file (open this one)
 │   └── motor_driver_C/
 │       ├── motor_driver_C.cproj           Studio project: device, compiler and linker settings
@@ -109,7 +114,7 @@ NALA/
 │       ├── config.h                       All firmware parameters and the wiring map
 │       ├── main.c                         Command handling, kinematics, PID loop, feedback, timeout
 │       ├── encoder.c / encoder.h          Encoder counting in pin-change interrupts
-│       ├── USART.c / Usart.h              UART driver (8N1, TX ring buffer; baud rate in config.h)
+│       ├── USART.c / Usart.h              UART driver (debug text only since v2.0.0; TX ring buffer)
 │       ├── motor_functions.c / .h         Set PWM duty and direction of each motor
 │       ├── pwm.c / pwm.h                  PWM pin and timer setup
 │       ├── timer.c / timer.h              Timer helpers (Timer3 is the 50 ms control tick)
@@ -120,7 +125,8 @@ NALA/
 │   └── .gitkeep                           (empty) Keeps the folder in git. Stays empty
 │
 ├── scripts/
-│   ├── setup_pi.sh                        [1] One-time Pi setup: ROS, Cyclone DDS, UART, serial permissions, ~/.bashrc
+│   ├── setup_pi.sh                        [1] One-time Pi setup: ROS, Cyclone DDS, I2C, IMU UART, permissions, ~/.bashrc
+│   ├── setup_imu.py                       [2] Pi, once: IMU output (acc + gyro), 50 Hz, 115200 baud
 │   └── save_map.sh                        [2] Pi: save the current SLAM map into maps/<name>/
 │
 └── src/                                   ROS 2 packages. The repo root is the colcon workspace
@@ -131,9 +137,9 @@ NALA/
     │   ├── launch/
     │   │   └── description.launch.py      [2] Start robot_state_publisher with the URDF (arg robot_config)
     │   └── urdf/
-    │       └── nala.urdf.xacro            [2] Robot frames and LiDAR mount pose (numbers from config/robot.yaml)
+    │       └── nala.urdf.xacro            [2] Robot frames, LiDAR and IMU mount poses (numbers from config/robot.yaml)
     │
-    ├── nala_base/                         Pi <-> MCU driver: /cmd_vel to the MCU, wheel odometry
+    ├── nala_base/                         Pi <-> MCU driver (I2C): /cmd_vel to the MCU, wheel odometry; IMU driver
     │   ├── package.xml                    [1] Package manifest
     │   ├── setup.py                       [1] Python package setup and node entry points
     │   ├── setup.cfg                      [1] Install paths for ros2 run
@@ -141,12 +147,15 @@ NALA/
     │   │   └── nala_base                  (empty) [1] ament index marker. Stays empty
     │   ├── nala_base/
     │   │   ├── __init__.py                (empty) [1] Python package marker. Stays empty
-    │   │   ├── mcu_protocol.py            [1] Build velocity frames, parse feedback lines (no ROS)
+    │   │   ├── mcu_protocol.py            [1] I2C command and state frames, CRC-8 (no ROS)
     │   │   ├── kinematics.py              [1] Wheel speed limit. [2] Wheel speeds -> body speed, pose integration (no ROS)
-    │   │   └── base_node.py               [1] ROS node: serial I/O, wheel speed limit, /cmd_vel timeout. [2] /odom and TF
+    │   │   ├── base_node.py               [1] ROS node: I2C, wheel speed limit, /cmd_vel timeout. [2] /odom (and TF)
+    │   │   ├── wt901.py                   [2] WT901 IMU serial frames (no ROS)
+    │   │   └── imu_node.py                [2] ROS node: IMU UART -> /imu
     │   └── test/
     │       ├── test_mcu_protocol.py       [1] Unit tests for mcu_protocol.py
-    │       └── test_kinematics.py         [1] Unit tests for kinematics.py
+    │       ├── test_kinematics.py         [1] Unit tests for kinematics.py
+    │       └── test_wt901.py              [2] Unit tests for wt901.py
     │
     ├── nala_teleop/                       PC keyboard teleop with fixed speeds (no speed keys)
     │   ├── package.xml                    [1] Package manifest
@@ -232,8 +241,12 @@ sudo reboot
 ```
 
 `setup_pi.sh` installs ROS 2 and the tools from [requirements.yaml](requirements.yaml), gives `nala` access to
-the UART and the game controller, removes the Linux serial console from `/dev/ttyS0`,
+the UART, I2C and the game controller, removes the Linux serial console from the GPIO UART, puts the PL011 UART
+on GPIO14/15 for the IMU (`dtoverlay=miniuart-bt`, `core_freq=250`, Bluetooth moves to the mini UART),
 and adds `source ~/NALA/config/ros_env.sh` to `~/.bashrc`.
+
+IMU (one time, after the reboot, with nothing running): `python3 ~/NALA/scripts/setup_imu.py`.
+It sets the IMU to 115200 baud, 50 Hz, acceleration + angular velocity only (see [docs/imu_ekf.md](docs/imu_ekf.md)).
 When a pull changes `setup_pi.sh` (new packages), run it again and log in again (new groups need a new login).
 
 Xbox controller (one time): pair it with the Pi. In the Pi SSH terminal run `bluetoothctl`, then
@@ -304,7 +317,7 @@ Both:
 
 ### App 2: mapping
 
-**Pi terminal 1** (`ssh nala@nala.local`): app 1 + robot model + LiDAR + SLAM
+**Pi terminal 1** (`ssh nala@nala.local`): app 1 + robot model + LiDAR + IMU + EKF + SLAM
 
 ```bash
 ros2 launch nala_bringup app2_slam_pi.launch.py

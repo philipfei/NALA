@@ -40,12 +40,25 @@ echo "== LiDAR, robot model, SLAM, map saver (app 2)"
 $APT install ros-jazzy-rplidar-ros ros-jazzy-robot-state-publisher ros-jazzy-xacro \
   ros-jazzy-slam-toolbox ros-jazzy-nav2-map-server
 
-echo "== UART to the MCU (/dev/ttyS0)"
+echo "== IMU and EKF (app 2), I2C to the MCU"
+$APT install ros-jazzy-robot-localization python3-smbus2 i2c-tools
+# Firmware compile check only (the teammate builds and flashes with Microchip Studio).
+$APT install gcc-avr avr-libc
+sudo usermod -aG i2c "$USER"
+
+echo "== UART on GPIO14/15 for the IMU (/dev/ttyAMA0)"
 sudo usermod -aG dialout "$USER"
-# The Linux serial console uses the same UART. Remove it from the kernel command line
-# and stop the login prompt on it.
+# The Linux serial console uses the GPIO UART. Remove it from the kernel command line
+# and stop the login prompts on it.
 sudo sed -i 's/console=serial0,115200 //' /boot/firmware/cmdline.txt
-sudo systemctl mask serial-getty@ttyS0.service
+sudo systemctl mask serial-getty@ttyS0.service serial-getty@ttyAMA0.service
+# The stable PL011 UART goes to GPIO14/15 (IMU), Bluetooth (Xbox controller) moves to the
+# mini UART. core_freq fixes the VPU clock, so the mini UART baud rate does not change
+# with the CPU load. I2C to the MCU on GPIO2/3 (bus 1).
+config=/boot/firmware/config.txt
+for setting in enable_uart=1 dtoverlay=miniuart-bt core_freq=250 dtparam=i2c_arm=on; do
+  grep -qxF "$setting" "$config" || echo "$setting" | sudo tee -a "$config" >/dev/null
+done
 
 echo "== ROS environment in ~/.bashrc"
 line="source $NALA_DIR/config/ros_env.sh"

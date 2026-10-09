@@ -3,8 +3,10 @@
 # Write decimal values with a point (2.0, not 2), or the node stops with a type error.
 base_node:
   ros__parameters:
-    serial_port: /dev/ttyS0     # Pi GPIO UART to the MCU
-    baud_rate: 38400            # must match the firmware (UART_BAUD in firmware config.h, v1.1.0)
+    # MCU link: I2C (firmware v2.0.0). Pi GPIO2 SDA / GPIO3 SCL, level shifter, MCU PC4 / PC5.
+    i2c_bus: 1                  # /dev/i2c-1 (dtparam=i2c_arm=on)
+    i2c_address: 16             # 0x10, must match I2C_ADDRESS in firmware config.h
+    i2c_timeout: 0.02           # s, a hanging transfer is given up after this (the kernel waits at most this long)
 
     # Motor limit: the fastest wheel rim speed the motors really reach (= wheel rad/s x wheel radius).
     # If a command needs a faster wheel (for example strafe + turn at full stick), the Pi scales
@@ -15,13 +17,17 @@ base_node:
     cmd_vel_timeout: 0.6        # s, send zero speed if /cmd_vel is older than this.
                                 # Keep it above the PC key-repeat delay (0.5 s), or teleop stutters.
     command_rate: 20.0          # Hz, how often the current command is sent to the MCU.
-                                # The MCU stops after 200 ms without a frame (firmware v1), so keep it at 20 Hz (>= 7 Hz).
+                                # Each period: write the command, then read the state (2 separate I2C transfers).
+                                # The MCU stops after 200 ms without a valid command, so keep it at 20 Hz (>= 7 Hz).
 
-    # Wheel odometry (/odom and TF odom -> base_footprint) from the MCU encoder counts.
+    # Wheel odometry (/odom, and TF odom -> base_footprint if publish_tf) from the MCU encoder counts.
     # Must match the robot (and the firmware config.h). Careful: radius, not diameter; half, not full.
     wheel_radius: 0.040         # m (diameter 0.080)
     half_track_width: 0.160     # m, half of the left-right wheel distance (full 0.320)
     half_wheelbase: 0.130       # m, half of the front-rear axle distance (full 0.260)
     encoder_counts_per_rev: 1536   # encoder counts per wheel turn (checked: 1.17 m driven = 1.17 m odometry)
-    feedback_period: 0.05       # s, the MCU sends one counts line per control period (firmware CONTROL_PERIOD_MS)
-    feedback_timeout: 0.5       # s, warn if no counts come for this long
+    feedback_period: 0.05       # s, MCU control period (firmware CONTROL_PERIOD_MS): time base of the odometry speeds
+    feedback_timeout: 0.5       # s, warn if no valid state frame comes for this long
+    publish_tf: true            # TF odom -> base_footprint. App 2 turns it off: there the EKF publishes it
+    odom_twist_variance: [0.0025, 0.01]   # (m/s)^2 for vx, vy in /odom, weights for the EKF. Start values:
+                                          # vx 0.05 m/s, vy 0.1 m/s std (mecanum strafe slips more)

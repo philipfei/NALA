@@ -1,0 +1,17 @@
+# WitMotion WT901C-TTL IMU (nala_base/imu_node). Runs on the Pi.
+# Wiring: IMU TX -> GPIO15 (RX), IMU RX <- GPIO14 (TX), 3.3 V. The PL011 UART is on these pins
+# (dtoverlay=miniuart-bt in /boot/firmware/config.txt, see scripts/setup_pi.sh): /dev/ttyAMA0.
+# Only the turn rate (angular velocity z) is used, by the EKF (config/ekf.yaml). See docs/imu_ekf.md.
+imu_node:
+  ros__parameters:
+    serial_port: /dev/ttyAMA0
+    baud_rate: 115200                  # set in the IMU by scripts/setup_imu.py (factory default 9600)
+    frame_id: imu_link                 # must match the URDF (config/robot.yaml: imu)
+    angular_velocity_variance: 0.0004  # (rad/s)^2, 0.02 rad/s standard deviation. Start value: tune on the robot
+    imu_timeout: 0.5                   # s, error if no gyro data comes for this long
+
+# Written into the IMU once by scripts/setup_imu.py (the IMU keeps it after power-off).
+# (Not a ROS node; the block has the ROS parameter file form so that imu_node can load this file.)
+setup_imu:
+  ros__parameters:
+    output_rate_hz: 50                 # acceleration + angular velocity frames per second (10, 20, 50, 100, 200)

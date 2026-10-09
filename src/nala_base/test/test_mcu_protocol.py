@@ -1,36 +1,45 @@
-import pytest
+import struct
 
-from nala_base.mcu_protocol import count_delta, encode_command, parse_line
-
-
-def test_stop_frame():
-    assert encode_command(0.0, 0.0, 0.0) == bytes([0x80, 0x86, 0x00, 0x00, 0x00])
+from nala_base.mcu_protocol import (
+    count_delta, crc8, encode_command, FLAG_BOOT, parse_state, STATE_LEN)
 
 
-# Examples from firmware/README.md
-@pytest.mark.parametrize('vx, vy, wz, frame', [
-    (0.10, 0.0, 0.0, [0x80, 0x86, 0x05, 0x00, 0x00]),    # forward 0.10 m/s
-    (-0.10, 0.0, 0.0, [0x80, 0x86, 0xFB, 0x00, 0x00]),   # backward 0.10 m/s
-    (0.0, 0.10, 0.0, [0x80, 0x86, 0x00, 0x05, 0x00]),    # left 0.10 m/s
-    (0.0, 0.0, 0.50, [0x80, 0x86, 0x00, 0x00, 0x19]),    # counter-clockwise 0.50 rad/s
-])
-def test_protocol_examples(vx, vy, wz, frame):
-    assert encode_command(vx, vy, wz) == bytes(frame)
+def test_crc8_standard_vector():
+    assert crc8(b'123456789') == 0xF4   # CRC-8 (poly 0x07, init 0); also in firmware/tests
 
 
-def test_rounding():
-    # 0.029 / 0.02 = 1.45 -> 1, 0.031 / 0.02 = 1.55 -> 2
-    assert encode_command(0.029, 0.031, -0.031)[2:] == bytes([1, 2, 0xFE])
+def test_stop_command():
+    frame = encode_command(0.0, 0.0, 0.0)
+    assert frame[:7] == bytes([0x01, 0, 0, 0, 0, 0, 0])
+    assert frame[7] == crc8(frame[:7])
 
 
-def test_clamp_to_int8():
-    # 3.0 m/s would be 150 counts -> 127; -3.0 -> -127 (0x81)
-    assert encode_command(3.0, -3.0, 0.0)[2:] == bytes([0x7F, 0x81, 0x00])
+def test_command_units_and_signs():
+    # 0.3 m/s forward = 300 mm/s = 0x012C, 0.1 m/s right = -100 = 0xFF9C, 1.0 rad/s = 1000 = 0x03E8
+    assert encode_command(0.3, -0.1, 1.0)[1:7] == bytes([0x2C, 0x01, 0x9C, 0xFF, 0xE8, 0x03])
 
 
-def test_parse_counts():
-    assert parse_line('c 0 0 0 0') == ('counts', [0, 0, 0, 0])
-    assert parse_line('c 1536 -20 2147483647 -2147483648\r') == ('counts', [1536, -20, 2147483647, -2147483648])
+def test_command_rounding_and_clamp():
+    _, vx, vy, wz = struct.unpack('<Bhhh', encode_command(0.0004, 0.0006, 40.0)[:7])
+    assert (vx, vy, wz) == (0, 1, 32767)
+
+
+def state_frame(seq, flags, counts):
+    body = struct.pack('<BBiiii', seq, flags, *counts)
+    return body + bytes([crc8(body)])
+
+
+def test_parse_state():
+    frame = state_frame(200, FLAG_BOOT, [1536, -20, 2**31 - 1, -2**31])
+    assert len(frame) == STATE_LEN
+    assert parse_state(frame) == (200, FLAG_BOOT, [1536, -20, 2**31 - 1, -2**31])
+
+
+def test_parse_state_rejects_bad_crc_and_length():
+    frame = bytearray(state_frame(1, 0, [0, 0, 0, 0]))
+    frame[5] ^= 0x10
+    assert parse_state(frame) is None
+    assert parse_state(state_frame(1, 0, [0, 0, 0, 0])[:-1]) is None
 
 
 def test_count_delta():
@@ -38,18 +47,3 @@ def test_count_delta():
     assert count_delta(-100, 50) == -150
     assert count_delta(-2147483648, 2147483647) == 1     # int32 wrap forward
     assert count_delta(2147483647, -2147483648) == -1    # int32 wrap backward
-
-
-def test_parse_echo():
-    assert parse_line('0.100000 0.000000 -0.500000') == ('echo', [0.1, 0.0, -0.5])
-
-
-@pytest.mark.parametrize('line', ['cmd timeout', 'test', 'a', 'echo on', '1.0 2.0', '1.0 x 2.0 3.0',
-                                  '0.0 1.0 2.0 3.0', 'c 1 2 3', 'c 1 2 x 4'])
-def test_parse_text(line):
-    assert parse_line(line) == ('text', line)
-
-
-def test_parse_empty():
-    assert parse_line('') is None
-    assert parse_line(' \r') is None

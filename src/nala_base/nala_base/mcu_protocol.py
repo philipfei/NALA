@@ -1,51 +1,52 @@
-"""Pi <-> MCU UART protocol (no ROS). See docs/mcu_protocol.md.
+"""Pi <-> MCU I2C protocol, firmware v2.0.0 (no ROS). See docs/mcu_protocol.md.
 
 Axes are the ROS axes: vx forward, vy left (m/s), wz counter-clockwise (rad/s).
 """
 
 import struct
 
-START = b'\x80\x86'   # velocity frame start flags
-SCALE = 0.02          # m/s or rad/s per count (the firmware divides by 50)
-MAX_COUNT = 127       # int8, so at most 127 * 0.02 = 2.54
+CMD_ID = 0x01
+CMD_LEN = 8           # id, vx, vy, w (int16 LE), crc
+STATE_LEN = 19        # seq, flags, 4 x int32 LE counts, crc
+SCALE = 1000          # mm/s and mrad/s per m/s and rad/s
+INT16_MAX = 32767
+
+FLAG_BOOT = 0x01      # first frame after the MCU started: its counters start at 0
+FLAG_TIMEOUT = 0x02   # the MCU stopped because no valid command came for 200 ms
 
 
-def to_count(value):
-    """Speed -> int8 count, rounded and clamped to +-MAX_COUNT."""
-    count = round(value / SCALE)
-    return max(-MAX_COUNT, min(MAX_COUNT, count))
+def crc8(data):
+    """CRC-8, polynomial 0x07, initial value 0 (same as crc8() in the firmware)."""
+    crc = 0
+    for byte in data:
+        crc ^= byte
+        for _ in range(8):
+            crc = ((crc << 1) ^ 0x07) & 0xFF if crc & 0x80 else (crc << 1) & 0xFF
+    return crc
+
+
+def to_int16(value):
+    """Speed -> int16 in mm/s or mrad/s, rounded and clamped."""
+    return max(-INT16_MAX, min(INT16_MAX, round(value * SCALE)))
 
 
 def encode_command(vx, vy, wz):
-    """Return the 5-byte velocity frame: 0x80 0x86 Vx Vy w."""
-    return START + struct.pack('bbb', to_count(vx), to_count(vy), to_count(wz))
+    """Return the 8-byte command: 0x01, vx, vy, w (int16 LE), crc."""
+    body = struct.pack('<Bhhh', CMD_ID, to_int16(vx), to_int16(vy), to_int16(wz))
+    return body + bytes([crc8(body)])
 
 
-def parse_line(line):
-    """Parse one text line from the MCU (without the newline).
+def parse_state(data):
+    """Parse the 19-byte state frame.
 
-    Returns:
-      ('counts', [m1, m2, m3, m4])  cumulative encoder counts since the MCU start (+ = forward)
-      ('echo', [vx, vy, wz])        command echo (only when echo is on in the MCU)
-      ('text', line)                any other text, e.g. 'cmd timeout', 'test'
-      None                          empty line
+    Returns (seq, flags, [m1, m2, m3, m4]) with the cumulative encoder counts
+    (+ = forward), or None if the length or the CRC is wrong.
     """
-    line = line.strip()
-    if not line:
+    data = bytes(data)
+    if len(data) != STATE_LEN or crc8(data[:-1]) != data[-1]:
         return None
-    parts = line.split()
-    if parts[0] == 'c' and len(parts) == 5:
-        try:
-            return ('counts', [int(p) for p in parts[1:]])
-        except ValueError:
-            return ('text', line)
-    try:
-        values = [float(v) for v in parts]
-    except ValueError:
-        return ('text', line)
-    if len(values) == 3:
-        return ('echo', values)
-    return ('text', line)
+    seq, flags, *counts = struct.unpack('<BBiiii', data[:-1])
+    return seq, flags, counts
 
 
 def count_delta(new, old):

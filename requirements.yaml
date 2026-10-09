@@ -25,9 +25,10 @@ system:
   firmware:
     mcu: ATmega328PB, 16 MHz
     ide: Microchip Studio (Windows)   # build
-    device_pack: ATmega_DFP 1.7.374   # from motor_driver_C.cproj (firmware v1.1.0, owned by a teammate)
+    device_pack: ATmega_DFP 1.7.374   # from motor_driver_C.cproj (firmware v2.0.0, owned by a teammate)
     flash_tool: avrdude 8.0 (from the Arduino IDE), ArduinoISP   # see firmware/README.md section 5
-    linker_flags: -lprintf_flt        # needed for %f in sprintf
+    linker_flags: -lprintf_flt        # in the .cproj; not needed since v2.0.0 (no printf), harmless
+    compile_check: gcc-avr + avr-libc on the Pi (apt)   # Claude checks that it compiles; no flashing from the Pi
 
 apt:
   # The Pi follows the PC: if versions conflict, the Pi uses what the PC has.
@@ -49,7 +50,7 @@ apt:
       - ros2-apt-source 1.3.0               # same version as the PC
       - ros-jazzy-rmw-cyclonedds-cpp        # first, so ros-base uses Cyclone (like the PC), not Fast DDS
       - ros-jazzy-ros-base                  # ROS 2 without GUI tools
-      - python3-serial                      # pyserial: UART to the MCU
+      - python3-serial                      # pyserial: UART to the IMU (to the MCU before firmware v2.0.0)
       - python3-pytest                      # unit tests
       - python3-colcon-common-extensions    # build tool
       - git
@@ -62,6 +63,11 @@ apt:
       - ros-jazzy-xacro                     # URDF macros
       - ros-jazzy-slam-toolbox              # 2D SLAM (mapping and localization)
       - ros-jazzy-nav2-map-server           # map_saver_cli: save the map
+      - ros-jazzy-robot-localization        # EKF: wheel odometry + IMU turn rate
+      - python3-smbus2                      # I2C to the MCU (firmware v2.0.0). User nala must be in group i2c
+      - i2c-tools                           # i2cdetect: check the MCU on the I2C bus
+      - gcc-avr                             # firmware compile check only
+      - avr-libc                            # firmware compile check only
     stage_3:
       - ros-jazzy-navigation2               # Nav2: path following, costmaps
       - ros-jazzy-nav2-bringup
