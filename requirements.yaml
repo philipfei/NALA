@@ -64,7 +64,7 @@ apt:
       - ros-jazzy-slam-toolbox              # 2D SLAM (mapping and localization)
       - ros-jazzy-nav2-map-server           # map_saver_cli: save the map
       - ros-jazzy-robot-localization        # EKF: wheel odometry + IMU turn rate
-      - python3-smbus2                      # I2C to the MCU (firmware v2.0.0). User nala must be in group i2c
+      - python3-smbus2                      # I2C to the MCU (firmware v2.0.0). /dev/i2c-1 is group dialout on Ubuntu
       - i2c-tools                           # i2cdetect: check the MCU on the I2C bus
       - gcc-avr                             # firmware compile check only
       - avr-libc                            # firmware compile check only

@@ -44,7 +44,8 @@ echo "== IMU and EKF (app 2), I2C to the MCU"
 $APT install ros-jazzy-robot-localization python3-smbus2 i2c-tools
 # Firmware compile check only (the teammate builds and flashes with Microchip Studio).
 $APT install gcc-avr avr-libc
-sudo usermod -aG i2c "$USER"
+# /dev/i2c-1 belongs to dialout on Ubuntu (user added below); if a group i2c exists, join it too.
+if getent group i2c >/dev/null; then sudo usermod -aG i2c "$USER"; fi
 
 echo "== UART on GPIO14/15 for the IMU (/dev/ttyAMA0)"
 sudo usermod -aG dialout "$USER"
