@@ -22,3 +22,6 @@ firmware/**/Release/
 
 # Editor settings
 .vscode/
+
+# Local Claude Code instructions: not pushed
+CLAUDE.md
