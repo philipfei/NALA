@@ -1,7 +1,7 @@
 /*
- * main.c  --  NALA_v1 motor driver firmware
+ * main.c  --  NALA motor driver firmware
  *
- * Project  : NALA_v1 (ATmega328PB, 4 mecanum wheels, 4 quadrature encoders)
+ * Project  : NALA (ATmega328PB, 4 mecanum wheels, 4 quadrature encoders)
  * Author   : HY / Claude (NALA v1 revision)
  * Version  : v2.0.0
  * Date     : 2026-10-09

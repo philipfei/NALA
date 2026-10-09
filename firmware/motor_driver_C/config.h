@@ -1,7 +1,7 @@
 /*
- * config.h  --  NALA_v1 central configuration (robot geometry, timing, wiring map)
+ * config.h  --  NALA central configuration (robot geometry, timing, wiring map)
  *
- * Project : NALA_v1 motor driver (ATmega328PB, 4x mecanum wheels, 4x quadrature encoders)
+ * Project : NALA motor driver (ATmega328PB, 4x mecanum wheels, 4x quadrature encoders)
  * Author  : HY (NALA v1 revision)
  * Version : v2.0.0
  * Date    : 2026-10-07
