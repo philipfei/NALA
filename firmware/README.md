@@ -122,7 +122,7 @@ Main loop: check (CRC) and apply a new command, and on each tick do speed measur
   so take it from the same device pack Studio uses (unzip `gcc/dev/atmega328pb/` and `include/` to `/tmp/dfp/pack`):
   `curl -fsSL -o /tmp/dfp/dfp.zip http://packs.download.atmel.com/Atmel.ATmega_DFP.1.7.374.atpack`, then
   `avr-gcc -B /tmp/dfp/pack/gcc/dev/atmega328pb/ -I /tmp/dfp/pack/include -mmcu=atmega328pb -DF_CPU=16000000UL -Os -Wall -Wextra -o /tmp/fw.elf motor_driver_C/*.c`.
-  v2.0.0 (2026-10-09): 0 errors, 0 warnings, 7.3 KB flash, 428 B RAM. **v2.1.0 is not compiled yet** (the Pi was off).
+  v2.0.0 (2026-10-09): 0 errors, 0 warnings, 7.3 KB flash, 428 B RAM. v2.1.0 (2026-10-12): 0 errors, 0 warnings, 7.0 KB flash, 374 B RAM.
 - **Tests** (models and simulation, not hardware): `python tests/uart_frame_model_test.py`, `timeout_model_test.py`, `motor_polarity_model_test.py`, `pid_sim.py`.
 
 ## 6. Changes per version
@@ -172,7 +172,7 @@ Main loop: check (CRC) and apply a new command, and on each tick do speed measur
 ## 7. Known limitations
 
 - The PI gains come from simulation of an *assumed* motor model. The feed-forward table is measured (wheels in the air); check it with step tests after flashing v1.1.1.
-- **v2.1.0 is not compiled and not tested**: written while the Pi and the MCU were off. Compile-check it (section 5) before flashing.
+- **v2.1.0 is compile-checked (2026-10-12, 0 warnings) but not tested on the MCU**: written while the Pi and the MCU were off.
 - The motors reach only ~13 rad/s (0.50-0.52 m/s). Faster targets saturate at 100 % PWM; the Pi limits every wheel to 0.45 m/s (`max_wheel_speed` in `config/base.yaml`).
 - Stopping is by coasting, so the stopping distance depends on friction.
 

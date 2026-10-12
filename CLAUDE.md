@@ -180,8 +180,8 @@ Everything below is project-specific and must be kept up to date.
 
 - A teammate owns the firmware (`firmware/`) and builds and flashes it. **Claude may edit `firmware/`** (user, 2026-10-07).
   The PC has no avr-gcc (the user chose not to install it); Claude compile-checks on the Pi (avr-gcc 7.3).
-- Version in the repo: **v2.1.0** (2026-10-12, by Claude): UART with binary frames. **Not compiled and not flashed
-  yet** (the Pi and the MCU were off). On the MCU: v2.0.0 (I2C, useless). Firmware and Pi code must match.
+- Version in the repo: **v2.1.0** (2026-10-12, by Claude): UART with binary frames. Compile-checked on the Pi
+  (2026-10-12: 0 errors, 0 warnings). **Not flashed yet.** On the MCU: v2.0.0 (I2C, useless). Firmware and Pi code must match.
 - Protocol source of truth: `firmware/README.md` (protocol, parameters, changes per version).
 - v2.1.0: UART 38400, binary frames `0xA5, id, data, crc8` (CRC-8 poly 0x07 of id + data). Command (id 0x01):
   vx, vy, w as int16 LE in mm/s, mrad/s. State (id 0x02, every 50 ms): seq, flags, 4 x int32 cumulative counts.
@@ -274,7 +274,7 @@ SLAM must not jump to a wrong but similar-looking place.
   0x51/0x52; `/imu` 50 Hz; gyro sign correct (counter-clockwise = positive); EKF 30 Hz without TF warnings,
   360 deg turns by hand tracked.
 - [1] **After the Pi reinstall (Ubuntu Desktop 24.04): follow `docs/handover.md`.** Phase A with the Pi alone
-  (install, build, firmware compile check, RViz on the Pi screen), then wait for the user's "ok". Phase B: connect and
+  (install, build, firmware compile check, RViz on the Pi screen) is done (2026-10-12). Wait for the user's "ok". Phase B: connect and
   test IMU, INA260, Xbox, MCU (firmware v2.1.0 flashed), LiDAR, chassis, one part at a time.
 - [2] IMU gyro bias at rest: about -0.0015 rad/s = -5 deg/min of yaw drift while standing (2026-10-09).
   Not compensated yet (idea: average the gyro while standing still at start, or while the wheels do not move).

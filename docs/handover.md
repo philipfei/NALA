@@ -30,7 +30,7 @@ The I2C pull-ups for the INA260 must go to 3.3 V (the Pi has 1.8 kOhm on GPIO2/3
 
 ## What this session changed (all pushed to GitHub, branch main)
 
-- `firmware/` **v2.1.0**: UART binary frames `0xA5, id, data, crc8`. **Not compiled, not flashed.**
+- `firmware/` **v2.1.0**: UART binary frames `0xA5, id, data, crc8`. Compile-checked 2026-10-12, **not flashed.**
 - `nala_base`: `mcu_protocol.py` and `base_node.py` for the UART frames (reader thread); new `ina260.py`,
   `battery_node.py` (`/battery_state`, `/battery_low`), `config/battery.yaml`.
 - `config/imu.yaml`: port `/dev/ttyIMU`. `config/base.yaml`: `/dev/ttyAMA0`, 38400 baud.
@@ -50,6 +50,15 @@ MCU on a pty (garbage bytes, CRC error, dropped frame), `battery_node` with a fa
 5. Give the Pi sudo password to Claude in the chat (it is never written to a file).
 
 ## Phase A: the Pi alone (no MCU, no IMU, no LiDAR, no chassis connected)
+
+**Done 2026-10-12.** `setup_pi.sh` ran without changes; all checks of step 2 passed; build and 35 unit tests
+passed; firmware v2.1.0 compiles with 0 errors and 0 warnings (7.0 KB flash, 374 B RAM); RViz runs on the Pi
+desktop and the PC receives the Pi's TF. Notes:
+- That day the PC and the Pi were on a WiFi 192.168.200.0/24, not on 10.42.0.0/24. The tests used a temporary
+  copy of `cyclonedds.xml` with that address (`CYCLONEDDS_URI`); the repo config was not changed (user decision).
+- GUI programs started over SSH on the Pi desktop (Wayland): `DISPLAY=:0` and
+  `XAUTHORITY=/run/user/1000/.mutter-Xwaylandauth.*`.
+- `git`, `curl` and `tmux` were missing on the fresh Pi (`sudo apt install -y git curl tmux` first).
 
 Goal: everything installed and built, and RViz works on the Pi desktop. Claude does this over SSH:
 
