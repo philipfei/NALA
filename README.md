@@ -19,7 +19,7 @@ The PC runs the keyboard teleop, RViz and the map tools. An Xbox controller (pai
 | Hardware | - | Raspberry Pi 4B, 8 GB, hostname `NALA` |
 | OS | Ubuntu 24.04 | Ubuntu 24.04 |
 | Architecture | amd64 | arm64 |
-| ROS 2 | Jazzy (ros-base + rviz2) | Jazzy (ros-base) |
+| ROS 2 | Jazzy (ros-base + rviz2) | Jazzy (ros-base + rviz2) |
 | DDS | Cyclone DDS | Cyclone DDS |
 | Python | 3.12 | 3.12 |
 

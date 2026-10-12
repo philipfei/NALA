@@ -64,6 +64,7 @@ apt:
       - ros-jazzy-xacro                     # URDF macros
       - ros-jazzy-slam-toolbox              # 2D SLAM (mapping and localization)
       - ros-jazzy-nav2-map-server           # map_saver_cli: save the map
+      - ros-jazzy-rviz2                     # RViz on the Pi desktop (Ubuntu Desktop since 2026-10-12)
       - ros-jazzy-robot-localization        # EKF: wheel odometry + IMU turn rate
       - python3-smbus2                      # I2C to the INA260 battery monitor
       - i2c-tools                           # i2cdetect: find the INA260 on the I2C bus (also makes the group i2c)

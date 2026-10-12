@@ -47,29 +47,47 @@ MCU on a pty (garbage bytes, CRC error, dropped frame), `battery_node` with a fa
 2. Join the WiFi of the PC's shared network (10.42.0.x).
 3. In a terminal on the Pi: `sudo apt update && sudo apt install -y openssh-server git`.
 4. On the PC: `ssh-keygen -R nala.local`, then `ssh-copy-id nala@nala.local`.
-5. On the Pi (SSH): `git clone https://github.com/philipfei/NALA.git ~/NALA`, then
-   `bash ~/NALA/scripts/setup_pi.sh` (about 15 minutes), then `sudo reboot`.
-6. Pair the Xbox controller again (README, "Setup, Pi").
-7. Give the Pi sudo password to Claude in the chat (it is never written to a file).
+5. Give the Pi sudo password to Claude in the chat (it is never written to a file).
 
-## Steps for Claude after that (over SSH)
+## Phase A: the Pi alone (no MCU, no IMU, no LiDAR, no chassis connected)
 
-1. Pi system: `/dev/ttyAMA0` exists; `sudo vcgencmd measure_clock core` = 250 MHz; `hciconfig` shows hci0;
-   `id` has dialout, input, i2c. If `setup_pi.sh` failed on Ubuntu Desktop, fix the script (push, pull).
-2. IMU: `ls -l /dev/ttyIMU`; `python3 scripts/setup_imu.py --from 115200` must report 50 Hz, 0x51 + 0x52.
+Goal: everything installed and built, and RViz works on the Pi desktop. Claude does this over SSH:
+
+1. `git clone https://github.com/philipfei/NALA.git ~/NALA`, `bash ~/NALA/scripts/setup_pi.sh`
+   (about 15 minutes; installs ROS, RViz and all tools), then reboot.
+   If the script fails on Ubuntu Desktop: fix it on the PC, push, pull, run again.
+2. Pi system: `/dev/ttyAMA0` exists; `sudo vcgencmd measure_clock core` = 250 MHz; `hciconfig` shows hci0;
+   `id` has dialout, input, i2c; `/etc/udev/rules.d/99-nala.rules` exists; `dpkg -l brltty` = not installed.
+3. Build: `cd ~/NALA && colcon build --symlink-install --base-paths src`; the unit tests pass
+   (`python3 -m pytest -p no:cacheprovider src/nala_base/test src/nala_teleop/test`).
+4. Firmware v2.1.0: compile-check on the Pi (command in `firmware/README.md` section 5; it needs the ATmega DFP
+   download). Fix errors and warnings, push. The teammate can flash it later.
+5. **RViz test** on the Pi screen (the user looks at the screen): on the Pi desktop (`DISPLAY=:0`, user logged in),
+   start the robot model (`ros2 launch nala_description description.launch.py robot_config:=$HOME/NALA/config/robot.yaml`)
+   and RViz with the mapping layout (`ros2 launch nala_bringup app2_slam_pc.launch.py`).
+   Without sensors there is no map or scan: set the fixed frame to `base_footprint` and check that the robot outline
+   and the frames `base_footprint`, `base_link`, `laser`, `imu_link` are shown. Also check RViz on the PC
+   (`app2_slam_pc.launch.py` on the PC) sees the Pi's topics over the network.
+6. **Stop here and wait for the user's "ok"** before anything is connected.
+
+## Phase B: after the user's "ok": connect the hardware one part at a time
+
+The user connects the parts. Claude tests each one before the next:
+
+1. IMU (CH340G): `ls -l /dev/ttyIMU`; `python3 scripts/setup_imu.py --from 115200` must report 50 Hz, 0x51 + 0x52.
    If `/dev/ttyIMU` is missing: `lsusb` (CH340 = 1a86:7523?), `dpkg -l brltty`.
-3. Battery: `i2cdetect -y 1` (the INA260 should be the only device, at 0x40; else change `config/battery.yaml`).
+2. Battery: `i2cdetect -y 1` (the INA260 should be the only device, at 0x40; else change `config/battery.yaml`).
    `ros2 run nala_base battery_node --ros-args --params-file config/battery.yaml`, `ros2 topic echo /battery_state`:
    plausible voltage (12-16.8 V); the current must be negative while the robot runs (else `current_sign: -1.0`).
-4. Firmware v2.1.0: compile-check on the Pi (command in `firmware/README.md` section 5; it needs the ATmega DFP
-   download). Fix errors and warnings, push. The teammate builds and flashes with Microchip Studio / avrdude.
-5. MCU link: `ros2 launch nala_bringup app1_teleop_pi.launch.py log_level:=debug`: no "No valid state" and
-   no CRC warnings; `wheels M1..M4` lines at 20 Hz; turn a wheel forward by hand: positive value.
-   If nothing arrives: check the wiring (Pi TX GPIO14 -> MCU PD0 RX, MCU PD1 TX -> Pi RX GPIO15) with
-   `python3 -c` and pyserial on `/dev/ttyAMA0` at 38400: the MCU sends `a5 02 ...` 21-byte frames every 50 ms.
-6. With motors: Xbox drive, strafe + turn; a 1 m drive against a tape measure (odometry scale);
+3. Pair the Xbox controller again (README, "Setup, Pi").
+4. MCU (after the teammate flashed v2.1.0): `ros2 launch nala_bringup app1_teleop_pi.launch.py log_level:=debug`:
+   no "No valid state" and no CRC warnings; `wheels M1..M4` lines at 20 Hz; turn a wheel forward by hand: positive.
+   If nothing arrives: check the wiring (Pi TX GPIO14 -> MCU PD0 RX, MCU PD1 TX -> Pi RX GPIO15) with pyserial
+   on `/dev/ttyAMA0` at 38400: the MCU sends `a5 02 ...` 21-byte frames every 50 ms.
+5. LiDAR: `rplidar_node` gives `/scan` at about 14 Hz.
+6. Chassis with motors: Xbox drive, strafe + turn; a 1 m drive against a tape measure (odometry scale);
    step tests if the speed control looks different.
-7. App 2: `app2_slam_pi.launch.py` + RViz on the PC; EKF without TF warnings; 360 deg turn; map a room;
+7. App 2: `app2_slam_pi.launch.py` + RViz; EKF without TF warnings; 360 deg turn; map a room;
    `scripts/save_map.sh`. Then SLAM tuning in the real house.
 
 Tricks that worked before:
@@ -97,14 +115,13 @@ Copy this into a new Claude Code session in the repo folder:
 ```
 Read CLAUDE.md and docs/handover.md first.
 
-The Pi is reinstalled with Ubuntu Desktop 24.04 (user nala, hostname NALA), cloned the repo and ran
-scripts/setup_pi.sh, then rebooted. The hardware is wired as in docs/handover.md
-(MCU on UART through the TXB level shifter, IMU on a CH340G USB adapter, INA260 on the Pi I2C bus).
+The Pi is reinstalled with Ubuntu Desktop 24.04 (user nala, hostname NALA), it is on the PC's network and
+openssh-server is installed. Right now ONLY the Pi is connected: no MCU, no IMU, no LiDAR, no chassis.
 The Pi sudo password is: <give it here>.
-Current state of the hardware: <Pi on / MCU on / motors connected or not / firmware flashed or not>.
 
-Continue with "Steps for Claude after that" in docs/handover.md, step by step:
-check the Pi system, the IMU port, the battery monitor, then compile-check firmware v2.1.0 on the Pi
-and tell me when my teammate should flash it. After the flash, test the MCU link, then app 1 and app 2.
-Ask me before anything moves, and tell me when you need me to move the robot or connect the motors.
+Do "Phase A" in docs/handover.md: clone the repo on the Pi, run scripts/setup_pi.sh, reboot, check the system,
+build, run the tests, compile-check firmware v2.1.0, then start RViz on the Pi desktop with the robot model so I
+can look at the screen. Then stop and wait for my "ok".
+After my "ok", do "Phase B" one part at a time: tell me which part to connect next, test it, then the next.
+Ask me before anything moves.
 ```

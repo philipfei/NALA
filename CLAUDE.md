@@ -273,9 +273,9 @@ SLAM must not jump to a wrong but similar-looking place.
   250 MHz, Bluetooth and the Xbox controller work on the mini UART; `setup_imu.py` -> 115200 baud, 50 Hz, only
   0x51/0x52; `/imu` 50 Hz; gyro sign correct (counter-clockwise = positive); EKF 30 Hz without TF warnings,
   360 deg turns by hand tracked.
-- [1] **After the Pi reinstall (Ubuntu Desktop 24.04) and the rewiring: follow `docs/handover.md`.** Open: run
-  `setup_pi.sh`, compile-check and flash firmware v2.1.0, test the UART link (no CRC errors, odometry), `/dev/ttyIMU`,
-  INA260 address and current sign, pair the Xbox controller again.
+- [1] **After the Pi reinstall (Ubuntu Desktop 24.04): follow `docs/handover.md`.** Phase A with the Pi alone
+  (install, build, firmware compile check, RViz on the Pi screen), then wait for the user's "ok". Phase B: connect and
+  test IMU, INA260, Xbox, MCU (firmware v2.1.0 flashed), LiDAR, chassis, one part at a time.
 - [2] IMU gyro bias at rest: about -0.0015 rad/s = -5 deg/min of yaw drift while standing (2026-10-09).
   Not compensated yet (idea: average the gyro while standing still at start, or while the wheels do not move).
 - [2] IMU mount position and x direction (placeholders in `config/robot.yaml`; do not change the turn rate).
