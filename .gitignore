@@ -23,5 +23,5 @@ firmware/**/Release/
 # Editor settings
 .vscode/
 
-# Local Claude Code instructions: not pushed
-CLAUDE.md
+# Arduino example code for the IMU (WitMotion): local reference only
+JY901 uno r3/
