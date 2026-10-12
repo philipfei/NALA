@@ -22,6 +22,9 @@
 #include <stdlib.h>
 
 #define USART_TX_BUF_SIZE 128u              /* must be a power of two, <= 256 */
+#if (USART_TX_BUF_SIZE < 32u)
+#error "USART_TX_BUF_SIZE must hold a 21-byte state frame (at least 32)"
+#endif
 #define USART_TX_MASK     (USART_TX_BUF_SIZE - 1u)
 
 static volatile uint8_t tx_buf[USART_TX_BUF_SIZE];

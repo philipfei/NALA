@@ -4,8 +4,8 @@ The firmware is owned by a teammate, who builds and flashes it (Claude may edit 
 
 - [firmware/README.md](../firmware/README.md): the protocol, parameters and changes per version.
 
-This file is the Pi-side summary, for firmware **v2.0.0 (NALA_v1, 2026-10-09)**.
-v2.0.0 moved the link from UART to I2C: the Pi code only works with v2.0.0 or newer.
+This file is the Pi-side summary, for firmware **v2.1.0 (2026-10-12)**: UART with binary frames.
+The Pi code only works with v2.1.0 or newer.
 When the firmware protocol changes, update the Pi code (`src/nala_base/nala_base/mcu_protocol.py`)
 and this file in the same commit.
 
@@ -13,49 +13,51 @@ and this file in the same commit.
 
 | Item | Value |
 |---|---|
-| Bus | I2C bus 1 (`/dev/i2c-1`, `dtparam=i2c_arm=on`), 100 kHz, Pi = master |
-| Pins | Pi GPIO2 SDA / GPIO3 SCL (3.3 V) <-> level shifter <-> MCU PC4 SDA0 / PC5 SCL0 (5 V) |
-| MCU address | `0x10` (`i2c_address: 16` in `config/base.yaml`, `I2C_ADDRESS` in firmware `config.h`) |
-| Check | `i2cdetect -y 1` shows `10` |
+| MCU | ATmega328PB, 5 V, USART0: PD0 = RXD0, PD1 = TXD0 |
+| Pi | GPIO14 (TX) / GPIO15 (RX), 3.3 V, PL011 UART = `/dev/ttyAMA0` (`dtoverlay=miniuart-bt`, `scripts/setup_pi.sh`) |
+| Between them | the level shifter on the board. It is a **TXB** type (the schematic says TXS0104E): fine for UART, **not for I2C** |
+| Settings | 38400 baud, 8N1, no flow control. Binary frames only, no text |
 
-The Pi UART on GPIO14/15 belongs to the IMU (`docs/imu_ekf.md`).
+History: v2.0.0 used I2C for this link (2026-10-09). It never worked, because a TXB level shifter oscillates on I2C lines.
 
-## Pi -> MCU: command (I2C write, 8 bytes)
+## Frames
 
-`0x01, vx, vy, w, crc`: vx, vy in mm/s, w in mrad/s, each **int16 little endian**, then CRC-8 of the first 7 bytes.
+Every frame: `0xA5` (sync), id, data, CRC-8 of id + data.
+CRC-8: polynomial 0x07, initial value 0 (`crc8("123456789") = 0xF4`), same code on both sides.
+
+### Pi -> MCU: command (9 bytes)
+
+`0xA5, 0x01, vx, vy, w, crc`: vx, vy in mm/s, w in mrad/s, each **int16 little endian**.
 
 - Axes are the **ROS axes** (REP 103), so a `geometry_msgs/Twist` maps 1:1:
   `vx = linear.x` (forward), `vy = linear.y` (left), `w = angular.z` (counter-clockwise).
-  Checked on the robot 2026-10-07 (forward, strafe left, turn).
+  Checked on the robot 2026-10-07 (forward, strafe left, turn) with the older firmware.
 - Resolution 1 mm/s and 1 mrad/s (`encode_command` rounds and clamps to +-32767).
-- A frame with a wrong id or CRC is ignored by the MCU.
+- A frame with a wrong CRC is ignored by the MCU.
 
 ### MCU command timeout
 
 If the robot is moving and no valid command arrives for **200 ms**, the MCU stops (state flag bit1 until the next
 valid command). A zero command never times out. A stop lets the motors coast: no active braking.
 
-## MCU -> Pi: state (I2C read, 19 bytes, no register address)
+### MCU -> Pi: state (21 bytes, every MCU control period = 20 Hz)
 
-`seq, flags, M1, M2, M3, M4, crc`: seq uint8, flags uint8, Mn int32 little endian, CRC-8 of the first 18 bytes.
+`0xA5, 0x02, seq, flags, M1, M2, M3, M4, crc`: seq uint8, flags uint8, Mn int32 little endian.
 
 | Field | Meaning |
 |---|---|
 | seq | MCU control period counter (50 ms, wraps at 256) |
-| flags bit0 | first frame after the MCU started: its counters start at 0 |
+| flags bit0 | no valid command since the MCU started: its counters start at 0 |
 | flags bit1 | stopped by the command timeout |
 | M1..M4 | cumulative encoder counts since the MCU start, + = the wheel drove the robot forward |
 
-CRC-8: polynomial 0x07, initial value 0 (`crc8("123456789") = 0xF4`), same code on both sides.
-
 ## How the Pi talks to the MCU (`base_node`)
 
-- A timer at `command_rate` (20 Hz) does **two separate I2C transfers** (`smbus2.i2c_rdwr`), each with its own STOP:
-  first the write (the current command, zero if `/cmd_vel` is older than `cmd_vel_timeout` 0.6 s),
-  then the read (the state frame). No repeated START.
-- The kernel I2C timeout is set to `i2c_timeout` (20 ms) and retries to 0, so a hanging transfer does not block.
-  Every transfer is in `try/except OSError`: a NACK or timeout skips this period (counted, throttled warning).
-- A state frame with a wrong CRC is skipped (counted, throttled warning).
+- A timer at `command_rate` (20 Hz) writes the command frame (the current command, zero if `/cmd_vel` is older
+  than `cmd_vel_timeout` 0.6 s). Sending is not synced to the state frames (the UART is full duplex).
+- A reader thread blocks on the UART and cuts the byte stream into state frames (`split_frames`):
+  it looks for `0xA5 0x02` and checks the CRC; other bytes are skipped. A frame with a wrong CRC is counted
+  (throttled warning) and skipped.
 - No valid state for `feedback_timeout` (0.5 s): warning, odometry stops until frames come again.
 
 ## Odometry from the counts (`base_node`)
@@ -63,9 +65,9 @@ CRC-8: polynomial 0x07, initial value 0 (`crc8("123456789") = 0xF4`), same code 
 - The first frame after the start (or a frame with flags bit0: the MCU restarted) is only the reference.
 - Each next frame with a new seq: count change per wheel (`count_delta`, int32 wrap-around safe)
   x 2*pi / 1536 = wheel angle change -> `wheels_to_body` -> body movement (dx, dy, dyaw) -> pose.
-  A failed read loses no distance (the counts are cumulative).
+  A lost frame loses no distance (the counts are cumulative).
 - Speed in `/odom` = movement / (periods x 0.05 s): periods = seq difference (exact MCU time).
-  `header.stamp` = Pi time of the read. Twist covariance: `odom_twist_variance` (vx, vy) for the EKF.
+  `header.stamp` = Pi time when the frame arrived. Twist covariance: `odom_twist_variance` (vx, vy) for the EKF.
 - `publish_tf`: TF odom -> base_footprint from the wheels. App 2 turns it off; there the EKF publishes it
   (wheel vx, vy + IMU turn rate, `docs/imu_ekf.md`).
 
@@ -105,7 +107,7 @@ w  = R/(4*k) * (-M1 - M2 + M3 + M4)
 
 ## First test on the robot (wheels off the ground)
 
-1. `i2cdetect -y 1` shows `10`. App 1 with `log_level:=debug`: no I2C or CRC warnings, `wheels M1..M4` lines at 20 Hz.
+1. App 1 with `log_level:=debug`: no CRC warnings, no "No valid state" warning, `wheels M1..M4` lines at 20 Hz.
 2. Turn each wheel forward by hand: its value in the debug log is positive.
 3. Teleop key `i` (forward): all 4 wheels turn forward, all 4 wheel speeds positive.
 4. `J` (Shift+j, strafe left), `j` (turn counter-clockwise): the wheels turn as in the formulas above.

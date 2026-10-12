@@ -3,8 +3,8 @@
  *
  * Project  : NALA (ATmega328PB, 4 mecanum wheels, 4 quadrature encoders)
  * Author   : HY / Claude (NALA v1 revision)
- * Version  : v2.0.0
- * Date     : 2026-10-09
+ * Version  : v2.1.0
+ * Date     : 2026-10-12
  *
  * v1 vs v0: 20 Hz control loop; speed controller replaced by a positional PI with
  * feed-forward and anti-windup (the v0 incremental PID rang); M2/M3 motor polarity
@@ -12,8 +12,10 @@
  * v1.1.0: the feedback line carries the cumulative encoder counts and is sent every
  * period (20 Hz); UART 38400 baud; feed-forward 6.5 %/(rad/s) (measured).
  * v1.1.1: feed-forward from the measured speed -> PWM table FF_* in config.h.
- * v2.0.0: the Pi link is I2C (TWI0 slave) instead of UART; commands in int16 mm/s and
- *         mrad/s; the state (cumulative counts) is read by the Pi; CRC-8 both ways.
+ * v2.0.0: Pi link over I2C (never worked on the robot: the board has a TXB level
+ *         shifter, which cannot do I2C). Commands in int16 mm/s and mrad/s, CRC-8.
+ * v2.1.0: back to UART (PD0/PD1, 38400 baud) with the v2.0.0 frame contents as binary
+ *         frames: sync byte, id, data, CRC-8. No text on the UART any more.
  *
  * Original : motor_driver_C by Floris van Mourik (created 9/18/2021), with pwm/timer
  *            code by Mathan and UART code by sojim. The untouched original sources
@@ -21,22 +23,22 @@
  *
  * ---------------------------------------------------------------------------
  * OVERVIEW
- *   Receives body velocity commands (Vx, Vy, w) over I2C, converts them to four
+ *   Receives body velocity commands (Vx, Vy, w) over UART, converts them to four
  *   wheel speed targets with the mecanum inverse kinematics, and runs one speed
  *   controller (PI + feed-forward) per wheel on the speed measured from the
- *   encoders. Its output drives four PWM motor channels. The Pi reads the
- *   cumulative encoder counts of the four wheels over I2C (odometry on the Pi).
+ *   encoders. Its output drives four PWM motor channels. The cumulative encoder
+ *   counts of the four wheels are sent to the Pi every period (odometry on the Pi).
  *
  * STRUCTURE (no blocking loops, no software delays)
  *   - Encoders   : pin-change interrupts count edges continuously     (encoder.c)
  *   - Time base  : Timer3 compare interrupt, exactly every CONTROL_PERIOD_MS
  *                  (TIMER3_COMPA_vect below). It snapshots the encoder counts.
- *   - I2C (TWI0) : interrupt, only stores received bytes and sends bytes of a state
- *                  frame that the main loop has already built (double buffer).
- *   - UART TX    : debug text only, ring buffer drained by the UDRE interrupt (USART.c)
+ *   - UART RX    : interrupt, a small state machine that only collects a command
+ *                  frame and sets a flag.
+ *   - UART TX    : ring buffer drained by the UDRE interrupt             (USART.c)
  *   - main loop  : (1) check (CRC) and apply a newly received command,
  *                  (2) when a control period has elapsed: compute speeds, run the
- *                      PI controllers, set the motor output, build the state frame.
+ *                      PI controllers, set the motor output, send the state frame.
  *
  * SPEED MEASUREMENT
  *   speed [rad/s] = (counts in the period / ENC_COUNTS_PER_REV) * 2*pi / period
@@ -47,11 +49,10 @@
  *   included), which made measured speeds and the PID I/D terms inaccurate.
  *   At the default 50 ms period one encoder count is 0.082 rad/s.
  *
- * PI LINK (I2C, slave address I2C_ADDRESS): see the protocol block in config.h.
- *   Pi -> MCU: 0x01 vx vy w (int16 LE; mm/s, mm/s, mrad/s) crc8
- *   MCU -> Pi: seq flags M1..M4 (int32 LE cumulative counts) crc8
+ * PI LINK (UART0, 38400 8N1, binary): see the protocol block in config.h.
+ *   Pi -> MCU: 0xA5 0x01 vx vy w (int16 LE; mm/s, mm/s, mrad/s) crc8
+ *   MCU -> Pi: 0xA5 0x02 seq flags M1..M4 (int32 LE cumulative counts) crc8, every period
  *   Safety: no valid command for CMD_TIMEOUT_MS (200 ms) while moving -> stop.
- *   UART debug text: "a\n" (ADC init), "test\n" (boot), "cmd timeout\n".
  *
  * WIRING / MAPPING : see config.h (motor <-> encoder association, signs, pins).
  * ---------------------------------------------------------------------------
@@ -64,7 +65,6 @@
 #include <avr/interrupt.h>
 #include <util/atomic.h>
 
-#include "ADC.h"
 #include "Usart.h"
 #include "encoder.h"
 #include "motor_functions.h"
@@ -99,6 +99,7 @@ static uint8_t seq;                      /* control period counter (wraps), sent
 static uint8_t cmd_age_ticks;    /* control periods since the last valid command (saturates at 255) */
 static uint8_t cmd_active;       /* 1 = the last command was non-zero, i.e. the robot may be moving */
 static uint8_t timed_out;        /* 1 = stopped by the timeout, until the next valid command */
+static uint8_t boot = 1;         /* 1 = no valid command since power-up (state flags bit0) */
 
 /* ------------------------------------------------------------------------- */
 /* Control time base: Timer3 compare interrupt                                */
@@ -121,84 +122,58 @@ ISR(TIMER3_COMPA_vect)
 }
 
 /* ------------------------------------------------------------------------- */
-/* I2C slave (TWI0): the link to the Pi                                       */
+/* UART link to the Pi: binary frames                                         */
 /* ------------------------------------------------------------------------- */
 /*
- * The ISR does no computation: the Pi 4 handles slave clock stretching badly, and
- * the TWI stretches SCL until the ISR is done, so every interrupt must be short.
- * - Write from the Pi: the ISR only stores the bytes; at STOP it sets cmd_ready.
- *   The main loop checks the CRC and applies the command (handle_command).
- * - Read by the Pi: the main loop builds the whole frame (with CRC) in the buffer
- *   that is not being sent and then switches state_ready (double buffer). At SLA+R
- *   the ISR locks the ready buffer and then only indexes into it.
+ * Receive state machine for the command frame  0xA5 0x01 <6 data bytes> <crc>:
+ *   RX_IDLE       : only here a 0xA5 starts a frame (-> RX_HEADER_ACK). Other bytes are dropped.
+ *   RX_HEADER_ACK : 0x01 -> RX_PAYLOAD. 0xA5 -> stay here (a fresh header). Other -> RX_IDLE.
+ *   RX_PAYLOAD    : store the 6 data bytes and the crc. A 0xA5 in here is data: it never
+ *                   restarts the frame.
+ *   complete      : copy the bytes to cmd_frame, set cmd_ready, back to RX_IDLE.
+ * The interrupt does no checking: the CRC is checked in the main loop (handle_command).
  */
-#define TWCR_ACK ((1 << TWINT) | (1 << TWEA) | (1 << TWEN) | (1 << TWIE))
+enum { RX_IDLE, RX_HEADER_ACK, RX_PAYLOAD };
 
-static volatile uint8_t i2c_rx[I2C_CMD_LEN];             /* command bytes being received */
-static volatile uint8_t i2c_rx_count;
-static volatile uint8_t cmd_ready;                       /* 1 = i2c_rx holds a complete write */
+static volatile uint8_t rx_state = RX_IDLE;
+static volatile uint8_t rx_count;
+static volatile uint8_t rx_buf[FRAME_CMD_PAYLOAD];       /* data + crc of the frame being received */
+static volatile uint8_t cmd_frame[FRAME_CMD_PAYLOAD];    /* data + crc of the last complete frame */
+static volatile uint8_t cmd_ready;                       /* 1 = cmd_frame holds an unprocessed frame */
 
-static volatile uint8_t state_frame[2][I2C_STATE_LEN];   /* double buffer, built by the main loop */
-static volatile uint8_t state_ready;                     /* index of the newest complete frame */
-static volatile uint8_t tx_frame;                        /* index of the frame the Pi is reading */
-static volatile uint8_t tx_index;                        /* next byte of tx_frame to send */
-static volatile uint8_t tx_busy;                         /* 1 while the Pi reads tx_frame */
-static volatile uint8_t frame_read;                      /* 1 = the Pi has read a complete frame */
-
-ISR(TWI0_vect)
+ISR(USART0_RX_vect)
 {
-	switch (TWSR0 & 0xF8) {
-	case 0x60:                      /* own SLA+W received, ACK sent: a command starts */
-		i2c_rx_count = 0;
-		cmd_ready = 0;
-		break;
-	case 0x80:                      /* data byte received, ACK sent */
-		if (i2c_rx_count < I2C_CMD_LEN) {
-			i2c_rx[i2c_rx_count++] = TWDR0;
+	const uint8_t b = UDR0;
+
+	switch (rx_state) {
+	case RX_IDLE:
+		if (b == FRAME_SYNC) {
+			rx_state = RX_HEADER_ACK;
 		}
 		break;
-	case 0xA0:                      /* STOP or repeated START: the write is complete */
-		if (i2c_rx_count == I2C_CMD_LEN) {
-			cmd_ready = 1;
+	case RX_HEADER_ACK:
+		if (b == FRAME_ID_CMD) {
+			rx_count = 0;
+			rx_state = RX_PAYLOAD;
+		} else if (b != FRAME_SYNC) {
+			rx_state = RX_IDLE;
 		}
-		i2c_rx_count = 0;
 		break;
-	case 0xA8:                      /* own SLA+R received, ACK sent: send the ready frame */
-		tx_frame = state_ready;
-		tx_busy = 1;
-		TWDR0 = state_frame[tx_frame][0];
-		tx_index = 1;
-		break;
-	case 0xB8:                      /* byte sent, ACK received: send the next byte */
-		TWDR0 = (tx_index < I2C_STATE_LEN) ? state_frame[tx_frame][tx_index++] : 0xFF;
-		break;
-	case 0xC0:                      /* byte sent, NACK received: the read is over */
-	case 0xC8:                      /* last byte sent, ACK received */
-		if (tx_index >= I2C_STATE_LEN) {
-			frame_read = 1;
+	default:                            /* RX_PAYLOAD */
+		rx_buf[rx_count++] = b;
+		if (rx_count >= FRAME_CMD_PAYLOAD) {             /* complete */
+			for (uint8_t i = 0; i < FRAME_CMD_PAYLOAD; i++) {
+				cmd_frame[i] = rx_buf[i];
+			}
+			cmd_ready = 1;              /* a newer frame simply replaces an unprocessed one */
+			rx_state = RX_IDLE;
 		}
-		tx_index = 0;
-		tx_busy = 0;
 		break;
-	default:                        /* bus error (0x00) or another state: release the bus */
-		i2c_rx_count = 0;
-		tx_index = 0;
-		tx_busy = 0;
-		TWCR0 = TWCR_ACK | (1 << TWSTO);
-		return;
 	}
-	TWCR0 = TWCR_ACK;
-}
-
-static void i2c_slave_init(void)
-{
-	PORTC &= ~(_BV(PC4) | _BV(PC5));     /* no internal pull-ups: the level shifter has its own */
-	TWAR0 = (uint8_t)(I2C_ADDRESS << 1);   /* bit0 = 0: no general call */
-	TWCR0 = TWCR_ACK;
 }
 
 /* CRC-8, polynomial 0x07, initial value 0 (same as crc8() on the Pi). */
-static uint8_t crc8(const volatile uint8_t *data, uint8_t len)
+static uint8_t crc8(const uint8_t *data, uint8_t len)
 {
 	uint8_t crc = 0;
 	for (uint8_t i = 0; i < len; i++) {
@@ -211,40 +186,27 @@ static uint8_t crc8(const volatile uint8_t *data, uint8_t len)
 }
 
 /*
- * Build the state frame in the buffer that is not ready, then make it the ready one.
- * If the Pi is still reading that buffer (a read started before the last switch),
- * skip this period: the counts are cumulative and seq counts periods, so nothing is lost.
+ * Queue the state frame  0xA5 0x02 seq flags M1..M4 crc  for the Pi (every control period).
+ * If the TX buffer has no room the frame is dropped, never waited for: the counts are
+ * cumulative and seq counts periods, so the Pi loses nothing.
  */
-static void build_state_frame(void)
+static void send_state_frame(void)
 {
-	static uint8_t boot = 1;           /* flags bit0 until the Pi has read one frame */
-	const uint8_t next = state_ready ^ 1;
+	uint8_t f[FRAME_STATE_LEN];
 
-	if (frame_read) {
-		boot = 0;
-	}
-	if (tx_busy && tx_frame == next) {
-		return;
-	}
-	volatile uint8_t *f = state_frame[next];
-	f[0] = seq;
-	f[1] = (uint8_t)(boot | (timed_out << 1));
+	f[0] = FRAME_SYNC;
+	f[1] = FRAME_ID_STATE;
+	f[2] = seq;
+	f[3] = (uint8_t)(boot | (timed_out << 1));
 	for (uint8_t m = 0; m < NUM_MOTORS; m++) {
 		const uint32_t c = (uint32_t)M_count[m];
-		f[2 + 4 * m] = (uint8_t)c;
-		f[3 + 4 * m] = (uint8_t)(c >> 8);
-		f[4 + 4 * m] = (uint8_t)(c >> 16);
-		f[5 + 4 * m] = (uint8_t)(c >> 24);
+		f[4 + 4 * m] = (uint8_t)c;
+		f[5 + 4 * m] = (uint8_t)(c >> 8);
+		f[6 + 4 * m] = (uint8_t)(c >> 16);
+		f[7 + 4 * m] = (uint8_t)(c >> 24);
 	}
-	f[I2C_STATE_LEN - 1] = crc8(f, I2C_STATE_LEN - 1);
-	state_ready = next;                /* one byte: the ISR sees either the old or the new index */
-}
-
-/* UART RX is not used since v2.0.0, but usart_enable() still turns its interrupt on:
- * read and drop the byte (a PD0 pin without a cable can pick up noise). */
-ISR(USART0_RX_vect)
-{
-	(void)UDR0;
+	f[FRAME_STATE_LEN - 1] = crc8(&f[1], FRAME_STATE_LEN - 2);   /* id .. last count byte */
+	usart_try_send_buf((const char *)f, FRAME_STATE_LEN);
 }
 
 /* ------------------------------------------------------------------------- */
@@ -357,18 +319,19 @@ static void speed_control(uint8_t m, float dt)
 /* ------------------------------------------------------------------------- */
 /* Main-loop work                                                             */
 /* ------------------------------------------------------------------------- */
-/* A command arrived over I2C: check it, update the targets (feed-forward) and apply it now. */
+/* A command frame arrived: check its CRC, update the targets (feed-forward) and apply it now. */
 static void handle_command(void)
 {
-	uint8_t b[I2C_CMD_LEN];
+	uint8_t b[1 + FRAME_CMD_PAYLOAD];  /* id, 6 data bytes, crc */
 
+	b[0] = FRAME_ID_CMD;
 	ATOMIC_BLOCK(ATOMIC_FORCEON) {
-		for (uint8_t i = 0; i < I2C_CMD_LEN; i++) {
-			b[i] = i2c_rx[i];
+		for (uint8_t i = 0; i < FRAME_CMD_PAYLOAD; i++) {
+			b[1 + i] = cmd_frame[i];
 		}
 		cmd_ready = 0;
 	}
-	if (b[0] != I2C_CMD_ID || crc8(b, I2C_CMD_LEN - 1) != b[I2C_CMD_LEN - 1]) {
+	if (crc8(b, FRAME_CMD_PAYLOAD) != b[FRAME_CMD_PAYLOAD]) {
 		return;                        /* broken frame: ignore it (the next one comes in 50 ms) */
 	}
 
@@ -385,12 +348,13 @@ static void handle_command(void)
 	cmd_age_ticks = 0;
 	cmd_active    = (v[0] != 0 || v[1] != 0 || v[2] != 0);
 	timed_out     = 0;
+	boot          = 0;
 
 	/* Output the feed-forward immediately instead of waiting for the next control period. */
 	set_motor_speed();
 }
 
-/* A control period elapsed: measure, run the speed controllers, drive the motors, build the state frame. */
+/* A control period elapsed: measure, run the speed controllers, drive the motors, send the state frame. */
 static void control_step(void)
 {
 	int32_t delta[ENC_COUNT];
@@ -421,7 +385,6 @@ static void control_step(void)
 			calc_angular_speed(0, 0, 0);          /* targets = 0, feed-forward PWM = 0 */
 			cmd_active = 0;                       /* report only once */
 			timed_out = 1;
-			usart_try_send_buf("cmd timeout\n", 12);
 		}
 	}
 #endif
@@ -436,7 +399,7 @@ static void control_step(void)
 		speed_control(m, dt);
 	}
 	set_motor_speed();
-	build_state_frame();
+	send_state_frame();
 }
 
 /* ------------------------------------------------------------------------- */
@@ -454,17 +417,13 @@ int main(void)
 	init_motor_timers();
 	set_motor_power(0, 0, 0, 0);
 
-	usart_enable(UART_BAUD);
-	adc_init(0);                       /* 5 V reference; prints "a\n". The ADC itself is unused. */
-	usart_send_str("test\n");
+	usart_enable(UART_BAUD);           /* binary frames only: no text is printed (v2.1.0) */
 
 	calc_angular_speed(0, 0, 0);       /* start with all targets = 0 */
 	set_motor_speed();
-	build_state_frame();               /* a valid frame (all counts 0) before the first read */
 
 	encoder_init();
 	control_timer_init();
-	i2c_slave_init();
 	sei();
 
 	for (;;) {

@@ -1,17 +1,19 @@
-"""Pi <-> MCU I2C protocol, firmware v2.0.0 (no ROS). See docs/mcu_protocol.md.
+"""Pi <-> MCU UART protocol, firmware v2.1.0: binary frames (no ROS). See docs/mcu_protocol.md.
 
 Axes are the ROS axes: vx forward, vy left (m/s), wz counter-clockwise (rad/s).
+Every frame: 0xA5 (sync), id, data, CRC-8 of id + data.
 """
 
 import struct
 
-CMD_ID = 0x01
-CMD_LEN = 8           # id, vx, vy, w (int16 LE), crc
-STATE_LEN = 19        # seq, flags, 4 x int32 LE counts, crc
+SYNC = 0xA5
+ID_CMD = 0x01         # Pi -> MCU: vx, vy, w (int16 LE)
+ID_STATE = 0x02       # MCU -> Pi: seq, flags, 4 x int32 LE counts
+STATE_LEN = 21        # sync, id, seq, flags, 16 count bytes, crc
 SCALE = 1000          # mm/s and mrad/s per m/s and rad/s
 INT16_MAX = 32767
 
-FLAG_BOOT = 0x01      # first frame after the MCU started: its counters start at 0
+FLAG_BOOT = 0x01      # no valid command since the MCU started: its counters start at 0
 FLAG_TIMEOUT = 0x02   # the MCU stopped because no valid command came for 200 ms
 
 
@@ -31,22 +33,35 @@ def to_int16(value):
 
 
 def encode_command(vx, vy, wz):
-    """Return the 8-byte command: 0x01, vx, vy, w (int16 LE), crc."""
-    body = struct.pack('<Bhhh', CMD_ID, to_int16(vx), to_int16(vy), to_int16(wz))
-    return body + bytes([crc8(body)])
+    """Return the 9-byte command frame: 0xA5, 0x01, vx, vy, w (int16 LE), crc."""
+    body = struct.pack('<Bhhh', ID_CMD, to_int16(vx), to_int16(vy), to_int16(wz))
+    return bytes([SYNC]) + body + bytes([crc8(body)])
 
 
-def parse_state(data):
-    """Parse the 19-byte state frame.
+def split_frames(buffer):
+    """Cut a byte buffer from the MCU into state frames.
 
-    Returns (seq, flags, [m1, m2, m3, m4]) with the cumulative encoder counts
-    (+ = forward), or None if the length or the CRC is wrong.
+    Returns (states, rest, bad): states is a list of (seq, flags, [m1, m2, m3, m4]) with the
+    cumulative encoder counts (+ = forward); rest is the unused tail (an incomplete frame);
+    bad counts the places that looked like a frame start but had a wrong CRC.
+    Other bytes are skipped one by one until the next valid frame.
     """
-    data = bytes(data)
-    if len(data) != STATE_LEN or crc8(data[:-1]) != data[-1]:
-        return None
-    seq, flags, *counts = struct.unpack('<BBiiii', data[:-1])
-    return seq, flags, counts
+    states = []
+    bad = 0
+    i = 0
+    while len(buffer) - i >= STATE_LEN:
+        frame = buffer[i:i + STATE_LEN]
+        if frame[0] != SYNC or frame[1] != ID_STATE:
+            i += 1
+            continue
+        if crc8(frame[1:-1]) != frame[-1]:
+            bad += 1
+            i += 1
+            continue
+        seq, flags, *counts = struct.unpack('<BBiiii', frame[2:-1])
+        states.append((seq, flags, counts))
+        i += STATE_LEN
+    return states, buffer[i:], bad
 
 
 def count_delta(new, old):

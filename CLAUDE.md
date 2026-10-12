@@ -87,6 +87,7 @@ Everything below is project-specific and must be kept up to date.
   - How to get new code onto the Pi: in the Pi SSH terminal, `git pull` from GitHub, then build.
 - `requirements.yaml`: system versions and every dependency (PC, Pi, firmware). Update it when a dependency is added or removed.
 - `docs/mcu_protocol.md`: the Pi <-> MCU protocol. Update it in the same commit as any protocol change.
+- `docs/handover.md`: where the work stopped and the next steps on the hardware. Update it when a session ends with open hardware work.
 
 ## Config folder
 
@@ -123,7 +124,7 @@ Everything below is project-specific and must be kept up to date.
 | | PC | Pi |
 |---|---|---|
 | Hardware | - | Raspberry Pi 4B, 8 GB RAM |
-| OS | Ubuntu 24.04 | Ubuntu 24.04 |
+| OS | Ubuntu 24.04 | Ubuntu 24.04 (Desktop after the reinstall of 2026-10-12; Server before) |
 | Architecture | amd64 | arm64 |
 | ROS 2 | Jazzy | Jazzy |
 | Python | 3.12 | 3.12 |
@@ -159,9 +160,12 @@ Everything below is project-specific and must be kept up to date.
 | Motor top speed | Measured 2026-10-07 at 100 % PWM: 12.6-13.1 rad/s = 0.50-0.52 m/s rim speed (M4 slowest), the same with wheels in the air and on the floor. Firmware assumed 25 rad/s. `max_wheel_speed: 0.45` in `config/base.yaml` |
 | Game controller | Xbox Wireless Controller `C8:3F:26:93:1B:B2`, paired with the **Pi** over Bluetooth (`/dev/input/js0`; Bluetooth runs on the mini UART since 2026-10-09, `dtoverlay=miniuart-bt`). In `joy` (SDL): LB = button 4, left stick x/y = axes 0/1, right stick x = axis 3, triggers = axes 2/5 (1.0 released). Checked 2026-10-07 |
 | LiDAR | RPLIDAR A2M8 (firmware 1.28), USB CP2102 adapter (`/dev/serial/by-id/usb-Silicon_Labs_CP2102_...`), 115200 baud, driver `rplidar_ros` (`rplidar_composition`). Sensitivity mode: 16 m, about 7900 points/s, about 14 scans/s. Mounted at the chassis center (x = y = 0), facing backward (yaw 180 deg, checked 2026-10-07 with objects behind and right of the robot). Height not measured (placeholder 0.20 m in `config/robot.yaml`) |
-| Motor driver MCU | ATmega328PB, 16 MHz, 5 V. **I2C** since 2026-10-09: Pi GPIO2 SDA / GPIO3 SCL (bus 1) <-> level shifter <-> MCU TWI0 PC4 SDA / PC5 SCL, slave address 0x10. (Before: UART on GPIO14/15) |
-| IMU | WitMotion WT901C-TTL, 3.3 V, flat with the chip side up, on the Pi UART GPIO14/15 = PL011 `/dev/ttyAMA0` (IMU TX -> GPIO15, IMU RX <- GPIO14). Position on the robot not measured (placeholder in `config/robot.yaml`). Example code (Arduino) in `JY901 uno r3/` (local, not in git) |
-| Pi pins | GPIO2/3 = I2C to the MCU, GPIO14/15 = UART to the IMU. MCU and IMU must never share a UART (two TX outputs would drive one RX pin) |
+| Motor driver MCU | ATmega328PB, 16 MHz, 5 V. **UART** (user, 2026-10-12): MCU PD0 RX / PD1 TX <-> level shifter <-> Pi GPIO14 TX / GPIO15 RX = PL011 `/dev/ttyAMA0`, 38400 baud. (2026-10-09 to 12: I2C on PC4/PC5, never worked) |
+| Level shifter | The schematic says TXS0104E, but the part on the board is a **TXB** type (found 2026-10-12). A TXB works for UART but **cannot do I2C** (it oscillates against pull-ups; seen as random ACKs and a ~60 kHz square wave on SCL/SDA). No pull-ups on lines through it |
+| IMU | WitMotion WT901C-TTL, 3.3 V, flat with the chip side up, on a **CH340G USB-to-TTL adapter** (USB id 1a86:7523) = `/dev/ttyIMU` (udev rule from `setup_pi.sh`). Already set to 115200 baud / 50 Hz / acc + gyro (2026-10-09). Position on the robot not measured (placeholder in `config/robot.yaml`). Example code (Arduino) in `JY901 uno r3/` (local, ignored by git) |
+| Battery | 4S2P Li-ion 18650, 3300 mAh per cell: 16.8 V full (4.2 V/cell), 6.6 Ah. Low-voltage alarm at 14.0 V (3.5 V/cell, user), 0 % at 12.0 V (3.0 V/cell) |
+| Battery monitor | TI INA260 on the Pi I2C bus 1 (GPIO2 SDA / GPIO3 SCL, directly, not through the level shifter). Address not checked (0x40 expected) |
+| Pi pins | GPIO14/15 = UART to the MCU, GPIO2/3 = I2C to the INA260, USB = LiDAR (CP2102) and IMU (CH340G). Two devices must never share a UART (two TX outputs would drive one RX pin) |
 
 ## Reference code (`ref/`, local only)
 
@@ -176,12 +180,13 @@ Everything below is project-specific and must be kept up to date.
 
 - A teammate owns the firmware (`firmware/`) and builds and flashes it. **Claude may edit `firmware/`** (user, 2026-10-07).
   The PC has no avr-gcc (the user chose not to install it); Claude compile-checks on the Pi (avr-gcc 7.3).
-- Version in the repo: v2.0.0 (2026-10-09, by Claude): Pi link over I2C. On the MCU: v1.1.1 until the teammate
-  flashes v2.0.0. Old firmware and new Pi code cannot talk to each other.
+- Version in the repo: **v2.1.0** (2026-10-12, by Claude): UART with binary frames. **Not compiled and not flashed
+  yet** (the Pi and the MCU were off). On the MCU: v2.0.0 (I2C, useless). Firmware and Pi code must match.
 - Protocol source of truth: `firmware/README.md` (protocol, parameters, changes per version).
-- v2.0.0: I2C slave 0x10. Command `0x01, vx, vy, w (int16 LE, mm/s, mrad/s), crc8`; state (read)
-  `seq, flags, 4 x int32 cumulative counts, crc8`. CRC-8 poly 0x07. TWI ISR does no computation (Pi 4 clock
-  stretching): double-buffered state frame, CRC check in the main loop. UART only debug text.
+- v2.1.0: UART 38400, binary frames `0xA5, id, data, crc8` (CRC-8 poly 0x07 of id + data). Command (id 0x01):
+  vx, vy, w as int16 LE in mm/s, mrad/s. State (id 0x02, every 50 ms): seq, flags, 4 x int32 cumulative counts.
+  RX state machine IDLE -> HEADER_ACK -> PAYLOAD (a 0xA5 in the data never restarts a frame). No text on the UART.
+- v2.0.0 (I2C slave) was dropped: it could never work with the TXB level shifter.
 - v1.1.0: control loop and feedback 20 Hz, cumulative encoder counts, MCU command timeout 200 ms, stop = coast. v1.1.1: feed-forward from a measured speed -> PWM table (`FF_*`):
   the motor curve is not linear (dead zone ~8 %, 30 % -> 8 rad/s, 100 % -> 13 rad/s); the single factor 6.5 of
   v1.1.0 overshot by 30-90 % (step tests 2026-10-07). M2/M3 direction pins
@@ -193,11 +198,11 @@ Everything below is project-specific and must be kept up to date.
 
 | Stage | App | Goal | Status |
 |---|---|---|---|
-| 1 | Teleop | Drive the chassis with the keyboard or the Xbox controller | Code done (Xbox, fixed speeds, 20 Hz added 2026-10-07). Hardware test pending (motors not connected yet) |
-| 2 | Mapping | Teleop + real-time LiDAR SLAM + RViz on the PC + save the map and copy it back to the PC | Code done 2026-10-07. Tested without driving (motors not connected). Driving test and SLAM tuning pending |
-| 3 | Coverage | The user sets a base station on the PC, in the map saved by app 2. The robot starts at the base station, covers the whole house, then returns to it | Not started |
+| 1 | Teleop | Drive the chassis with the keyboard or the Xbox controller | Done and driven on the robot (2026-10-07, firmware v1.1.1). To test again with firmware v2.1.0 after the Pi reinstall |
+| 2 | Mapping | Teleop + real-time LiDAR SLAM + RViz on the PC + save the map and copy it back to the PC | Code done. IMU + EKF added and checked on the Pi (2026-10-09). Driving test and SLAM tuning pending |
+| 3 | Coverage | The user sets a base station on the PC, in the map saved by app 2. The robot starts at the base station, covers the whole house, then returns to it | Code on the branch `stage3-coverage` (tested in simulation only), not merged into main |
 
-**Current stage: 2** (mapping code done; waiting for the motors for the driving test of apps 1 and 2).
+**Current stage: 2** (mapping). Next: Pi reinstall and firmware v2.1.0 (`docs/handover.md`), then the driving test and SLAM tuning.
 
 Stage 2 special requirement: the house has many very similar rooms.
 SLAM must not jump to a wrong but similar-looking place.
@@ -208,7 +213,7 @@ SLAM must not jump to a wrong but similar-looking place.
 - Packages: `nala_description` (URDF), `nala_base` (Pi <-> MCU driver, odometry), `nala_teleop` (PC keyboard teleop),
   `nala_bringup` (launch files and RViz layouts for all apps; installs `config/`), `nala_coverage` (coverage planner, mission, base station picker).
 - A package that is still empty has a `COLCON_IGNORE` file. Remove it in the stage that fills the package.
-- The Pi runs: `nala_base` (`base_node`, `imu_node`), robot_localization EKF (app 2), Xbox controller (`joy` + `teleop_twist_joy`: hold LB, left stick = drive + strafe,
+- The Pi runs: `nala_base` (`base_node`, `battery_node`, `imu_node`), robot_localization EKF (app 2), Xbox controller (`joy` + `teleop_twist_joy`: hold LB, left stick = drive + strafe,
   right stick = turn), `rplidar_ros`, `robot_state_publisher`, `slam_toolbox`, Nav2, coverage mission.
 - The PC runs: keyboard teleop (`nala_teleop`, own node: IJKL keys, Shift = strafe, the user chose it over WASD;
   no speed keys, speeds only in `config/teleop.yaml`), RViz, base station picker.
@@ -221,11 +226,15 @@ SLAM must not jump to a wrong but similar-looking place.
   `base_footprint` and `base_link` are the same pose (on the floor under the chassis center).
   `nala_base` publishes `/odom` and TF `odom -> base_footprint`; `robot_state_publisher` the rest of the robot;
   `slam_toolbox` `map -> odom`.
-- Odometry: from the cumulative encoder counts (firmware v2.0.0, I2C, 20 Hz): every timer tick one I2C write
-  (command) and one I2C read (state), two separate transfers. Count change -> wheel angle -> body movement -> pose.
-  A failed read loses no distance. `/odom` speed = movement / (seq periods x 0.05 s, exact MCU time);
-  stamp = Pi time of the read (no artificial time stamps: clock drift would make jumps). Kernel I2C timeout
-  20 ms, `OSError` caught. Tested on the PC with a fake smbus2 MCU (CRC error, I2C error).
+- Odometry: from the cumulative encoder counts in the MCU state frames (firmware v2.1.0, UART, 20 Hz). A timer
+  writes the command frame at 20 Hz; a reader thread blocks on the UART and cuts the stream into frames
+  (`split_frames`: sync, id, CRC; bad frames are counted and skipped). Count change -> wheel angle -> body
+  movement -> pose. A lost frame loses no distance. `/odom` speed = movement / (seq periods x 0.05 s, exact MCU
+  time); stamp = Pi time of arrival (no artificial time stamps: clock drift would make jumps).
+  Tested on the PC with a fake MCU on a pty (garbage, CRC error, dropped frame).
+- Battery: `battery_node` reads the INA260 (I2C) at 1 Hz -> `/battery_state` (percentage is rough: linear in the
+  voltage, the 18650 curve is not) and `/battery_low` (true below 14.0 V), for a later "drive home on low battery".
+  Started by the app 1 launch file. Tested on the PC with a fake smbus2.
 - IMU + EKF (app 2, `docs/imu_ekf.md`, user decision 2026-10-09): robot_localization EKF fuses `/odom` vx, vy
   and **only the IMU gyro z** for yaw (no wheel turn rate: mecanum slip). No IMU orientation (magnetometer is
   distorted indoors), no acceleration. TF odom -> base_footprint: base_node in app 1 (`publish_tf`), the EKF
@@ -254,20 +263,24 @@ SLAM must not jump to a wrong but similar-looking place.
 
 - [1] Firmware v1.1.0 checked 2026-10-07: counts at 20 Hz, odometry 1.10 m = tape 1.10 m.
   v1.1.1 step tests (wheels in the air, 0.05-0.45 m/s): 90 % of the target in 0.2-0.4 s (6.5: overshoot 30-90 %),
-  overshoot 1-27 % (most <= 15 %), settled within ~1 s. Still open: Xbox strafe + turn on the floor.
+  overshoot 1-27 % (most <= 15 %), settled within ~1 s. Xbox strafe + turn on the floor works (2026-10-07).
 - [2] LiDAR mount height above the floor (placeholder 0.20 m in `config/robot.yaml`).
 - [2] Driving test: forward odometry scale checked (1.17 m, 8 deg). Still open: strafe and 360 deg turn, then SLAM tuning
   in the real house (no jumps between similar rooms).
 - [3] Base station: only a pose, or a physical dock or charger? How exact must the return be?
 - [3] Coverage width (tool width) and any coverage pattern requirements.
-- [2] Checked 2026-10-09: reboot with miniuart-bt + core_freq=250 -> `/dev/ttyAMA0`, core clock fixed 250 MHz,
-  Bluetooth hci0 up; `setup_imu.py` -> 115200 baud, 50 Hz, only 0x51/0x52; `/imu` 50 Hz; gyro sign correct
-  (counter-clockwise = positive); EKF 30 Hz without TF warnings, 360 deg turns by hand tracked.
-  Firmware v2.0.0 compiles without warnings (Pi, avr-gcc 7.3 + DFP).
-  Still open: flash v2.0.0, then `i2cdetect -y 1` shows 10 and no I2C/CRC errors; Xbox controller reconnect test.
+- [2] Checked 2026-10-09 (old Pi installation): miniuart-bt + core_freq=250 -> `/dev/ttyAMA0`, core clock fixed
+  250 MHz, Bluetooth and the Xbox controller work on the mini UART; `setup_imu.py` -> 115200 baud, 50 Hz, only
+  0x51/0x52; `/imu` 50 Hz; gyro sign correct (counter-clockwise = positive); EKF 30 Hz without TF warnings,
+  360 deg turns by hand tracked.
+- [1] **After the Pi reinstall (Ubuntu Desktop 24.04) and the rewiring: follow `docs/handover.md`.** Open: run
+  `setup_pi.sh`, compile-check and flash firmware v2.1.0, test the UART link (no CRC errors, odometry), `/dev/ttyIMU`,
+  INA260 address and current sign, pair the Xbox controller again.
 - [2] IMU gyro bias at rest: about -0.0015 rad/s = -5 deg/min of yaw drift while standing (2026-10-09).
   Not compensated yet (idea: average the gyro while standing still at start, or while the wheels do not move).
 - [2] IMU mount position and x direction (placeholders in `config/robot.yaml`; do not change the turn rate).
 - [2] EKF variances (`odom_twist_variance`, `angular_velocity_variance`) are start values: tune while driving.
 - [3] When App 3 (branch `stage3-coverage`) is merged: start `imu_node` + EKF in its launch too (or keep
   base_node TF), and its note "slowest speed 0.04 m/s because of 0.02 steps" is outdated (now 1 mm/s).
+  It can use `/battery_state` now (`battery.enabled` in its `config/coverage.yaml`); its `setup_pi_screen.sh`
+  installs Xfce + LightDM, which is for Ubuntu Server: check it again on Ubuntu Desktop.

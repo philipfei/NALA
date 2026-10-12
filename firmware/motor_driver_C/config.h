@@ -3,8 +3,8 @@
  *
  * Project : NALA motor driver (ATmega328PB, 4x mecanum wheels, 4x quadrature encoders)
  * Author  : HY (NALA v1 revision)
- * Version : v2.0.0
- * Date    : 2026-10-07
+ * Version : v2.1.0
+ * Date    : 2026-10-12
  *
  * v1 changes vs v0: 20 Hz control/feedback (50 ms period), speed controller
  * redesigned (positional PI + feed-forward + anti-windup, replaces the old
@@ -14,8 +14,9 @@
  * feed-forward 6.5 %/(rad/s) from measurements on the robot.
  * v1.1.1: feed-forward from a measured speed -> PWM table (the motor curve is not linear;
  * 6.5 overshot by 30-90 %).
- * v2.0.0: the Pi link is I2C (TWI0, MCU = slave), not UART: the UART pins of the Pi now
- * belong to the IMU. Commands in int16 mm/s and mrad/s, state frame with CRC-8.
+ * v2.0.0: Pi link over I2C (TWI0 slave). Never worked: the level shifter on the board is
+ * a TXB type, which cannot do I2C. Commands in int16 mm/s and mrad/s, state frame, CRC-8.
+ * v2.1.0: back to UART (PD0/PD1) with the v2.0.0 frame contents as binary frames.
  *
  * Everything that is "a number you may want to change" or "a wire you may want to
  * re-assign" lives in this file. The .c files contain no magic numbers for these.
@@ -128,48 +129,48 @@
 #define W_ZERO_EPS          0.01f
 
 /* ------------------------------------------------------------------------- */
-/* Pi link: I2C (v2.0.0)                                                      */
+/* Pi link: UART0 with binary frames (v2.1.0)                                 */
 /* ------------------------------------------------------------------------- */
 /*
- * TWI0: PC4 = SDA0, PC5 = SCL0. The MCU is the slave, the Pi the master.
- * The Pi runs I2C at 3.3 V, the MCU at 5 V: a level shifter on the board converts
- * and has the pull-ups, so the internal pull-ups stay off.
+ * UART0: PD0 = RXD0, PD1 = TXD0, 38400 8N1. The Pi (3.3 V) is connected through the
+ * level shifter on the board. That part is a TXB type (auto direction): fine for
+ * UART, but it cannot do I2C, which is why the I2C link of v2.0.0 never worked.
+ * Only binary frames are sent: no text.
  *
- * Pi writes a command, I2C_CMD_LEN = 8 bytes:
- *      0x01  vx_lo vx_hi  vy_lo vy_hi  w_lo w_hi  crc
+ * Pi -> MCU, command frame, 9 bytes:
+ *      0xA5  0x01  vx_lo vx_hi  vy_lo vy_hi  w_lo w_hi  crc
  *  vx, vy [mm/s], w [mrad/s], int16 little endian. ROS axes (REP-103): vx forward,
  *  vy LEFT, w counter-clockwise positive. crc = CRC-8 (poly 0x07, init 0) of the
- *  first 7 bytes. A frame with a wrong id or crc is ignored.
+ *  7 bytes after the sync byte (id + data). A frame with a wrong crc is ignored.
  *  Safety: if no valid command arrives for CMD_TIMEOUT_MS the robot stops (see
  *  below), so the Pi must keep sending the command while driving (20 Hz).
  *
- * Pi reads the state, I2C_STATE_LEN = 19 bytes (plain read, no register address):
- *      seq  flags  M1[4]  M2[4]  M3[4]  M4[4]  crc
- *  seq   : control period counter (uint8, wraps). The difference of two reads is the
+ * MCU -> Pi, state frame, 21 bytes, every control period (20 Hz):
+ *      0xA5  0x02  seq  flags  M1[4]  M2[4]  M3[4]  M4[4]  crc
+ *  seq   : control period counter (uint8, wraps). The difference of two frames is the
  *          number of control periods between them (exact time base for the speeds).
- *  flags : bit0 = first frame after power-up (the counters started at 0),
+ *  flags : bit0 = no valid command since power-up (the counters started at 0),
  *          bit1 = stopped by the command timeout (until the next valid command).
  *  Mn    : cumulative encoder counts since power-up, int32 little endian,
  *          MOTORn_ENC_SIGN applied (+ = the wheel drove the robot forward).
  *          They overflow only after about a week of driving in one direction.
- *  crc   : CRC-8 of the first 18 bytes.
- *
- * UART: not used by the Pi any more. It only prints debug text ("a", "test",
- * "cmd timeout") for a USB-serial adapter on PD1.
+ *  crc   : CRC-8 of the 19 bytes after the sync byte.
+ *  21 bytes take 5.5 ms at 38400 baud: 11 % of the line at 20 Hz. A frame that does
+ *  not fit into the TX ring buffer (USART.c) is dropped, never waited for.
  */
-#define I2C_ADDRESS         0x10    /* 7-bit slave address */
-#define I2C_CMD_ID          0x01
-#define I2C_CMD_LEN         8
-#define I2C_STATE_LEN       19
+#define UART_BAUD           38400   /* Normal mode: UBRR = 25, error +0.16 % at 16 MHz.
+                                     * 57600 would give UBRR = 16 and +2.1 % error: do not use it. */
+#define FRAME_SYNC          0xA5
+#define FRAME_ID_CMD        0x01
+#define FRAME_ID_STATE      0x02
+#define FRAME_CMD_PAYLOAD   7       /* bytes after sync + id in a command: 6 data + crc */
+#define FRAME_STATE_LEN     21      /* whole state frame */
 #define CMD_SCALE           1000.0f /* command units per m/s (or rad/s): mm/s, mrad/s */
-
-#define UART_BAUD           38400   /* debug text only. Normal mode: UBRR = 25, error +0.16 % at 16 MHz. */
 
 /*
  * Command timeout (NALA_v0 addition): if the robot is moving and no valid command
- * has arrived for CMD_TIMEOUT_MS, all targets are set to zero (stop), flags bit1 is
- * set and the debug line "cmd timeout\n" is sent once. Any new valid command resumes
- * normal operation. 0 disables the timeout (the last command is then held forever, as
+ * has arrived for CMD_TIMEOUT_MS, all targets are set to zero (stop) and flags bit1
+ * of the state frame is set. Any new valid command resumes normal operation. 0 disables the timeout (the last command is then held forever, as
  * in the original).
  * The check runs once per control period, so the stop happens between
  * CMD_TIMEOUT_MS and CMD_TIMEOUT_MS + CONTROL_PERIOD_MS after the last frame.

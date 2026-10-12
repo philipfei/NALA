@@ -1,0 +1,15 @@
+# Battery monitor (nala_base/battery_node): TI INA260 on the Pi I2C bus 1 (GPIO2 SDA, GPIO3 SCL, 3.3 V).
+# Battery: 4S2P Li-ion 18650, 3300 mAh per cell -> 4 cells in series, 6.6 Ah.
+# Publishes /battery_state (sensor_msgs/BatteryState) and /battery_low (std_msgs/Bool).
+# The percentage is only rough: linear between empty_voltage and full_voltage, but the real
+# discharge curve is not linear and the voltage sags under load.
+battery_node:
+  ros__parameters:
+    i2c_bus: 1                  # /dev/i2c-1
+    i2c_address: 64             # 0x40 = INA260 with A0 and A1 to GND. NOT CHECKED: see `i2cdetect -y 1` (verify)
+    publish_rate: 1.0           # Hz
+    full_voltage: 16.8          # V, 4.2 V per cell = 100 %
+    low_voltage: 14.0           # V, 3.5 V per cell: /battery_low becomes true and the node warns
+    empty_voltage: 12.0         # V, 3.0 V per cell = 0 %
+    design_capacity: 6.6        # Ah, 2 x 3.3 Ah
+    current_sign: 1.0           # 1.0 or -1.0, so that the current is NEGATIVE while the robot runs (verify)

@@ -1,15 +1,15 @@
-"""ROS node: /cmd_vel -> MCU over I2C, MCU encoder counts -> /odom (and TF).
+"""ROS node: /cmd_vel -> MCU over the UART, MCU encoder counts -> /odom (and TF).
 
 All parameters come from config/base.yaml (no defaults here).
-Every timer tick: one I2C write (the command), then one I2C read (the state frame),
-as two separate transfers with a STOP between them.
+A timer writes the command frame at command_rate. A reader thread blocks on the UART
+and handles every state frame from the MCU (it sends one per control period).
 Odometry: the change of the cumulative encoder counts is the exact wheel movement.
 The speed divides it by the exact MCU time (periods x feedback_period, from the MCU
-period counter); the message stamp is the Pi time of the read.
+period counter); the message stamp is the Pi time when the frame arrived.
 """
 
-import fcntl
 import math
+import threading
 import time
 
 from geometry_msgs.msg import TransformStamped, Twist
@@ -18,27 +18,25 @@ import rclpy
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.parameter import Parameter
-from smbus2 import i2c_msg, SMBus
+import serial
 from tf2_ros import TransformBroadcaster
 
 from nala_base.kinematics import integrate_pose, limit_wheel_speed, wheels_to_body
 from nala_base.mcu_protocol import (
-    count_delta, encode_command, FLAG_BOOT, FLAG_TIMEOUT, parse_state, STATE_LEN)
+    count_delta, encode_command, FLAG_BOOT, FLAG_TIMEOUT, split_frames)
 
 ODOM_FRAME = 'odom'
 BASE_FRAME = 'base_footprint'
-I2C_RETRIES = 0x0701      # ioctl numbers from linux/i2c-dev.h
-I2C_TIMEOUT = 0x0702      # adapter timeout, in units of 10 ms
-LOG_THROTTLE = 5.0        # s, repeat I2C error warnings at most this often
+READ_TIMEOUT = 0.1        # s, a blocking read returns after this, so the reader thread can stop
+LOG_THROTTLE = 5.0        # s, repeat CRC error warnings at most this often
 
 
 class BaseNode(Node):
 
     def __init__(self):
         super().__init__('base_node')
-        bus = self.param('i2c_bus', Parameter.Type.INTEGER)
-        self.address = self.param('i2c_address', Parameter.Type.INTEGER)
-        i2c_timeout = self.param('i2c_timeout', Parameter.Type.DOUBLE)
+        port = self.param('serial_port', Parameter.Type.STRING)
+        baud = self.param('baud_rate', Parameter.Type.INTEGER)
         self.max_wheel_speed = self.param('max_wheel_speed', Parameter.Type.DOUBLE)
         self.cmd_timeout = self.param('cmd_vel_timeout', Parameter.Type.DOUBLE)
         rate = self.param('command_rate', Parameter.Type.DOUBLE)
@@ -51,11 +49,8 @@ class BaseNode(Node):
         self.publish_tf = self.param('publish_tf', Parameter.Type.BOOL)
         self.twist_variance = self.param('odom_twist_variance', Parameter.Type.DOUBLE_ARRAY)
 
-        self.bus = SMBus(bus)
-        # Give up a hanging transfer quickly instead of blocking the executor.
-        fcntl.ioctl(self.bus.fd, I2C_TIMEOUT, max(1, round(i2c_timeout / 0.01)))
-        fcntl.ioctl(self.bus.fd, I2C_RETRIES, 0)
-        self.i2c_errors = 0       # failed transfers (NACK, timeout)
+        self.serial = serial.Serial(port, baud, timeout=READ_TIMEOUT)
+        self.serial.reset_input_buffer()   # drop old bytes from before the start
         self.crc_errors = 0       # state frames with a wrong CRC
 
         self.cmd = (0.0, 0.0, 0.0)
@@ -73,8 +68,11 @@ class BaseNode(Node):
         self.tf_broadcaster = TransformBroadcaster(self)
         self.create_subscription(Twist, 'cmd_vel', self.on_cmd_vel, 10)
         self.create_timer(1.0 / rate, self.on_timer)
+        self.reading = True
+        self.reader = threading.Thread(target=self.read_loop, daemon=True)
+        self.reader.start()
         self.get_logger().info(
-            f'I2C bus {bus}, MCU address 0x{self.address:02x}, {rate} Hz. '
+            f'{port} at {baud} baud, sending at {rate} Hz. '
             f'Max wheel speed: {self.max_wheel_speed} m/s. /cmd_vel timeout: {self.cmd_timeout} s. '
             f'Odometry TF: {"on" if self.publish_tf else "off (published by the EKF)"}.')
 
@@ -89,23 +87,11 @@ class BaseNode(Node):
 
     def on_timer(self):
         self.send_command()
-        self.read_state()
         if not self.feedback_lost and time.monotonic() - self.feedback_time > self.feedback_timeout:
             self.feedback_lost = True
             self.get_logger().warn(
                 f'No valid state from the MCU for {self.feedback_timeout} s '
-                f'(I2C errors {self.i2c_errors}, CRC errors {self.crc_errors}): odometry stops.')
-
-    def transfer(self, msg):
-        """One I2C transfer. On NACK or timeout: count it, warn (throttled), return False."""
-        try:
-            self.bus.i2c_rdwr(msg)
-            return True
-        except OSError as error:
-            self.i2c_errors += 1
-            self.get_logger().warn(f'I2C error ({self.i2c_errors} so far): {error}',
-                                   throttle_duration_sec=LOG_THROTTLE)
-            return False
+                f'(CRC errors {self.crc_errors}): odometry stops.')
 
     def send_command(self):
         fresh = (self.cmd_time is not None
@@ -117,20 +103,21 @@ class BaseNode(Node):
             self.get_logger().info(f'No /cmd_vel for {self.cmd_timeout} s: stop.')
         vx, vy, wz = self.cmd if fresh else (0.0, 0.0, 0.0)
         frame = encode_command(vx, vy, wz)
-        if self.transfer(i2c_msg.write(self.address, frame)):
-            self.get_logger().debug(f'sent {frame.hex(" ")}')
+        self.serial.write(frame)
+        self.get_logger().debug(f'sent {frame.hex(" ")}')
 
-    def read_state(self):
-        msg = i2c_msg.read(self.address, STATE_LEN)
-        if not self.transfer(msg):
-            return
-        state = parse_state(bytes(list(msg)))
-        if state is None:
-            self.crc_errors += 1
-            self.get_logger().warn(f'State frame with a wrong CRC ({self.crc_errors} so far).',
-                                   throttle_duration_sec=LOG_THROTTLE)
-            return
-        self.on_state(*state)
+    def read_loop(self):
+        """Reader thread: wait for MCU bytes and handle each complete state frame."""
+        buffer = b''
+        while self.reading:
+            buffer += self.serial.read(self.serial.in_waiting or 1)
+            states, buffer, bad = split_frames(buffer)
+            if bad:
+                self.crc_errors += bad
+                self.get_logger().warn(f'State frame with a wrong CRC ({self.crc_errors} so far).',
+                                       throttle_duration_sec=LOG_THROTTLE)
+            for state in states:
+                self.on_state(*state)
 
     def on_state(self, seq, flags, counts):
         """Integrate the count change since the last frame and publish /odom (and TF)."""
@@ -149,7 +136,7 @@ class BaseNode(Node):
             self.counts, self.seq = counts, seq
             return
         periods = (seq - self.seq) % 256
-        if periods == 0:          # no new MCU control period since the last read
+        if periods == 0:          # the same MCU control period twice: nothing new
             return
         angles = [count_delta(new, old) * self.rad_per_count for new, old in zip(counts, self.counts)]
         self.counts, self.seq = counts, seq
@@ -186,9 +173,12 @@ class BaseNode(Node):
             self.tf_broadcaster.sendTransform(tf)
 
     def stop(self):
-        """Send a zero command and close the bus."""
-        self.transfer(i2c_msg.write(self.address, encode_command(0.0, 0.0, 0.0)))
-        self.bus.close()
+        """Stop the reader thread, send a zero command and close the port."""
+        self.reading = False
+        self.reader.join()
+        self.serial.write(encode_command(0.0, 0.0, 0.0))
+        self.serial.flush()
+        self.serial.close()
 
 
 def main():

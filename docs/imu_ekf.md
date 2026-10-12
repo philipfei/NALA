@@ -10,8 +10,8 @@ turn rate directly and does not care about wheel slip.
 | Item | Value |
 |---|---|
 | IMU | WitMotion WT901C-TTL, 3.3 V, mounted flat with the chip side up |
-| Wiring | IMU TX -> Pi GPIO15 (RX), IMU RX <- Pi GPIO14 (TX), GND |
-| Pi UART | PL011 on GPIO14/15 = `/dev/ttyAMA0`. `/boot/firmware/config.txt`: `enable_uart=1`, `dtoverlay=miniuart-bt` (Bluetooth moves to the mini UART), `core_freq=250` (fixed VPU clock: stable mini UART baud rate for Bluetooth). Set by `scripts/setup_pi.sh`, needs a reboot |
+| Wiring | IMU <-> CH340G USB-to-TTL adapter (3.3 V logic: IMU TX -> adapter RX, IMU RX <- adapter TX, GND) <-> a Pi USB port. (2026-10-09 to 2026-10-12 the IMU was on the Pi GPIO UART; that UART now belongs to the MCU) |
+| Device name | `/dev/ttyIMU`: a fixed name from the udev rule `/etc/udev/rules.d/99-nala.rules` (USB id `1a86:7523`, the only CH340 on the robot), written by `scripts/setup_pi.sh`. That script also removes `brltty` (on Ubuntu Desktop it takes CH340 adapters away) and stops ModemManager |
 | IMU settings | 115200 baud, 50 Hz, only acceleration (0x51) and angular velocity (0x52) frames. Written once by `scripts/setup_imu.py` (factory: 9600 baud) |
 | Frame | `imu_link` in the URDF (`config/robot.yaml: imu`), published by robot_state_publisher on `/tf_static` |
 

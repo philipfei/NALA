@@ -25,7 +25,7 @@ system:
   firmware:
     mcu: ATmega328PB, 16 MHz
     ide: Microchip Studio (Windows)   # build
-    device_pack: ATmega_DFP 1.7.374   # from motor_driver_C.cproj (firmware v2.0.0, owned by a teammate)
+    device_pack: ATmega_DFP 1.7.374   # from motor_driver_C.cproj (firmware v2.1.0, owned by a teammate)
     flash_tool: avrdude 8.0 (from the Arduino IDE), ArduinoISP   # see firmware/README.md section 5
     linker_flags: -lprintf_flt        # in the .cproj; not needed since v2.0.0 (no printf), harmless
     compile_check: gcc-avr + avr-libc on the Pi (apt)   # Claude checks that it compiles; no flashing from the Pi
@@ -50,7 +50,8 @@ apt:
       - ros2-apt-source 1.3.0               # same version as the PC
       - ros-jazzy-rmw-cyclonedds-cpp        # first, so ros-base uses Cyclone (like the PC), not Fast DDS
       - ros-jazzy-ros-base                  # ROS 2 without GUI tools
-      - python3-serial                      # pyserial: UART to the IMU (to the MCU before firmware v2.0.0)
+      - python3-serial                      # pyserial: UART to the MCU, USB serial to the IMU
+      - openssh-server                      # not preinstalled on Ubuntu Desktop
       - python3-pytest                      # unit tests
       - python3-colcon-common-extensions    # build tool
       - git
@@ -64,10 +65,13 @@ apt:
       - ros-jazzy-slam-toolbox              # 2D SLAM (mapping and localization)
       - ros-jazzy-nav2-map-server           # map_saver_cli: save the map
       - ros-jazzy-robot-localization        # EKF: wheel odometry + IMU turn rate
-      - python3-smbus2                      # I2C to the MCU (firmware v2.0.0). /dev/i2c-1 is group dialout on Ubuntu
-      - i2c-tools                           # i2cdetect: check the MCU on the I2C bus
+      - python3-smbus2                      # I2C to the INA260 battery monitor
+      - i2c-tools                           # i2cdetect: find the INA260 on the I2C bus (also makes the group i2c)
       - gcc-avr                             # firmware compile check only
       - avr-libc                            # firmware compile check only
+    removed:                                # by scripts/setup_pi.sh (Ubuntu Desktop has them)
+      - brltty                              # takes CH340 USB serial adapters away (the IMU adapter)
+      - ModemManager (service disabled)     # sends modem commands to new serial ports
     stage_3:
       - ros-jazzy-navigation2               # Nav2: path following, costmaps
       - ros-jazzy-nav2-bringup

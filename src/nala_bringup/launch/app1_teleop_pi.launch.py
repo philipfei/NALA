@@ -1,4 +1,4 @@
-"""App 1 (Pi): base driver and Xbox controller. The PC runs the keyboard teleop.
+"""App 1 (Pi): base driver, battery monitor and Xbox controller. The PC runs the keyboard teleop.
 
 ros2 launch nala_bringup app1_teleop_pi.launch.py [log_level:=debug]
 log_level debug also shows the sent frames and the measured wheel speeds.
@@ -27,6 +27,12 @@ def generate_launch_description():
             parameters=[os.path.join(config_dir, 'base.yaml'),
                         {'publish_tf': ParameterValue(LaunchConfiguration('odom_tf'), value_type=bool)}],
             arguments=['--ros-args', '--log-level', LaunchConfiguration('log_level')],
+            output='screen',
+        ),
+        Node(
+            package='nala_base',
+            executable='battery_node',
+            parameters=[os.path.join(config_dir, 'battery.yaml')],
             output='screen',
         ),
         # Xbox controller: hold LB and use the sticks (config/teleop.yaml).
