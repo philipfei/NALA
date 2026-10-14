@@ -81,6 +81,17 @@ Goal: everything installed and built, and RViz works on the Pi desktop. Claude d
 
 ## Phase B: after the user's "ok": connect the hardware one part at a time
 
+Status 2026-10-14 (network back on 10.42.0.0/24, the Pi is 10.42.0.154):
+- IMU: done. `/dev/ttyIMU` OK; 0x51 + 0x52 at 50 Hz, no bad frames (read only, `setup_imu.py` not run again);
+  `/imu` 50 Hz; turned 90 deg counter-clockwise by hand -> gyro z positive, integral +90 deg.
+- LiDAR: done. `/scan` 13.7 Hz, 720 points; an object behind the robot shows at laser angle 0 deg (mount yaw
+  180 deg OK); the PC receives `/scan`. Closest range about 0.18 m (A2M8 minimum about 0.15 m).
+- Battery (INA260): **on hold** (user). Address 0x4F (A0, A1 to SCL), set in `config/battery.yaml`. Nothing
+  answers on I2C bus 1, though GPIO2/3 are in I2C mode and idle high; the IC may be broken.
+  `battery_node` only warns when it cannot read, so app 1 still starts.
+- Xbox, MCU (flash v2.1.0 first), chassis, app 2: open. Note: GPIO15 (Pi RX from the MCU) read low on
+  2026-10-14 (MCU board probably off); an idle UART line must be high.
+
 The user connects the parts. Claude tests each one before the next:
 
 1. IMU (CH340G): `ls -l /dev/ttyIMU`; `python3 scripts/setup_imu.py --from 115200` must report 50 Hz, 0x51 + 0x52.

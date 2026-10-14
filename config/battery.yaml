@@ -6,7 +6,7 @@
 battery_node:
   ros__parameters:
     i2c_bus: 1                  # /dev/i2c-1
-    i2c_address: 64             # 0x40 = INA260 with A0 and A1 to GND. NOT CHECKED: see `i2cdetect -y 1` (verify)
+    i2c_address: 79             # 0x4F = INA260 with A0 and A1 to SCL (user, 2026-10-14). Not seen on the bus yet
     publish_rate: 1.0           # Hz
     full_voltage: 16.8          # V, 4.2 V per cell = 100 %
     low_voltage: 14.0           # V, 3.5 V per cell: /battery_low becomes true and the node warns

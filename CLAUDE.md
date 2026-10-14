@@ -164,7 +164,7 @@ Everything below is project-specific and must be kept up to date.
 | Level shifter | The schematic says TXS0104E, but the part on the board is a **TXB** type (found 2026-10-12). A TXB works for UART but **cannot do I2C** (it oscillates against pull-ups; seen as random ACKs and a ~60 kHz square wave on SCL/SDA). No pull-ups on lines through it |
 | IMU | WitMotion WT901C-TTL, 3.3 V, flat with the chip side up, on a **CH340G USB-to-TTL adapter** (USB id 1a86:7523) = `/dev/ttyIMU` (udev rule from `setup_pi.sh`). Already set to 115200 baud / 50 Hz / acc + gyro (2026-10-09). Position on the robot not measured (placeholder in `config/robot.yaml`). Example code (Arduino) in `JY901 uno r3/` (local, ignored by git) |
 | Battery | 4S2P Li-ion 18650, 3300 mAh per cell: 16.8 V full (4.2 V/cell), 6.6 Ah. Low-voltage alarm at 14.0 V (3.5 V/cell, user), 0 % at 12.0 V (3.0 V/cell) |
-| Battery monitor | TI INA260 on the Pi I2C bus 1 (GPIO2 SDA / GPIO3 SCL, directly, not through the level shifter). Address not checked (0x40 expected) |
+| Battery monitor | TI INA260 on the Pi I2C bus 1 (GPIO2 SDA / GPIO3 SCL, directly, not through the level shifter). A0 and A1 to SCL = address 0x4F (user, 2026-10-14). **No answer on the bus** (2026-10-14, VCC connected, Pi pins OK): the IC may be broken. Battery work is on hold (user) |
 | Pi pins | GPIO14/15 = UART to the MCU, GPIO2/3 = I2C to the INA260, USB = LiDAR (CP2102) and IMU (CH340G). Two devices must never share a UART (two TX outputs would drive one RX pin) |
 
 ## Reference code (`ref/`, local only)
