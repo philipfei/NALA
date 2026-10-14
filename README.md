@@ -110,7 +110,8 @@ NALA/
 │   ├── slam_mapping.yaml                  [2] slam_toolbox mapping params, tuned against pose jumps
 │   ├── localization.yaml                  [3] AMCL (localization in the saved map) and the map server
 │   ├── nav2_params.yaml                   [3] Nav2 planner (NavFn), controller (Regulated Pure Pursuit, forward only), costmaps
-│   ├── coverage.yaml                      [3] Coverage sensor (placeholder), coverage speeds, frames, mission, health, recovery, radiation
+│   ├── coverage.yaml                      [3] Coverage sensor (placeholder), coverage speeds, frames, mission, health, recovery,
+│   │                                      radiation, map changes
 │   └── panel.yaml                         [3] Robot screen (nala_panel): map folder, window and button size, update rates
 │
 ├── docs/
@@ -279,6 +280,8 @@ NALA/
     │   │   │                                  Nav2 actions, detours, avoiding contaminated floor, return to base
     │   │   ├── radiation.py               [3] Radiation map: background, readings at trusted poses, hotspots, keepout (no ROS)
     │   │   ├── radiation_node.py          [3] Scintillator readings -> heatmap, hotspots, keepout zone, run folder files
+    │   │   ├── mapchange.py               [3] Map changes: new objects and gone objects from LiDAR scans (no ROS)
+    │   │   ├── mapchange_node.py          [3] LiDAR scans at trusted poses -> /map_changes, changes.npz in the run folder
     │   │   ├── plan_file.py               [3] Load and check a coverage_tool plan (map, wall clearance, sensor, base station)
     │   │   ├── planning.py                [3] Plan pieces and path helpers (no ROS)
     │   │   ├── base_station.py            [3] Load, save and check base_station.yaml (no ROS)
@@ -298,6 +301,7 @@ NALA/
     │   └── test/
     │       ├── test_core.py, test_plan_file.py, test_base_station.py, test_revision.py, test_radiation.py   [3] Unit tests (no ROS)
     │       ├── test_radiation_node.py     [3] Loopback ROS test of radiation_node
+    │       ├── test_mapchange.py          [3] Map changes: a moved cabinet, a small pose error, a person walking by
     │       ├── test_launch_contract.py    [3] Static checks of the app 3 launch files
     │       ├── test_buttons.py            [3] Unit tests for buttons.py
     │       ├── test_xbox_pause.py         [3] Loopback ROS tests of xbox_pause with a fake /coverage/pause service
@@ -584,7 +588,11 @@ The panel starts by itself after the Pi boots (`scripts/setup_pi_screen.sh`). By
    - while driving the screen shows the large progress view (%, state, bar, hotspot alert); **Show map** shows the
      map, **Big view** goes back;
    - tap a hotspot: highest reading, background, position, first seen, **Mark as checked**;
-   - layer buttons Coverage / Contamination / Path switch the map layers;
+   - map changes: floor that is free on the map but where the LiDAR keeps seeing an object (**new object**,
+     orange-red), and map obstacles the LiDAR keeps seeing through (**gone**, light blue), for example a moved
+     cabinet. Only from scans at trusted poses; small pose errors along walls are ignored. If much has changed,
+     make a new map with app 2;
+   - layer buttons Coverage / Radiation / Path / Changes switch the map layers;
    - **STOP** (red, always there): the robot stops at once, the task pauses and a STOP banner shows.
      **Resume** continues;
    - **Xbox controller B** (if the controller is on): pauses the task like **Pause** (Nav2 stops, the rest of
@@ -595,7 +603,7 @@ The panel starts by itself after the Pi boots (`scripts/setup_pi_screen.sh`). By
      base station;
    - at the end the robot drives back to the base station: *Scan complete*;
    - **Back** stops app 3 and shows the task report (also saved in `maps/<name>/runs/<time>/` with the readings,
-     hotspots and heatmap).
+     hotspots, heatmap and map changes).
 
 Only one app at a time: stop app 1 and app 2 first. App 3 starts `joy_node` only for the B button (pause);
 it does not start `xbox_teleop`, so the controller cannot drive.
