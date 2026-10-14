@@ -13,7 +13,7 @@ RED = '#C62828'       # STOP button
 WALL = '#2B3A42'
 GREEN = '#1B9E4B'     # area outline in the planner
 NEW = '#E8590C'       # map change: a new object (free on the map, seen occupied)
-GONE = '#74C0FC'      # map change: an object that is gone (occupied on the map, seen free)
+GONE = '#74C0FC'      # map change: a removed object (occupied on the map, seen free)
 
 
 def stylesheet(font_pt, button_px):

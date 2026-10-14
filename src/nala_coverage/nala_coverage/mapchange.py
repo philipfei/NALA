@@ -3,9 +3,9 @@
 Every beam passes through cells (seen free) and ends in a cell (seen occupied) unless it reached its range limit.
 A cell counts at most once per scan, so the thresholds are numbers of scans (separate looks over time).
 New object: a cell free on the map, not next to a wall of the map, that the beams keep ending in.
-Gone:       a cell occupied on the map that the beams keep passing through, with no beam ending in or near it.
+Removed object: a cell occupied on the map that the beams keep passing through, with no beam ending in or near it.
 The margin around walls stops a few cm of localisation error from making the walls look changed.
-(SLAM maps draw objects as outlines, often with unknown cells inside: the outline cells are what can go.)
+(SLAM maps draw objects as outlines, often with unknown cells inside: the outline cells are what can be removed.)
 """
 import math
 import numpy as np
@@ -73,7 +73,7 @@ class ChangeMap:
         return self.may_appear & (self.hits >= c['min_hits']) & (self.hits >= c['hit_ratio'] * (self.hits + self.passes))
 
     def vanished(self):
-        """Gone: occupied map cells that beams pass through again and again, with no beam ending in or near them."""
+        """Removed objects: occupied map cells that beams pass through again and again, with no beam ending in or near them."""
         near_hit = _dilate(self.hits > 0, self.margin)
         return self.occupied & (self.passes >= self.cfg['min_passes']) & ~near_hit
 

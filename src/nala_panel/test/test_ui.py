@@ -144,7 +144,7 @@ def scan_screen(window, app, monkeypatch):
     keepout[rc[0] - 4:rc[0] + 5, rc[1] - 4:rc[1] + 5] = True
     session.heatmap, session.covered, session.keepout = heat, covered, keepout
     session.radiation = {'background': 30.0, 'threshold': 60.0}
-    changes = np.zeros(grid.cells.shape, np.int8)              # a cabinet moved: new at one place, gone at another
+    changes = np.zeros(grid.cells.shape, np.int8)              # a cabinet moved: new at one place, removed at another
     r, c = grid.cell((0.6, -2.2))
     changes[r:r + 6, c:c + 6] = 100
     for x in np.arange(1.0, 1.5, 0.05):

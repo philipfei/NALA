@@ -57,7 +57,7 @@ class DriveSession(Node):
         self.keepout = None          # bool (rows, cols): contaminated floor plus margin, avoided
         self.hotspots = []
         self.radiation = {}          # background, threshold, ...
-        self.changes = None          # int8 (rows, cols): 100 new object, 50 gone, 0 unchanged (mapchange_node)
+        self.changes = None          # int8 (rows, cols): 100 new object, 50 removed object, 0 unchanged (mapchange_node)
         self.message = ''            # last service reply, for the screen
         self.preview_requested = False
         self.create_subscription(String, '/coverage/state', self._state, LATEST)

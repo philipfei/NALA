@@ -2,7 +2,7 @@
 
 In:  /scan, TF map -> laser at the scan time, /coverage/trust (the supervisor's localization trust),
      /coverage/definition (a new task starts a new comparison).
-Out: /map_changes (OccupancyGrid on the map grid: 100 = new object, 50 = gone, 0 = no change), latched;
+Out: /map_changes (OccupancyGrid on the map grid: 100 = new object, 50 = removed object, 0 = no change), latched;
      changes.npz in the run folder (appeared, vanished).
 Settings: map_changes in config/coverage.yaml.
 """
@@ -24,7 +24,7 @@ from .mapchange import ChangeMap
 from .params import node_settings
 from .ros_common import LATCHED, LATEST, decode, transform3
 
-NEW, GONE = 100, 50
+NEW, REMOVED = 100, 50
 
 
 class MapChangeNode(Node):
@@ -90,7 +90,7 @@ class MapChangeNode(Node):
         m.info.origin.position.x, m.info.origin.position.y = g.origin[0], g.origin[1]
         m.info.origin.orientation.z = math.sin(g.origin[2] / 2)
         m.info.origin.orientation.w = math.cos(g.origin[2] / 2)
-        m.data = np.where(appeared, NEW, np.where(vanished, GONE, 0)).astype(np.int8).ravel().tolist()
+        m.data = np.where(appeared, NEW, np.where(vanished, REMOVED, 0)).astype(np.int8).ravel().tolist()
         self.pub.publish(m)
         if self.generation is not None:
             self.output.mkdir(parents=True, exist_ok=True)

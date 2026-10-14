@@ -250,7 +250,7 @@ NALA/
     │   │   │                                  Nav2 actions, detours, avoiding contaminated floor, return to base
     │   │   ├── radiation.py               [3] Radiation map: background, readings at trusted poses, hotspots, keepout (no ROS)
     │   │   ├── radiation_node.py          [3] Scintillator readings -> heatmap, hotspots, keepout zone, run folder files
-    │   │   ├── mapchange.py               [3] Map changes: new objects and gone objects from LiDAR scans (no ROS)
+    │   │   ├── mapchange.py               [3] Map changes: new objects and removed objects from LiDAR scans (no ROS)
     │   │   ├── mapchange_node.py          [3] LiDAR scans at trusted poses -> /map_changes, changes.npz in the run folder
     │   │   ├── plan_file.py               [3] Load and check a coverage_tool plan (map, wall clearance, sensor, base station)
     │   │   ├── planning.py                [3] Plan pieces and path helpers (no ROS)
@@ -520,7 +520,7 @@ The panel starts by itself after the Pi boots (`scripts/setup_pi_screen.sh`). By
      map, **Big view** goes back;
    - tap a hotspot: highest reading, background, position, first seen, **Mark as checked**;
    - map changes: floor that is free on the map but where the LiDAR keeps seeing an object (**new object**,
-     orange-red), and map obstacles the LiDAR keeps seeing through (**gone**, light blue), for example a moved
+     orange-red), and map obstacles the LiDAR keeps seeing through (**removed object**, light blue), for example a moved
      cabinet. Only from scans at trusted poses; small pose errors along walls are ignored. If much has changed,
      make a new map with app 2;
    - layer buttons Coverage / Radiation / Path / Changes switch the map layers;
