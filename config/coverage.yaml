@@ -16,7 +16,6 @@
     motion:
       # Coverage driving speeds. Autodrive only drives forwards (the gate passes no negative linear speed
       # from Nav2); manual driving through the gate may reverse.
-      # The MCU protocol has steps of 0.02 m/s and 0.02 rad/s (docs/mcu_protocol.md).
       linear_m_s: 0.12
       angular_rad_s: 0.4
       linear_accel_m_s2: 0.15

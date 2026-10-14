@@ -1,7 +1,7 @@
 """Kinematic NALA stand-in for the robot repo's nala_base + MCU + LiDAR, for closed-loop tests of stage 3.
 
 Like nala_base (its own functions and config/base.yaml): /cmd_vel is scaled down to max_wheel_speed,
-sent in the MCU protocol's 0.02 steps (docs/mcu_protocol.md), and replaced by zero after cmd_vel_timeout.
+sent in the MCU protocol's integer mm/s and mrad/s (docs/mcu_protocol.md), and replaced by zero after cmd_vel_timeout.
 Like the MCU: forward (linear.x), sideways (linear.y, mecanum; the gate sends 0 for now) and turning
 (angular.z), acceleration limited.
 Publishes /odom at 20 Hz (the MCU's counts rate) with TF odom->base_footprint, and a ray-cast /scan in
@@ -34,7 +34,7 @@ from nav_msgs.msg import Odometry
 from sensor_msgs.msg import LaserScan
 from tf2_msgs.msg import TFMessage
 from nala_base.kinematics import limit_wheel_speed
-from nala_base.mcu_protocol import SCALE, to_count
+from nala_base.mcu_protocol import SCALE, to_int16
 
 BEAMS = 300   # Fits one DDS fragment; see env.sh.
 CONFIG = Path(__file__).resolve().parents[2] / 'config/robot.yaml'
@@ -43,7 +43,7 @@ CONFIG = Path(__file__).resolve().parents[2] / 'config/robot.yaml'
 def mcu_command(vx, vy, wz, base):
     """What reaches the wheels: nala_base's wheel speed limit, then the MCU protocol's int8 steps."""
     k = base['half_track_width'] + base['half_wheelbase']
-    return tuple(to_count(v) * SCALE for v in limit_wheel_speed(vx, vy, wz, k, base['max_wheel_speed']))
+    return tuple(to_int16(v) / SCALE for v in limit_wheel_speed(vx, vy, wz, k, base['max_wheel_speed']))
 
 
 def box_points(footprint, spacing=.01):

@@ -164,7 +164,7 @@ NALA/
 │   ├── setup_pi.sh                        [1] One-time Pi setup: ROS, Cyclone DDS, UART, I2C, USB serial rules, permissions, ~/.bashrc
 │   ├── setup_imu.py                       [2] Pi, once: IMU output (acc + gyro), 50 Hz, 115200 baud
 │   ├── save_map.sh                        [2] Pi: save the current SLAM map into maps/<name>/
-│   ├── setup_pi_screen.sh                 [3] One-time Pi setup for the robot screen: desktop, autologin, Nav2, panel start
+│   ├── setup_pi_screen.sh                 [3] One-time Pi setup for the robot screen (Ubuntu Desktop): autologin, screen on, Nav2, panel start
 │   └── start_panel.sh                     [3] Start the robot screen panel (at login, or by hand)
 │
 ├── tools/
@@ -344,7 +344,7 @@ When a pull changes `setup_pi.sh` (new packages), run it again and log in again 
 Robot screen for app 3 (one time, after `setup_pi.sh`), in the Pi SSH terminal:
 
 ```bash
-bash ~/NALA/scripts/setup_pi_screen.sh   # desktop with autologin, Nav2, PyQt5, planner libraries, panel autostart
+bash ~/NALA/scripts/setup_pi_screen.sh   # GNOME autologin, screen always on, Nav2, PyQt5, planner libraries, panel autostart
 cd ~/NALA && colcon build --symlink-install --base-paths src
 sudo reboot
 ```
@@ -575,8 +575,6 @@ passage it uses is about 0.66 m. When the sensor position and size are known, ch
   station direction. If that fails, the task pauses (`RETURN_FAILED`); resume tries again.
 - **Forward only:** the plan only drives forwards, the controller cannot reverse (no behavior server), and the
   velocity gate passes no negative forward speed from Nav2.
-- **Speed steps:** the MCU protocol has steps of 0.02 m/s; the controller's slowest speed is 0.04 m/s, so a
-  command never rounds to 0 near a goal.
 - **Refused:** plans closer than 0.293 m to a wall, made on another map image, for other sensor values or for
   another base station; a base station closer than 0.293 m to a wall.
 - **Obstacles the LiDAR cannot see** (lower or higher than its scan plane) are not avoided. NALA has no bumper.

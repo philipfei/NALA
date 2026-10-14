@@ -12,7 +12,7 @@ Use it to check a plan, a config change or a code change before taking it to the
 
 | File | Purpose |
 |---|---|
-| `fake_nala.py` | Kinematic NALA, like `nala_base` + MCU. Drives on `/cmd_vel` (forward, sideways, turn) in the MCU protocol's 0.02 steps, scaled down to `max_wheel_speed`, and stops after `cmd_vel_timeout` without a command (`nala_base`'s own functions and `config/base.yaml`). Publishes `/odom` at 20 Hz, TF `odom → base_footprint` and a ray-cast 300-beam `/scan` in the `laser` frame (mount from `robot.yaml`: facing backward). Checks NALA's 410 × 360 mm box (`robot.yaml`) against walls and obstacles. Logs the true pose and velocity. |
+| `fake_nala.py` | Kinematic NALA, like `nala_base` + MCU. Drives on `/cmd_vel` (forward, sideways, turn) in the MCU protocol's integer mm/s steps, scaled down to `max_wheel_speed`, and stops after `cmd_vel_timeout` without a command (`nala_base`'s own functions and `config/base.yaml`). Publishes `/odom` at 20 Hz, TF `odom → base_footprint` and a ray-cast 300-beam `/scan` in the `laser` frame (mount from `robot.yaml`: facing backward). Checks NALA's 410 × 360 mm box (`robot.yaml`) against walls and obstacles. Logs the true pose and velocity. |
 | `run_sim.py` | Starts the launch and the fake robot at the base station (AMCL starts there too), and acts as the operator: preview, start, resume after listed pauses. A finished task ends back at the base station (`RETURNED_TO_BASE`). Writes everything to `runs/<name>/`. |
 | `analyze.py` | `summary.json` and `plot.png` for one run. |
 | `coverage_map.py` | Covered vs. missed floor per run, next to the plan followed exactly. Uses NALA's coverable area and its sensor disk, 0.26 m ahead of the robot. |

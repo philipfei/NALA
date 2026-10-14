@@ -67,12 +67,6 @@ def test_rendered_localization_uses_robot_repo_frames(tmp_path):
     assert amcl['base_frame_id'] == 'base_footprint' and rendered['map_server']['ros__parameters']['yaml_filename'] == '/tmp/map.yaml'
 
 
-def test_speeds_never_round_to_zero_in_the_mcu_protocol():
-    # The MCU protocol sends speeds in 0.02 m/s steps; below 0.01 m/s a command becomes 0 (docs/mcu_protocol.md).
-    rpp = load_settings()['nav2']['controller_server']['ros__parameters']['FollowPath']
-    assert rpp['min_approach_linear_velocity'] >= .04 and rpp['regulated_linear_scaling_min_speed'] >= .04
-
-
 def test_rendered_nav2_uses_turning_circle_for_planning_and_box_for_the_controller(tmp_path):
     s = load_settings()
     rendered = yaml.safe_load(s.render_nav2('/tmp/map.yaml', tmp_path).read_text())

@@ -246,7 +246,7 @@ SLAM must not jump to a wrong but similar-looking place.
 - IMU + EKF (app 2, `docs/imu_ekf.md`, user decision 2026-10-09): robot_localization EKF fuses `/odom` vx, vy
   and **only the IMU gyro z** for yaw (no wheel turn rate: mecanum slip). No IMU orientation (magnetometer is
   distorted indoors), no acceleration. TF odom -> base_footprint: base_node in app 1 (`publish_tf`), the EKF
-  in app 2 (`odom_tf:=false`). If the IMU fails the EKF has no yaw source: imu_node reports an error.
+  in apps 2 and 3 (`odom_tf:=false` / `publish_tf: False`). If the IMU fails the EKF has no yaw source: imu_node reports an error.
 - The URDF reads its numbers from `config/robot.yaml` (xacro `load_yaml`), passed in as launch arg `robot_config`.
 - Maps: `scripts/save_map.sh <name>` on the Pi saves `map.pgm/.yaml` (map_saver_cli) and
   `map.posegraph/.data` (slam_toolbox serialize_map). The PC copies the folder with `scp`.
@@ -261,8 +261,10 @@ SLAM must not jump to a wrong but similar-looking place.
 ### App 3 (coverage) decisions
 
 - Everything runs on the Pi. The robot screen (`nala_panel`, PyQt5) is the normal way to use it; the PC is optional
-  (RViz, planning with `coverage_tool`). The panel starts at login (`scripts/setup_pi_screen.sh`: Xfce + LightDM
-  autologin, `~/.config/autostart`). `scripts/setup_pi.sh` is unchanged.
+  (RViz, planning with `coverage_tool`). The panel starts at login (`scripts/setup_pi_screen.sh`: GNOME automatic
+  login (GDM), screen blanking off, `~/.config/autostart`). `scripts/setup_pi.sh` is unchanged.
+- App 3 on the robot starts `base_node` (`publish_tf: false`), `imu_node`, the EKF and `battery_node`, as app 2 does:
+  the EKF owns TF odom -> base_footprint (decision 2026-10-14).
 - Map library: `maps/<name>/map.yaml/.pgm` (app 2), `base_station.yaml`, `plans/<time>.yaml/.png`, `runs/<time>/`.
 - Base station = a pose only, no dock or charger (user, 2026-10-08). The robot starts and ends there.
   Coverage may start at another start point; the robot still stands on the base station and Nav2 drives it
@@ -279,7 +281,6 @@ SLAM must not jump to a wrong but similar-looking place.
   Collision radius = farthest corner + `planning_padding_m` (0.293 m); plans use 0.33 m.
 - The panel runs `plan_cli.py` as a child process: coverage_tool's package is called `coverage`, the same
   name as the system package `python3-coverage`.
-- Slowest controller speed 0.04 m/s, because the MCU protocol rounds to 0.02 m/s steps.
 - Global costmap robot_radius = collision radius + half a cell: NavFn measures from obstacle cell centres, the
   supervisor checks planner paths exactly against cell edges (else detours and the way back can be refused).
 

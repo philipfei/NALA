@@ -6,7 +6,8 @@ ros2 launch nala_bringup app3_coverage_pi.launch.py map:=$HOME/NALA/maps/house1/
 The base station is maps/<name>/base_station.yaml (next to the map; base_station:= to override).
 AMCL starts there (the supervisor sends it as the initial pose). Start the mission from the PC with the /coverage/* services (README).
 The Xbox controller is not started: only the velocity gate may publish /cmd_vel while coverage runs.
-hardware:=false leaves out base_node and the LiDAR driver (simulation, tools/sim).
+hardware:=false leaves out base_node, IMU, EKF, battery monitor and the LiDAR driver (simulation, tools/sim:
+the fake robot publishes /odom, TF odom -> base_footprint and /scan itself).
 """
 from pathlib import Path
 import tempfile
@@ -70,8 +71,13 @@ def _setup(context):
                    '--frame-id', settings['runtime']['base_frame'], '--child-frame-id', 'scintillator_link']))
     if hardware:
         nodes += [
-            # Robot repo driver: /cmd_vel (from the velocity gate only) -> MCU; wheel speeds -> /odom and TF.
-            _node('nala_base', 'base_node', 'base_node', parameters=[str(config_dir / 'base.yaml')]),
+            # MCU driver: /cmd_vel (from the velocity gate only) -> MCU; encoder counts -> /odom.
+            # As in app 2, the EKF publishes TF odom -> base_footprint (wheels + IMU turn rate), not base_node.
+            _node('nala_base', 'base_node', 'base_node',
+                  parameters=[str(config_dir / 'base.yaml'), {'publish_tf': False}]),
+            _node('nala_base', 'imu_node', 'imu_node', parameters=[str(config_dir / 'imu.yaml')]),
+            _node('robot_localization', 'ekf_node', 'ekf_filter_node', parameters=[str(config_dir / 'ekf.yaml')]),
+            _node('nala_base', 'battery_node', 'battery_node', parameters=[str(config_dir / 'battery.yaml')]),
             _node('rplidar_ros', 'rplidar_composition', 'rplidar_node',
                   parameters=[str(config_dir / 'rplidar.yaml')]),
         ]
@@ -105,7 +111,7 @@ def generate_launch_description():
         DeclareLaunchArgument('base_station', default_value='',
                               description='base station file (default: base_station.yaml next to the map)'),
         DeclareLaunchArgument('hardware', default_value='true',
-                              description='false: no base_node and no LiDAR driver (simulation)'),
+                              description='false: no base_node, IMU, EKF, battery monitor, LiDAR driver (simulation)'),
         DeclareLaunchArgument('nav2_stamped_supported', default_value='true'),
         OpaqueFunction(function=preflight),
         OpaqueFunction(function=_setup),

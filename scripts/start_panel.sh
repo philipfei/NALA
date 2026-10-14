@@ -7,5 +7,7 @@ set -eo pipefail   # no -u: the ROS setup scripts use unset variables
 
 NALA_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$NALA_DIR/config/ros_env.sh"
+# Ubuntu Desktop uses Wayland: run the Qt panel on XWayland (touch and full screen work there).
+export QT_QPA_PLATFORM=xcb
 exec ros2 run nala_panel panel --ros-args --params-file "$NALA_DIR/config/panel.yaml" \
   -p repo_dir:="$NALA_DIR" "$@"

@@ -39,6 +39,8 @@ def test_coverage_launch_uses_the_robot_repo_driver_model_and_lidar():
     assert "_node('nala_base', 'base_node'" in text and "'base.yaml'" in text
     assert "'nala_description'" in text and "'robot.yaml'" in text
     assert "'rplidar.yaml'" in text
+    # As in app 2: the EKF owns TF odom -> base_footprint (wheels + IMU), base_node does not publish it.
+    assert "'imu_node'" in text and "'ekf_node'" in text and "{'publish_tf': False}" in text
     # The velocity gate is the only /cmd_vel publisher: no joystick teleop, no own odom TF or laser TF.
     for forbidden in ('teleop_twist_joy', 'joy_node', 'odom_tf', 'laser_static_transform', 'slam_toolbox'):
         assert forbidden not in text, forbidden
