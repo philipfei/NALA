@@ -23,6 +23,13 @@ UART0, **38400 8N1**, no flow control. MCU **PD0 = RXD0, PD1 = TXD0** (5 V). The
 > A TXB is fine for UART (push-pull signals) but **cannot do I2C** (it oscillates against pull-ups).
 > That is why the I2C link of v2.0.0 never worked. Do not put pull-up resistors on lines that go through the TXB.
 
+> **UART wiring: check every pin, do not trust the order.**
+> - The same signals (GND, 3.3 V, TX, RX) are on three connectors: the motor driver connector and the UART header row of the
+>   breakout board, and P1 on the motor driver board. The **pin order is different on each of the three.**
+> - The TX/RX labels on the breakout board are from the **Pi's point of view**. So breakout **TX = motor driver RX**, and
+>   breakout **RX = motor driver TX**. The labels on P1 are from the MCU's point of view (P1 TX = MCU PD1).
+> - The 3.3 V pin of P1 supplies the 3.3 V side of the level shifter (U2, VCCA and OE). It must be connected.
+
 Only binary frames are sent, in both directions: no text. Every frame is `0xA5` (sync), an id, the data and a
 **CRC-8** of id + data (polynomial 0x07, initial value 0, no final XOR; `"123456789"` -> `0xF4`).
 Same code in `main.c` (`crc8`) and on the Pi (`mcu_protocol.crc8`).

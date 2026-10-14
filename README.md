@@ -77,7 +77,7 @@ An edited file works without a rebuild. A new file needs a rebuild.
 
 ```
 NALA/
-├── CLAUDE.md                              Rules and project facts for Claude Code
+├── CLAUDE.md                              Shared Claude Code rules (tracked, edited by others). The maintainer's own rules are in CLAUDE.local.md (in .gitignore, not in git)
 ├── README.md                              This file
 ├── requirements.yaml                      System versions and all dependencies (PC, Pi, firmware)
 ├── .gitignore                             What git ignores: build output, ref/, map files
@@ -114,6 +114,15 @@ NALA/
 │   │   ├── timeout_model_test.py          200 ms command timeout
 │   │   ├── motor_polarity_model_test.py   Motor direction pins
 │   │   ├── pid_sim.py                     Speed controller simulation
+│   ├── arduino_uart_test/
+│   │   ├── README.md                      What the two bench tests are
+│   │   ├── arduino_uart_test.ino          Arduino Uno bench test: listens on SoftwareSerial (D13, D12 in turn), decodes the MCU state frames, counts CRC errors and lost frames
+│   │   └── mcu_uart_tx_test/              Bench test firmware for the MCU (Studio project, not the robot firmware): sends a fake state frame every 50 ms
+│   │       ├── mcu_uart_tx_test.atsln     Studio solution file (open this one)
+│   │       └── mcu_uart_tx_test/
+│   │           ├── mcu_uart_tx_test.cproj Studio project (ATmega328PB, 16 MHz)
+│   │           ├── mcu_uart_tx_test.componentinfo.xml   Studio device pack info (copy of the motor_driver_C one)
+│   │           └── main.c                 UART0 38400 8N1, TX only, fake v2.1.0 state frames
 │   ├── motor_driver_C.atsln               Studio solution file (open this one)
 │   └── motor_driver_C/
 │       ├── motor_driver_C.cproj           Studio project: device, compiler and linker settings

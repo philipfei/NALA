@@ -1,0 +1,22 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Atmel Studio Solution File, Format Version 11.00
+VisualStudioVersion = 14.0.23107.0
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{54F91283-7BC4-4236-8FF9-10F437C3AD48}") = "mcu_uart_tx_test", "mcu_uart_tx_test\mcu_uart_tx_test.cproj", "{5B1F0A52-7C3E-4E6D-9A41-2F8D6C0B7E13}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|AVR = Debug|AVR
+		Release|AVR = Release|AVR
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{5B1F0A52-7C3E-4E6D-9A41-2F8D6C0B7E13}.Debug|AVR.ActiveCfg = Release|AVR
+		{5B1F0A52-7C3E-4E6D-9A41-2F8D6C0B7E13}.Debug|AVR.Build.0 = Release|AVR
+		{5B1F0A52-7C3E-4E6D-9A41-2F8D6C0B7E13}.Release|AVR.ActiveCfg = Release|AVR
+		{5B1F0A52-7C3E-4E6D-9A41-2F8D6C0B7E13}.Release|AVR.Build.0 = Release|AVR
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal
