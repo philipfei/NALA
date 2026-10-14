@@ -12,7 +12,7 @@ Use it to check a plan, a config change or a code change before taking it to the
 
 | File | Purpose |
 |---|---|
-| `fake_nala.py` | Kinematic NALA, like `nala_base` + MCU. Drives on `/cmd_vel` (forward, sideways, turn) in the MCU protocol's 1 mm/s steps, scaled down to `max_wheel_speed`, and stops after `cmd_vel_timeout` without a command (`nala_base`'s own functions and `config/base.yaml`). Publishes `/odom` at 20 Hz, TF `odom → base_footprint` and a ray-cast 300-beam `/scan` in the `laser` frame (mount from `robot.yaml`: facing backward). Checks NALA's 410 × 360 mm box (`robot.yaml`) against walls and obstacles. Logs the true pose and velocity. |
+| `fake_nala.py` | Kinematic NALA, like `nala_base` + MCU. Drives on `/cmd_vel` (forward, sideways, turn) in the MCU protocol's 1 mm/s steps, scaled down to `max_wheel_speed`, and stops after `cmd_vel_timeout` without a command (`nala_base`'s own functions and `config/base.yaml`). Publishes `/odom` at 20 Hz, TF `odom → base_footprint` and a ray-cast 300-beam `/scan` in the `laser` frame (mount from `robot.yaml`: facing backward). Checks NALA's 410 × 360 mm box (`robot.yaml`) against walls and obstacles. Logs the true pose and velocity. Also a fake scintillator: `/scintillator/count_rate` once a second from the true sensor positions and the `--sources` file (Poisson noise). |
 | `run_sim.py` | Starts the launch and the fake robot at the base station (AMCL starts there too), and acts as the operator: preview, start, resume after listed pauses. A finished task ends back at the base station (`RETURNED_TO_BASE`). Writes everything to `runs/<name>/`. |
 | `analyze.py` | `summary.json` and `plot.png` for one run. |
 | `coverage_map.py` | Covered vs. missed floor per run, next to the plan followed exactly. Uses NALA's coverable area and its sensor disk, 0.26 m ahead of the robot. |
@@ -59,6 +59,7 @@ python3 run_sim.py rdg --map ../../coverage_tool/examples/RDG_NM-DEP_V4.yaml \
 | Option | What it does |
 |---|---|
 | `--plan`, `--map` | Other plan and map. |
+| `--sources FILE` | Radiation sources for the fake scintillator (`sources_room.yaml`); default: background only (30 counts/s). |
 | `--base-station FILE` | Base station (default: `<map>_base_station.yaml` in `examples/`, else `base_station.yaml` next to the map). The fake robot boots there. |
 | `--start-offset DX DY DYAW` | Place the robot this far from the base station, to test a robot not put down exactly. |
 | `--config DIR` | Another config directory. Copy `config/` and edit the copy to try parameters. |

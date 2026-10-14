@@ -1,0 +1,8 @@
+# Simulated radiation for the room example (coverage_tool/examples/map_ME_room1v4.yaml), for fake_nala.py --sources.
+# counts per second; a source adds peak_cps * exp(-d^2 / (2 sigma^2)) at distance d from it (Poisson noise on top).
+# The background is high enough that Poisson noise alone does not reach 2x background in one reading
+# (at 3 counts/s it does about 1 reading in 5).
+background_cps: 30.0
+sources:
+  - {x: 1.9, y: -3.9, peak_cps: 400.0, sigma_m: 0.25}
+  - {x: 0.4, y: -3.2, peak_cps: 250.0, sigma_m: 0.25}

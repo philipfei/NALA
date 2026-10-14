@@ -110,13 +110,14 @@ NALA/
 │   ├── slam_mapping.yaml                  [2] slam_toolbox mapping params, tuned against pose jumps
 │   ├── localization.yaml                  [3] AMCL (localization in the saved map) and the map server
 │   ├── nav2_params.yaml                   [3] Nav2 planner (NavFn), controller (Regulated Pure Pursuit, forward only), costmaps
-│   ├── coverage.yaml                      [3] Coverage sensor (placeholder), coverage speeds, frames, mission, health, recovery
+│   ├── coverage.yaml                      [3] Coverage sensor (placeholder), coverage speeds, frames, mission, health, recovery, radiation
 │   └── panel.yaml                         [3] Robot screen (nala_panel): map folder, window and button size, update rates
 │
 ├── docs/
 │   ├── handover.md                        State on 2026-10-12, steps after the Pi reinstall, prompt for the next Claude session
 │   ├── mcu_protocol.md                    Pi-side summary of the Pi <-> MCU UART protocol, first hardware test
-│   └── imu_ekf.md                         [2] IMU wiring and setup, EKF design: why only the gyro turn rate
+│   ├── imu_ekf.md                         [2] IMU wiring and setup, EKF design: why only the gyro turn rate
+│   └── scintillator.md                    [3] Scintillator input (/scintillator/count_rate), heatmap, hotspots, avoidance
 │
 ├── firmware/                              MCU motor driver (ATmega328PB), Microchip Studio project.
 │   │                                      Owned by a teammate, who builds and flashes it. v2.3.0 (by Claude).
@@ -200,7 +201,8 @@ NALA/
 │       ├── run_sim.py                     Runs app 3 against the fake robot like an operator, records the run
 │       ├── analyze.py                     Summary and plot of a run
 │       ├── coverage_map.py                Covered and missed floor of a run
-│       └── amcl_error.py                  AMCL error against the true pose
+│       ├── amcl_error.py                  AMCL error against the true pose
+│       └── sources_room.yaml              Simulated radiation sources for the room example (fake_nala.py --sources)
 │
 └── src/                                   ROS 2 packages. The repo root is the colcon workspace
     │
@@ -273,14 +275,17 @@ NALA/
     │   │   └── nala_coverage              (empty) [3] ament index marker. Stays empty
     │   ├── nala_coverage/
     │   │   ├── __init__.py                [3] Python package marker
-    │   │   ├── supervisor.py              [3] Mission: preview/start/pause/resume/cancel, Nav2 actions, detours, return to base
+    │   │   ├── supervisor.py              [3] Mission: preview/start/pause/resume/cancel/go home, background measurement,
+    │   │   │                                  Nav2 actions, detours, avoiding contaminated floor, return to base
+    │   │   ├── radiation.py               [3] Radiation map: background, readings at trusted poses, hotspots, keepout (no ROS)
+    │   │   ├── radiation_node.py          [3] Scintillator readings -> heatmap, hotspots, keepout zone, run folder files
     │   │   ├── plan_file.py               [3] Load and check a coverage_tool plan (map, wall clearance, sensor, base station)
     │   │   ├── planning.py                [3] Plan pieces and path helpers (no ROS)
     │   │   ├── base_station.py            [3] Load, save and check base_station.yaml (no ROS)
     │   │   ├── base_station_picker_node.py   [3] PC: RViz "2D Goal Pose" -> maps/<name>/base_station.yaml
     │   │   ├── gate_node.py               [3] Velocity gate: the only /cmd_vel publisher in app 3; forward only for Nav2
     │   │   ├── health.py                  [3] Ownership and localization trust checks (no ROS)
-    │   │   ├── meter.py                   [3] Coverage meter node: covered floor from trusted poses, at the sensor
+    │   │   ├── meter.py                   [3] Coverage meter node: covered floor from trusted poses, at the sensor (avoided floor not counted)
     │   │   ├── measurement.py             [3] Coverage painting (no ROS)
     │   │   ├── geometry.py                [3] Occupancy grid, reachability, coverable floor (no ROS)
     │   │   ├── params.py                  [3] Load and check config/ (outline from robot.yaml), render the Nav2 params
@@ -291,11 +296,19 @@ NALA/
     │   │   ├── ros_common.py              [3] Shared ROS helpers (QoS, messages, sensor freshness)
     │   │   └── state.py                   [3] Mission bookkeeping (no ROS)
     │   └── test/
-    │       ├── test_core.py, test_plan_file.py, test_base_station.py, test_revision.py   [3] Unit tests (no ROS)
+    │       ├── test_core.py, test_plan_file.py, test_base_station.py, test_revision.py, test_radiation.py   [3] Unit tests (no ROS)
+    │       ├── test_radiation_node.py     [3] Loopback ROS test of radiation_node
     │       ├── test_launch_contract.py    [3] Static checks of the app 3 launch files
     │       ├── test_buttons.py            [3] Unit tests for buttons.py
     │       ├── test_xbox_pause.py         [3] Loopback ROS tests of xbox_pause with a fake /coverage/pause service
-    │       └── test_ros.py                [3] Loopback ROS tests: gate, supervisor, meter, plan driving, return to base
+    │       └── test_ros.py                [3] Loopback ROS tests: gate, supervisor, meter, plan driving, return to base,
+    │                                      background, avoiding contaminated floor, go home
+    │
+    ├── nala_interfaces/                   [3] Message types (ament_cmake, rosidl)
+    │   ├── CMakeLists.txt                 [3] Build the messages
+    │   ├── package.xml                    [3] Package manifest
+    │   └── msg/
+    │       └── CountRate.msg              [3] Scintillator reading: counts per second over an interval (docs/scintillator.md)
     │
     └── nala_panel/                        Robot screen for app 3 (PyQt5): maps, base station, planning, driving
         ├── package.xml                    [3] Package manifest
@@ -305,16 +318,20 @@ NALA/
         │   └── nala_panel                 (empty) [3] ament index marker. Stays empty
         ├── nala_panel/
         │   ├── __init__.py                (empty) [3] Python package marker. Stays empty
-        │   ├── library.py                 [3] Map library: maps, base station, plans, can a plan be driven (no ROS, no Qt)
+        │   ├── library.py                 [3] Map library: maps, base station, plans, can a plan be driven, last run (no ROS, no Qt)
         │   ├── planning.py                [3] Run coverage_tool/plan_cli.py, check start and area, cancel (no Qt)
-        │   ├── drive.py                   [3] Start/stop app 3, follow its state, Start/Pause/Resume/Cancel/STOP, hand control (no Qt)
-        │   └── ui.py                      [3] The screens: Maps, Map (plans, new plan), Planning, Drive
+        │   ├── drive.py                   [3] Start/stop app 3, follow its state and the radiation data; Start/Pause/Resume/
+        │   │                                  Go home/STOP, mark checked, hand control (no Qt)
+        │   ├── mapwidget.py               [3] Map drawing (QPainter): coverage, heatmap, keepout, actual trail, hotspots, robot; touch
+        │   ├── style.py                   [3] Colours and stylesheet after the scan screen design
+        │   └── ui.py                      [3] The screens: Maps, Map (plans, new plan, results), Planning, Scan
         └── test/
             ├── conftest.py                [3] Test map library (the example room map)
             ├── test_library.py            [3] Unit tests for library.py
             ├── test_planning.py           [3] Planning tests (one real plan on a small map, about 1 minute)
             ├── test_drive.py              [3] Loopback ROS tests of the drive session with fake app 3 services
-            └── test_ui.py                 [3] Screen smoke test without a display (NALA_PANEL_SHOTS=<dir> saves screenshots)
+            └── test_ui.py                 [3] Screen tests without a display: every screen fits 1024 x 600, taps, hotspot sheet,
+                                               go home (NALA_PANEL_SHOTS=<dir> saves screenshots)
 ```
 
 `ref/` (the previous team's code) exists only on the development machine. It is not in git.
@@ -554,18 +571,31 @@ The panel starts by itself after the Pi boots (`scripts/setup_pi_screen.sh`). By
      **Keep plan** saves it in `maps/<name>/plans/`; **Discard** deletes it.
 3. **Plans** tab: every saved plan, newest first. A plan the robot would refuse is grey, with the reason
    (made on another map image, for another base station, or for other sensor values). **Delete** removes one.
-4. **Drive:** put the robot on the base station (within about 10 cm), facing the base station direction
-   (within about 10 deg). Tap **Drive** on a plan. The panel starts app 3 and shows:
+   **Results** tab: the heatmap, hotspots and trail of the last scan of this map.
+4. **Scan:** put the robot on the base station (within about 10 cm), facing the base station direction
+   (within about 10 deg). Tap **Scan** on a plan. The panel starts app 3 and shows the scan screen
+   (the design of `Scan_screen_visualiser.html`):
    - *Finding the robot on the map*, then *Checking the plan* (the preview);
-   - **Start** becomes active when the plan is checked. **The robot only moves after Start.**
-   - while driving: the robot, the plan and the covered floor on the map, the state and the % covered;
-   - **STOP** (red, always there): the robot stops at once and the task pauses. **Resume** continues.
+   - **Start** becomes active when the plan is checked. **The robot only moves after Start.** It first measures
+     the radiation background on the base station (*Measuring the background*), then drives.
+   - the map shows what really happened, from the measured poses only: the trail (blue), the floor the sensor
+     covered (teal), the scintillator readings (heatmap, contaminated floor magenta), the avoided floor, the
+     numbered hotspots, the robot and the sensor reach;
+   - while driving the screen shows the large progress view (%, state, bar, hotspot alert); **Show map** shows the
+     map, **Big view** goes back;
+   - tap a hotspot: highest reading, background, position, first seen, **Mark as checked**;
+   - layer buttons Coverage / Contamination / Path switch the map layers;
+   - **STOP** (red, always there): the robot stops at once, the task pauses and a STOP banner shows.
+     **Resume** continues;
    - **Xbox controller B** (if the controller is on): pauses the task like **Pause** (Nav2 stops, the rest of
-     the plan is kept). Resume on the screen. The controller cannot drive in app 3.
-   - **Pause / Resume / Cancel task.** When paused (for example `BLOCKED_IN_PLACE`), **Drive by hand** and the
-     arrow buttons move the robot through the velocity gate (hold to drive). Tap **Hand control off**, then **Resume**.
-   - At the end the robot drives back to the base station: *Finished*, `RETURNED_TO_BASE`.
-   - **Finish** stops app 3 and shows the task report (also saved in `maps/<name>/runs/<time>/`).
+     the plan is kept). Resume on the screen. The controller cannot drive in app 3;
+   - **Pause / Resume.** When paused (for example `BLOCKED_IN_PLACE`), **Drive by hand** and the arrow buttons
+     move the robot through the velocity gate (hold to drive). Tap **Hand control off**, then **Resume**;
+   - **Stop and go home** (**Go home** in the side panel) asks first, then stops the plan and drives back to the
+     base station;
+   - at the end the robot drives back to the base station: *Scan complete*;
+   - **Back** stops app 3 and shows the task report (also saved in `maps/<name>/runs/<time>/` with the readings,
+     hotspots and heatmap).
 
 Only one app at a time: stop app 1 and app 2 first. App 3 starts `joy_node` only for the B button (pause);
 it does not start `xbox_teleop`, so the controller cannot drive.
@@ -586,7 +616,7 @@ Pi terminal 2: wait until `/coverage/state` shows `"trusted": true`, then:
 ros2 service call /coverage/preview std_srvs/srv/Trigger '{}'
 ros2 topic echo /coverage/state --once --full-length     # preview_ready must be true
 ros2 service call /coverage/start std_srvs/srv/Trigger '{}'
-ros2 service call /coverage/pause std_srvs/srv/Trigger '{}'    # resume / cancel likewise
+ros2 service call /coverage/pause std_srvs/srv/Trigger '{}'    # resume / cancel / go_home likewise
 ```
 
 Drive by hand while paused (W/S/A/D, `Q` to leave): `ros2 run nala_coverage coverage_teleop`.
@@ -635,7 +665,13 @@ passage it uses is about 0.66 m. When the sensor position and size are known, ch
 #### How the plan is driven
 
 - **Start:** AMCL starts at the base station (the supervisor sends it as the initial pose, spread 0.1 m and
-  10 deg). Nav2's planner (`ComputePathToPose`) drives the robot to the plan start if it is not there.
+  10 deg). The radiation background is measured there first (`docs/scintillator.md`; without scintillator
+  readings the task pauses with `NO_SCINTILLATOR`, or set `radiation.enabled: false`). Then Nav2's planner
+  (`ComputePathToPose`) drives the robot to the plan start if it is not there.
+- **Contaminated floor:** readings at 2x background or more make a keepout zone (plus a margin). Plan stretches in
+  it are skipped (`CONTAMINATION_AVOIDED` in the report, counted as avoided, not as missing), and Nav2's planner
+  goes around it (high cost in the global costmap).
+- **Go home:** `/coverage/go_home` (the panel's Stop and go home) stops the plan and drives back to the base station.
 - **Following:** the plan's drivable path is split at its stop corners. Each piece is followed forwards with
   Nav2's controller (`FollowPath`, Regulated Pure Pursuit, no reversing); the robot turns on the spot between pieces.
 - **Blocked path:** the controller stops in front of an obstacle. The supervisor skips 0.5 m ahead (more after
@@ -678,7 +714,7 @@ Keep a hand on the robot's emergency stop.
 
 ```bash
 source tools/sim/env.sh && export SIM_RUNS_DIR=/tmp/nala-sim && cd tools/sim
-python3 run_sim.py room --max-resumes 40 --pause-timeout 60
+python3 run_sim.py room --sources sources_room.yaml --max-resumes 40 --pause-timeout 60   # with radiation sources
 python3 analyze.py $SIM_RUNS_DIR/room
 ```
 

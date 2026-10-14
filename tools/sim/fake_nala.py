@@ -13,6 +13,10 @@ not in the map that Nav2 loads. NALA's outer box (body_length x body_width in ro
 walls and obstacles at every step: a move that would make it touch something is not made and counts as a
 contact. The true pose and velocity are logged to a CSV file.
 
+A fake scintillator publishes /scintillator/count_rate (nala_interfaces/CountRate) once a second: the counts of
+the past second at the TRUE sensor positions (sensor_offset_m ahead, config/coverage.yaml), from round sources
+(--sources file: background_cps and sources [{x, y, peak_cps, sigma_m}]) with Poisson noise.
+
 Not simulated: odometry drift, wheel slip, LiDAR motion blur, the MCU's speed controller.
 """
 import argparse
@@ -35,6 +39,7 @@ from sensor_msgs.msg import LaserScan
 from tf2_msgs.msg import TFMessage
 from nala_base.kinematics import limit_wheel_speed
 from nala_base.mcu_protocol import SCALE, to_int16
+from nala_interfaces.msg import CountRate
 
 BEAMS = 300   # Fits one DDS fragment; see env.sh.
 CONFIG = Path(__file__).resolve().parents[2] / 'config/robot.yaml'
@@ -111,6 +116,10 @@ class FakeNala(Node):
         self.laser = (robot['laser']['x'], robot['laser']['y'], robot['laser']['yaw'])
         # nala_base settings next to robot.yaml (config/base.yaml).
         self.base = yaml.safe_load(open(Path(a.config).with_name('base.yaml')))['base_node']['ros__parameters']
+        coverage = yaml.safe_load(open(Path(a.config).with_name('coverage.yaml')))['/coverage_config']['ros__parameters']
+        self.sensor_offset = coverage['geometry']['sensor_offset_m']
+        self.radiation = yaml.safe_load(open(a.sources)) if a.sources else {'background_cps': 30.0, 'sources': []}
+        self.sensor_track = []   # (time, true sensor x, y) of the current counting second
         self.x0, self.y0, self.yaw0 = a.start
         self.x, self.y, self.yaw = a.start
         self.v = self.vy = self.w = 0.
@@ -132,6 +141,8 @@ class FakeNala(Node):
         self.create_timer(self.dt, self.step)
         self.create_timer(self.base['feedback_period'], self.publish_odom)
         self.create_timer(.1, self.publish_scan)
+        self.count_pub = self.create_publisher(CountRate, '/scintillator/count_rate', 10)
+        self.create_timer(1.0, self.publish_counts)
 
     def header(self, frame=''):
         h = Odometry().header
@@ -161,6 +172,8 @@ class FakeNala(Node):
             x, y, yaw = self.x, self.y, self.yaw
         self.x, self.y, self.yaw = x, y, math.atan2(math.sin(yaw), math.cos(yaw))
         self.history.append((now, self.x, self.y, self.yaw))
+        self.sensor_track.append((self.x + self.sensor_offset * math.cos(self.yaw),
+                                  self.y + self.sensor_offset * math.sin(self.yaw)))
         del self.history[:-20]
         if int(now / .1) != int((now - self.dt) / .1):
             self.log.writerow([f'{now - self.t0:.2f}', f'{self.x:.4f}', f'{self.y:.4f}', f'{self.yaw:.4f}',
@@ -208,6 +221,21 @@ class FakeNala(Node):
         self.scan_pub.publish(scan)
 
 
+    def publish_counts(self):
+        """The counts of the past second where the sensor really was (mean expected rate, then Poisson noise)."""
+        track, self.sensor_track = self.sensor_track, []
+        if not track:
+            return
+        rates = [self.radiation['background_cps'] + sum(
+            s['peak_cps'] * math.exp(-((x - s['x']) ** 2 + (y - s['y']) ** 2) / (2 * s['sigma_m'] ** 2))
+            for s in self.radiation['sources']) for x, y in track]
+        msg = CountRate()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.counts_per_second = float(self.rng.poisson(np.mean(rates)))
+        msg.interval_s = 1.0
+        self.count_pub.publish(msg)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--map', required=True)
@@ -216,6 +244,8 @@ def main():
                     metavar='X,Y,R')
     ap.add_argument('--log', required=True)
     ap.add_argument('--config', default=str(CONFIG), help="the robot repo's robot.yaml (outline and LiDAR mount)")
+    ap.add_argument('--sources', help='radiation sources (.yaml: background_cps, sources [{x, y, peak_cps, sigma_m}]); '
+                                      'default: background 30 counts/s, no sources')
     a = ap.parse_args()
     rclpy.init()
     node = FakeNala(a)

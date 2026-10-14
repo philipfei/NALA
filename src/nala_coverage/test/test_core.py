@@ -152,6 +152,15 @@ def test_trust_continuous_same_thresholds_reacquisition():
     assert t.check(4.3,[1,1,0],[0,0,0],c,100,65,.1)
 
 
+def test_a_variance_a_hair_below_zero_is_rounding_not_invalid():
+    # AMCL can report e.g. -1e-12 when it has converged; a clearly negative variance stays invalid.
+    t=Trust();c=good_cov();c[7]=-1e-12
+    for now in [0.,1.,2.]:ready=t.check(now,[1,1,0],[0,0,0],c,100,100,.1)
+    assert ready,t.reason
+    c[7]=-.01
+    assert not t.check(2.1,[1,1,0],[0,0,0],c,100,100,.1) and t.reason=='AMCL_INVALID'
+
+
 @pytest.mark.parametrize('problem',['position','heading','endpoints','age','jump'])
 def test_runtime_trust_loss(problem):
     t=Trust();c=good_cov();args=[3.,[1,1,0],[0,0,0],c,100,100,.1]

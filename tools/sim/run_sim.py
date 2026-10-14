@@ -136,6 +136,8 @@ def main():
                                            'else base_station.yaml next to the map); the fake robot boots there')
     ap.add_argument('--start-offset', type=float, nargs=3, default=[0., 0., 0.], metavar=('DX', 'DY', 'DYAW'),
                     help='true start pose minus the base station (map frame), to test a robot not placed exactly')
+    ap.add_argument('--sources', help='radiation sources for the fake scintillator (e.g. sources_room.yaml); '
+                                      'default: background only')
     ap.add_argument('--obstacle', action='append', default=[], metavar='X,Y,R',
                     help='round obstacle that is in the world but not in the map; repeatable')
     ap.add_argument('--plan', default=str(EXAMPLES / 'map_ME_room1v4_nala.yaml'))
@@ -182,7 +184,7 @@ def main():
             stdout=open(out / 'launch.log', 'w'), stderr=subprocess.STDOUT, start_new_session=True)
         robot = subprocess.Popen(
             [sys.executable, str(HERE / 'fake_nala.py'), '--map', a.map, '--start', *map(str, start),
-             '--config', str(Path(a.config) / 'robot.yaml'),
+             '--config', str(Path(a.config) / 'robot.yaml')] + (['--sources', a.sources] if a.sources else []) + [
              '--log', str(out / 'truth.csv')] + [x for o in a.obstacle for x in ('--obstacle', o)],
             stdout=open(out / 'robot.log', 'w'), stderr=subprocess.STDOUT, start_new_session=True)
         result['robot_started_s'] = since()

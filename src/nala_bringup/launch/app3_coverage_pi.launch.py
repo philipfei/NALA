@@ -102,6 +102,9 @@ def _setup(context):
         _node('nala_coverage', 'coverage_supervisor', 'coverage_supervisor',
               parameters=[{**shared, 'plan_file': str(Path(plan).resolve())}]),
         _node('nala_coverage', 'coverage_meter', 'coverage_meter', parameters=[shared]),
+        # Scintillator readings + measured poses -> heatmap, hotspots, keepout (the scintillator driver is not
+        # here yet: its USB format is unknown, docs/scintillator.md).
+        _node('nala_coverage', 'radiation_node', 'radiation_node', parameters=[shared]),
         _node('nala_coverage', 'velocity_gate', 'velocity_safety_gate',
               parameters=[{**shared, 'mapping_mode': False}]),
     ]

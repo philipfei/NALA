@@ -93,10 +93,10 @@ _REQUIRED = {
                'manual_forward_m_s', 'manual_reverse_m_s', 'manual_angular_rad_s'},
     'runtime': {'map_frame', 'odom_frame', 'base_frame', 'map_yaml', 'base_station_yaml', 'output_dir'},
     'coverage': {'planning', 'localization', 'health', 'measurement', 'battery', 'deadlines',
-                 'recovery', 'visualization'},
+                 'recovery', 'visualization', 'radiation'},
 }
 BEHAVIOR = ('geometry', 'motion', 'planning', 'localization', 'health', 'measurement', 'battery',
-            'deadlines', 'recovery', 'visualization')
+            'deadlines', 'recovery', 'visualization', 'radiation')
 
 
 def robot_footprint(robot):
@@ -162,8 +162,12 @@ class Settings:
         if not 0 <= geometry['sensor_offset_m'] < geometry['coverage_disk_radius_m']:
             raise ValueError('geometry.sensor_offset_m must be at least 0 and below the coverage disk radius')
         for section in ('motion', 'localization', 'health', 'measurement', 'deadlines',
-                        'recovery', 'visualization'):
+                        'recovery', 'visualization', 'radiation'):
             _positive_tree(section, values[section])
+        if not 0 < values['radiation']['keepout_cost'] < 100:
+            raise ValueError('radiation.keepout_cost must be 1..99 (100 is a wall in the Nav2 costmap)')
+        if not isinstance(values['radiation'].get('enabled'), bool):
+            raise ValueError('radiation.enabled must be true or false')
         battery = values['battery']
         if not isinstance(battery.get('enabled'), bool):
             raise ValueError('battery.enabled must be true or false')

@@ -11,5 +11,7 @@ nala_panel:
     button_height: 52             # px, big enough for a finger
     update_period: 0.3            # s, how often the screen shows new robot data while driving
     manual_period: 0.05           # s, how often a held arrow button sends its command (drive by hand)
+    heatmap_width_m: 0.15         # m, readings are drawn this wide around the sensor track (display only; hotspots
+                                  # and the keepout zone use the exact cells)
     launch_stop_timeout: 20.0     # s, wait this long for app 3 to stop before it is killed
     hardware: true                # false: app 3 without base_node, battery, IMU, EKF and LiDAR driver (tools/sim)
