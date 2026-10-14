@@ -179,7 +179,7 @@ Main loop: check (CRC) and apply a new command, and on each tick do speed measur
 ## 7. Known limitations
 
 - The PI gains come from simulation of an *assumed* motor model. The feed-forward table is measured (wheels in the air); check it with step tests after flashing v1.1.1.
-- **v2.1.0 is compile-checked (2026-10-12, 0 warnings) but not tested on the MCU**: written while the Pi and the MCU were off.
+- **v2.1.0**: compile-checked 2026-10-12 (0 warnings). On the MCU 2026-10-14: state frames at 20 Hz without CRC errors, commands accepted. Motors and encoders not tested yet.
 - The motors reach only ~13 rad/s (0.50-0.52 m/s). Faster targets saturate at 100 % PWM; the Pi limits every wheel to 0.45 m/s (`max_wheel_speed` in `config/base.yaml`).
 - Stopping is by coasting, so the stopping distance depends on friction.
 

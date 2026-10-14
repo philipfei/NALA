@@ -181,7 +181,7 @@ Everything below is project-specific and must be kept up to date.
 - A teammate owns the firmware (`firmware/`) and builds and flashes it. **Claude may edit `firmware/`** (user, 2026-10-07).
   The PC has no avr-gcc (the user chose not to install it); Claude compile-checks on the Pi (avr-gcc 7.3).
 - Version in the repo: **v2.1.0** (2026-10-12, by Claude): UART with binary frames. Compile-checked on the Pi
-  (2026-10-12: 0 errors, 0 warnings). **Not flashed yet.** On the MCU: v2.0.0 (I2C, useless). Firmware and Pi code must match.
+  (2026-10-12: 0 errors, 0 warnings). Flashed 2026-10-14: UART link checked (20 Hz frames, no CRC errors, `/odom` 20 Hz). Firmware and Pi code must match.
 - Protocol source of truth: `firmware/README.md` (protocol, parameters, changes per version).
 - v2.1.0: UART 38400, binary frames `0xA5, id, data, crc8` (CRC-8 poly 0x07 of id + data). Command (id 0x01):
   vx, vy, w as int16 LE in mm/s, mrad/s. State (id 0x02, every 50 ms): seq, flags, 4 x int32 cumulative counts.

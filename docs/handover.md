@@ -89,8 +89,12 @@ Status 2026-10-14 (network back on 10.42.0.0/24, the Pi is 10.42.0.154):
 - Battery (INA260): **on hold** (user). Address 0x4F (A0, A1 to SCL), set in `config/battery.yaml`. Nothing
   answers on I2C bus 1, though GPIO2/3 are in I2C mode and idle high; the IC may be broken.
   `battery_node` only warns when it cannot read, so app 1 still starts.
-- Xbox, MCU (flash v2.1.0 first), chassis, app 2: open. Note: GPIO15 (Pi RX from the MCU) read low on
-  2026-10-14 (MCU board probably off); an idle UART line must be high.
+- MCU link: done (2026-10-14, firmware v2.1.0 flashed, motor power and encoders disconnected).
+  100 state frames in 5 s, 0 CRC errors, seq steps of 1; zero commands clear the boot flag; `app1_teleop_pi`
+  runs, `/odom` 20.0 Hz, no warnings (only the INA260 one). Before it worked: a loose UART cable, and pull-up
+  resistors on the TXB lines (removed; a TXB cannot pull a line low against them). With v1.1.1 and later
+  v2.1.0 frames then arrived; the exact last fix was not confirmed.
+- Open: encoders (turn each wheel by hand: positive forward), Xbox, motors, chassis, app 2.
 
 The user connects the parts. Claude tests each one before the next:
 
