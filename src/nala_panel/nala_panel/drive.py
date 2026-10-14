@@ -57,6 +57,7 @@ class DriveSession(Node):
         self.keepout = None          # bool (rows, cols): contaminated floor plus margin, avoided
         self.hotspots = []
         self.radiation = {}          # background, threshold, ...
+        self.changes = None          # int8 (rows, cols): 100 new object, 50 gone, 0 unchanged (mapchange_node)
         self.message = ''            # last service reply, for the screen
         self.preview_requested = False
         self.create_subscription(String, '/coverage/state', self._state, LATEST)
@@ -70,6 +71,7 @@ class DriveSession(Node):
         self.create_subscription(OccupancyGrid, '/radiation/keepout', self._keepout, LATCHED)
         self.create_subscription(String, '/radiation/hotspots', self._hotspots, LATCHED)
         self.create_subscription(String, '/radiation/state', self._radiation, LATEST)
+        self.create_subscription(OccupancyGrid, '/map_changes', self._changes, LATCHED)
         self.checked_pub = self.create_publisher(String, '/radiation/mark_checked', 10)
         self.clients_ = {name: self.create_client(Trigger, name) for name in TRIGGERS}
         self.teleop = None           # created when the launch starts (it reads the config)
@@ -113,12 +115,15 @@ class DriveSession(Node):
     def _radiation(self, msg):
         self.radiation = json.loads(msg.data)
 
+    def _changes(self, msg):
+        self.changes = np.asarray(msg.data, np.int8).reshape(msg.info.height, msg.info.width)
+
     # ---------------------------------------------------------------- app 3 process
     def start_launch(self, map_yaml, plan_yaml, output_dir):
         self.output_dir = Path(output_dir)
         self.state, self.pose, self.covered, self.route, self.message = {}, None, None, [], ''
         self.trail, self.measurement, self.gate, self.heatmap, self.keepout = [], {}, {}, None, None
-        self.hotspots, self.radiation = [], {}
+        self.hotspots, self.radiation, self.changes = [], {}, None
         self.preview_requested = False
         log = open(self.output_dir / 'launch.log', 'w')
         self.process = subprocess.Popen(launch_command(map_yaml, plan_yaml, output_dir, self.hardware),

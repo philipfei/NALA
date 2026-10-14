@@ -295,6 +295,10 @@ SLAM must not jump to a wrong but similar-looking place.
   (keepout zone: skipped plan stretches `CONTAMINATION_AVOIDED`, high cost layer in the global costmap).
   Settings: `radiation` in `config/coverage.yaml` (placeholders); `radiation.enabled: false` runs app 3 without it.
 - Go home (user, 2026-10-14): `/coverage/go_home` stops the plan and drives back to the base station.
+- Map changes (user, 2026-10-14): `mapchange_node` compares LiDAR scans at trusted poses with the saved map and
+  shows new objects (orange-red) and gone objects (light blue) on the robot screen. Counts are per scan; a margin
+  along the map's walls hides small pose errors. Shown only, the robot does not plan with it (Nav2 sees new
+  obstacles itself). Settings: `map_changes` in `config/coverage.yaml` (start values).
 
 ### Plan against SLAM pose jumps (tune and verify in stage 2)
 

@@ -144,6 +144,12 @@ def scan_screen(window, app, monkeypatch):
     keepout[rc[0] - 4:rc[0] + 5, rc[1] - 4:rc[1] + 5] = True
     session.heatmap, session.covered, session.keepout = heat, covered, keepout
     session.radiation = {'background': 30.0, 'threshold': 60.0}
+    changes = np.zeros(grid.cells.shape, np.int8)              # a cabinet moved: new at one place, gone at another
+    r, c = grid.cell((0.6, -2.2))
+    changes[r:r + 6, c:c + 6] = 100
+    for x in np.arange(1.0, 1.5, 0.05):
+        changes[grid.cell((x, -1.6))] = 50
+    session.changes = changes
     session.hotspots = [{'id': 1, 'peak': 400.0, 'x': 1.9, 'y': -3.0, 'first_seen': 1.8e9, 'checked': False}]
     session.trail = [[[0.2, -3.0], [1.0, -3.0], [1.7, -3.0]]]
     session.measurement = {'covered_m2': 4.2, 'coverable_m2': 9.7, 'avoided_m2': 0.2}
@@ -166,6 +172,7 @@ def test_scan_screen_shows_progress_heatmap_hotspots_and_controls(panel, monkeyp
     app.processEvents()
     assert scan.left.currentIndex() == 0 and scan.start_button.isEnabled() and not scan.pause_button.isEnabled()
     assert '1 contaminated spot, 1 to check' in scan.alert.text.text()
+    assert 'Map changed' in scan.area.text() and 'changes' in scan.view.images
     shot(window, '5_scan_ready')
 
     # Driving: the large progress view, then the map on request.

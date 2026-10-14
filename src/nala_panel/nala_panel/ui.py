@@ -264,6 +264,10 @@ class MapScreen(QtWidgets.QWidget):
         text, _ = hotspot_message(r['hotspots'])
         text = text.replace(' yet', '')          # a finished scan
         bg = f"{r['background']:.1f} counts/s" if np.isfinite(r['background']) else 'not measured'
+        if r['appeared'] is not None:
+            cell = self.grid.resolution ** 2
+            text += (f"<br>Map changed: {r['appeared'].sum() * cell:.1f} m² new, "
+                     f"{r['vanished'].sum() * cell:.1f} m² gone")
         self.result_text.setText(f"<b>Last scan: {r['name']}</b><br>Background: {bg}<br>{text}<br>"
                                  f"<span style='color:{style.MUTE}'>Saved in {r['folder']}</span>")
 
@@ -347,6 +351,7 @@ class MapScreen(QtWidgets.QWidget):
         run = self.run if tab == 2 else None
         v.set_heatmap(run['value'] if run else None, run['threshold'] if run else None)
         v.set_mask('keepout', run['keepout'] if run else None, style.MAG, 90)
+        v.set_changes(run['appeared'] if run else None, run['vanished'] if run else None)
         v.trail = run['trail'] if run else []
         v.hotspots = run['hotspots'] if run else []
         if tab == 0:
@@ -546,13 +551,17 @@ class ScanScreen(QtWidgets.QWidget):
         sl.addWidget(self.bar)
         self.area = label(name='mute')
         sl.addWidget(self.area)
-        self.legend = label(f"<span style='color:{style.TEAL}'>&#9632;</span> Scanned&nbsp;&nbsp; "
-                            f"<span style='color:{style.MAG}'>&#9670;</span> Contaminated, avoided", name='mute')
+        self.legend = label(f"<span style='color:{style.TEAL}'>&#9632;</span> Scanned&nbsp; "
+                            f"<span style='color:{style.MAG}'>&#9670;</span> Contaminated&nbsp; "
+                            f"<span style='color:{style.NEW}'>&#9632;</span> New object&nbsp; "
+                            f"<span style='color:{style.GONE}'>&#9632;</span> Gone", name='mute')
         sl.addWidget(self.legend)
         self.toggles = QtWidgets.QWidget()
         toggles = QtWidgets.QHBoxLayout(self.toggles)
         toggles.setContentsMargins(0, 0, 0, 0)
-        for key, text in (('coverage', 'Coverage'), ('contamination', 'Contamination'), ('path', 'Path')):
+        toggles.setSpacing(4)
+        for key, text in (('coverage', 'Coverage'), ('contamination', 'Radiation'), ('path', 'Path'),
+                          ('changes', 'Changes')):
             b = style.set_kind(QtWidgets.QPushButton(text), 'toggle')
             b.setCheckable(True)
             b.setChecked(True)
@@ -776,6 +785,10 @@ class ScanScreen(QtWidgets.QWidget):
             lines.append(f"{s.radiation['avoided_m2']:.1f} m² avoided (contaminated)")
         if s.radiation.get('background') is not None:
             lines.append(f"Background {s.radiation['background']:.0f} counts/s")
+        if s.changes is not None and (s.changes > 0).any():
+            cell = self.view.grid.resolution ** 2
+            lines.append(f"Map changed: {(s.changes == 100).sum() * cell:.1f} m\u00b2 new, "
+                         f"{(s.changes == 50).sum() * cell:.1f} m\u00b2 gone")
         if paused and reason:
             lines.append(f'Paused: {reason}')
         self.area.setText('<br>'.join(lines))
@@ -814,6 +827,9 @@ class ScanScreen(QtWidgets.QWidget):
         if s.heatmap is not None and (heat[0] is not d.get('heat', (None, None))[0] or heat[1] != d['heat'][1]):
             v.set_heatmap(*heat)
             d['heat'] = heat
+        if s.changes is not None and s.changes is not d.get('changes'):
+            v.set_changes(s.changes == 100, s.changes == 50)
+            d['changes'] = s.changes
         v.refresh(trail=s.trail, hotspots=s.hotspots, robot=s.pose)
         if v.selected is not None:
             self.select(v.selected)

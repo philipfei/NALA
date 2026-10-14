@@ -69,7 +69,7 @@ class MapWidget(QtWidgets.QWidget):
         self.grid = None
         self.base = None
         self.images = {}                       # layer name -> QImage on the grid
-        self.layers = {'coverage': True, 'contamination': True, 'path': True}
+        self.layers = {'coverage': True, 'contamination': True, 'path': True, 'changes': True}
         self.heat_width_m = 0.             # display width of the readings around the sensor track
         self.trail = []                        # list of segments [[x, y], ...]
         self.plan = []
@@ -112,6 +112,17 @@ class MapWidget(QtWidgets.QWidget):
             rgba = np.zeros(mask.shape + (4,), np.uint8)
             rgba[mask] = colour(hex_colour, alpha)
             self.images[name] = rgba_image(rgba)
+        self.update()
+
+    def set_changes(self, appeared, vanished):
+        """Cells that changed against the saved map: new objects and objects that are gone."""
+        if appeared is None or self.grid is None or appeared.shape != self.grid.cells.shape:
+            self.images.pop('changes', None)
+        else:
+            rgba = np.zeros(appeared.shape + (4,), np.uint8)
+            rgba[vanished] = colour(style.GONE, 230)
+            rgba[appeared] = colour(style.NEW, 245)
+            self.images['changes'] = rgba_image(rgba)
         self.update()
 
     def set_heatmap(self, value, threshold):
@@ -181,7 +192,7 @@ class MapWidget(QtWidgets.QWidget):
         p.setTransform(image_to_local * local_to_world * world_to_screen)
         p.drawImage(0, 0, self.base)
         for name, on in (('coverage', self.layers['coverage']), ('heat', self.layers['contamination']),
-                         ('keepout', self.layers['contamination'])):
+                         ('keepout', self.layers['contamination']), ('changes', self.layers['changes'])):
             if on and name in self.images:
                 p.drawImage(0, 0, self.images[name])
         p.restore()

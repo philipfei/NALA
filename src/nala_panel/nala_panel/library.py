@@ -159,7 +159,12 @@ def last_run(entry):
                 trail.append([])
             trail[-1].append([x, y])
             last = stamp
+    appeared = vanished = None                   # map changes seen during the run (mapchange_node)
+    if (folder / 'changes.npz').is_file():
+        changes = np.load(folder / 'changes.npz')
+        appeared, vanished = changes['appeared'], changes['vanished']
     threshold = float(data['threshold'])
     return {'name': folder.name, 'folder': folder, 'value': data['value'], 'keepout': data['keepout'],
             'threshold': threshold if np.isfinite(threshold) else None,
-            'background': float(data['background']), 'hotspots': hotspots.get('hotspots', []), 'trail': trail}
+            'background': float(data['background']), 'hotspots': hotspots.get('hotspots', []), 'trail': trail,
+            'appeared': appeared, 'vanished': vanished}

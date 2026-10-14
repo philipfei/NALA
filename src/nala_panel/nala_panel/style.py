@@ -12,6 +12,8 @@ MAG = '#B0166B'       # contamination, hotspots
 RED = '#C62828'       # STOP button
 WALL = '#2B3A42'
 GREEN = '#1B9E4B'     # area outline in the planner
+NEW = '#E8590C'       # map change: a new object (free on the map, seen occupied)
+GONE = '#74C0FC'      # map change: an object that is gone (occupied on the map, seen free)
 
 
 def stylesheet(font_pt, button_px):
@@ -35,7 +37,7 @@ QPushButton[kind="dark"] {{ background: {INK}; border-color: {INK}; color: white
 QPushButton[kind="stop"] {{ background: {RED}; border-color: {RED}; color: white; font-size: {font_pt + 6}pt; }}
 QPushButton[kind="primary"]:disabled, QPushButton[kind="dark"]:disabled {{ background: #BDC7CB; border-color: #BDC7CB;
               color: #EEF2F3; }}
-QPushButton[kind="toggle"] {{ border: 2px solid {LINE}; color: {MUTE}; padding: 0 4px; font-size: {font_pt - 2}pt;
+QPushButton[kind="toggle"] {{ border: 2px solid {LINE}; color: {MUTE}; padding: 0 1px; font-size: {font_pt - 4}pt;
               min-height: {big - 12}px; }}
 QPushButton[kind="toggle"]:checked {{ border-color: {BLUE}; color: {BLUE}; background: #EAF3F8; }}
 QPushButton[kind="round"] {{ min-height: 52px; min-width: 52px; max-width: 52px; border-radius: 26px; padding: 0; }}

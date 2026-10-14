@@ -98,6 +98,8 @@ def _setup(context):
         # Scintillator readings + measured poses -> heatmap, hotspots, keepout (the scintillator driver is not
         # here yet: its USB format is unknown, docs/scintillator.md).
         _node('nala_coverage', 'radiation_node', 'radiation_node', parameters=[shared]),
+        # LiDAR scans at trusted poses -> cells that changed against the saved map (shown on the robot screen).
+        _node('nala_coverage', 'mapchange_node', 'map_change_node', parameters=[shared]),
         _node('nala_coverage', 'velocity_gate', 'velocity_safety_gate',
               parameters=[{**shared, 'mapping_mode': False}]),
     ]
