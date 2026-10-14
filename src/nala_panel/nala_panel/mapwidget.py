@@ -115,7 +115,7 @@ class MapWidget(QtWidgets.QWidget):
         self.update()
 
     def set_changes(self, appeared, vanished):
-        """Cells that changed against the saved map: new objects and objects that are gone."""
+        """Cells that changed against the saved map: new objects and removed objects."""
         if appeared is None or self.grid is None or appeared.shape != self.grid.cells.shape:
             self.images.pop('changes', None)
         else:

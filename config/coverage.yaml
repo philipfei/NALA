@@ -133,12 +133,12 @@
       publish_period_s: 1.0           # s, how often the heatmap and the hotspots are published
     map_changes:
       # Cells that changed against the saved map (mapchange_node), from LiDAR scans at trusted poses.
-      # Shown on the robot screen: new objects and objects that are gone. Start values: tune on the robot.
+      # Shown on the robot screen: new objects and removed objects. Start values: tune on the robot.
       scan_period_s: 0.5              # s, use at most one scan per this time (CPU on the Pi)
       beam_step: 2                    # use every 2nd beam
       max_range_m: 6.0                # m, longer beams are cut here (small heading errors move far points a lot)
       wall_margin_m: 0.10             # m, a few cm of localisation error must not make the walls look changed
       min_hits: 4                     # scans with a beam ending in a free map cell before it is a new object
       hit_ratio: 0.7                  # ... and at least this share of the scans that saw that cell (people walk by)
-      min_passes: 6                   # scans with a beam passing through an occupied map cell before it is gone
+      min_passes: 6                   # scans with a beam passing through an occupied map cell before it is a removed object
       publish_period_s: 1.0           # s

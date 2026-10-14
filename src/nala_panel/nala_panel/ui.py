@@ -267,7 +267,7 @@ class MapScreen(QtWidgets.QWidget):
         if r['appeared'] is not None:
             cell = self.grid.resolution ** 2
             text += (f"<br>Map changed: {r['appeared'].sum() * cell:.1f} m² new, "
-                     f"{r['vanished'].sum() * cell:.1f} m² gone")
+                     f"{r['vanished'].sum() * cell:.1f} m² removed")
         self.result_text.setText(f"<b>Last scan: {r['name']}</b><br>Background: {bg}<br>{text}<br>"
                                  f"<span style='color:{style.MUTE}'>Saved in {r['folder']}</span>")
 
@@ -554,7 +554,7 @@ class ScanScreen(QtWidgets.QWidget):
         self.legend = label(f"<span style='color:{style.TEAL}'>&#9632;</span> Scanned&nbsp; "
                             f"<span style='color:{style.MAG}'>&#9670;</span> Contaminated&nbsp; "
                             f"<span style='color:{style.NEW}'>&#9632;</span> New object&nbsp; "
-                            f"<span style='color:{style.GONE}'>&#9632;</span> Gone", name='mute')
+                            f"<span style='color:{style.GONE}'>&#9632;</span> Removed object", name='mute')
         sl.addWidget(self.legend)
         self.toggles = QtWidgets.QWidget()
         toggles = QtWidgets.QHBoxLayout(self.toggles)
@@ -788,7 +788,7 @@ class ScanScreen(QtWidgets.QWidget):
         if s.changes is not None and (s.changes > 0).any():
             cell = self.view.grid.resolution ** 2
             lines.append(f"Map changed: {(s.changes == 100).sum() * cell:.1f} m\u00b2 new, "
-                         f"{(s.changes == 50).sum() * cell:.1f} m\u00b2 gone")
+                         f"{(s.changes == 50).sum() * cell:.1f} m\u00b2 removed")
         if paused and reason:
             lines.append(f'Paused: {reason}')
         self.area.setText('<br>'.join(lines))
