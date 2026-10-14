@@ -29,23 +29,52 @@ fi
 echo "== ROS 2 Jazzy and tools"
 # Cyclone DDS first: then ros-base uses it and does not pull in Fast DDS (same as the PC).
 $APT install ros-jazzy-rmw-cyclonedds-cpp
-$APT install ros-jazzy-ros-base python3-serial python3-pytest python3-colcon-common-extensions git avahi-daemon
+$APT install ros-jazzy-ros-base python3-serial python3-pytest python3-colcon-common-extensions git avahi-daemon \
+  openssh-server
 
 echo "== Xbox controller (app 1)"
 $APT install ros-jazzy-joy ros-jazzy-teleop-twist-joy
 # joy reads /dev/input/event*, which belongs to the group input.
 sudo usermod -aG input "$USER"
 
-echo "== LiDAR, robot model, SLAM, map saver (app 2)"
+echo "== LiDAR, robot model, SLAM, map saver, RViz (app 2)"
 $APT install ros-jazzy-rplidar-ros ros-jazzy-robot-state-publisher ros-jazzy-xacro \
-  ros-jazzy-slam-toolbox ros-jazzy-nav2-map-server
+  ros-jazzy-slam-toolbox ros-jazzy-nav2-map-server ros-jazzy-rviz2
 
-echo "== UART to the MCU (/dev/ttyS0)"
+echo "== IMU and EKF (app 2), I2C battery monitor"
+$APT install ros-jazzy-robot-localization python3-smbus2 i2c-tools
+# Firmware compile check only (the teammate builds and flashes with Microchip Studio).
+$APT install gcc-avr avr-libc
+# /dev/i2c-1 belongs to dialout on Ubuntu (user added below); if a group i2c exists, join it too.
+if getent group i2c >/dev/null; then sudo usermod -aG i2c "$USER"; fi
+
+echo "== USB serial adapters (LiDAR, IMU)"
+# Ubuntu Desktop: brltty takes CH340 adapters away (no /dev/ttyUSB*), and ModemManager
+# sends modem commands to new serial ports. Neither is needed on the robot.
+$APT remove brltty
+if systemctl list-unit-files ModemManager.service >/dev/null 2>&1; then
+  sudo systemctl disable --now ModemManager.service || true
+fi
+# Fixed name /dev/ttyIMU for the CH340G adapter of the IMU (the only CH340 on the robot;
+# the LiDAR adapter is a CP2102).
+echo 'SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="7523", SYMLINK+="ttyIMU", MODE="0666"' \
+  | sudo tee /etc/udev/rules.d/99-nala.rules >/dev/null
+sudo udevadm control --reload
+sudo udevadm trigger
+
+echo "== UART on GPIO14/15 for the MCU (/dev/ttyAMA0)"
 sudo usermod -aG dialout "$USER"
-# The Linux serial console uses the same UART. Remove it from the kernel command line
-# and stop the login prompt on it.
+# The Linux serial console uses the GPIO UART. Remove it from the kernel command line
+# and stop the login prompts on it.
 sudo sed -i 's/console=serial0,115200 //' /boot/firmware/cmdline.txt
-sudo systemctl mask serial-getty@ttyS0.service
+sudo systemctl mask serial-getty@ttyS0.service serial-getty@ttyAMA0.service
+# The stable PL011 UART goes to GPIO14/15 (MCU), Bluetooth (Xbox controller) moves to the
+# mini UART. core_freq fixes the VPU clock, so the mini UART baud rate does not change
+# with the CPU load. I2C bus 1 on GPIO2/3 is for the INA260 battery monitor.
+config=/boot/firmware/config.txt
+for setting in enable_uart=1 dtoverlay=miniuart-bt core_freq=250 dtparam=i2c_arm=on; do
+  grep -qxF "$setting" "$config" || echo "$setting" | sudo tee -a "$config" >/dev/null
+done
 
 echo "== ROS environment in ~/.bashrc"
 line="source $NALA_DIR/config/ros_env.sh"

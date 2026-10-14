@@ -24,9 +24,10 @@ system:
   firmware:
     mcu: ATmega328PB, 16 MHz
     ide: Microchip Studio (Windows)   # build
-    device_pack: ATmega_DFP 1.7.374   # from motor_driver_C.cproj (firmware v1.1.0, owned by a teammate)
+    device_pack: ATmega_DFP 1.7.374   # from motor_driver_C.cproj (firmware v2.1.0, owned by a teammate)
     flash_tool: avrdude 8.0 (from the Arduino IDE), ArduinoISP   # see firmware/README.md section 5
-    linker_flags: -lprintf_flt        # needed for %f in sprintf
+    linker_flags: -lprintf_flt        # in the .cproj; not needed since v2.0.0 (no printf), harmless
+    compile_check: gcc-avr + avr-libc on the Pi (apt)   # Claude checks that it compiles; no flashing from the Pi
 
 apt:
   # The Pi follows the PC: if versions conflict, the Pi uses what the PC has.
@@ -59,7 +60,8 @@ apt:
       - ros2-apt-source 1.3.0               # same version as the PC
       - ros-jazzy-rmw-cyclonedds-cpp        # first, so ros-base uses Cyclone (like the PC), not Fast DDS
       - ros-jazzy-ros-base                  # ROS 2 without GUI tools
-      - python3-serial                      # pyserial: UART to the MCU
+      - python3-serial                      # pyserial: UART to the MCU, USB serial to the IMU
+      - openssh-server                      # not preinstalled on Ubuntu Desktop
       - python3-pytest                      # unit tests
       - python3-colcon-common-extensions    # build tool
       - git
@@ -72,20 +74,23 @@ apt:
       - ros-jazzy-xacro                     # URDF macros
       - ros-jazzy-slam-toolbox              # 2D SLAM (mapping and localization)
       - ros-jazzy-nav2-map-server           # map_saver_cli: save the map
+      - ros-jazzy-rviz2                     # RViz on the Pi desktop (Ubuntu Desktop since 2026-10-12)
+      - ros-jazzy-robot-localization        # EKF: wheel odometry + IMU turn rate
+      - python3-smbus2                      # I2C to the INA260 battery monitor
+      - i2c-tools                           # i2cdetect: find the INA260 on the I2C bus (also makes the group i2c)
+      - gcc-avr                             # firmware compile check only
+      - avr-libc                            # firmware compile check only
+    removed:                                # by scripts/setup_pi.sh (Ubuntu Desktop has them)
+      - brltty                              # takes CH340 USB serial adapters away (the IMU adapter)
+      - ModemManager (service disabled)     # sends modem commands to new serial ports
     stage_3:                                # installed by scripts/setup_pi_screen.sh
       - ros-jazzy-navigation2               # map server, AMCL, planner (NavFn), controller (RPP), lifecycle manager
       - python3-pyqt5                       # robot screen (nala_panel)
-      - python3-matplotlib                  # map drawing on the robot screen, plan images (coverage_tool)
+      - python3-matplotlib                  # plan images (coverage_tool)
       - python3-scipy                       # coverage_tool (planning on the Pi)
       - python3-pil                         # map images
       - python3-numpy
       - python3-yaml
-      - xserver-xorg                        # small desktop for the robot screen (--no-install-recommends)
-      - xinit
-      - xfce4
-      - lightdm                             # automatic login of user nala
-      - lightdm-gtk-greeter
-      - x11-xserver-utils                   # xset: keep the screen on
 
 pip: []   # none
 

@@ -1,9 +1,11 @@
-"""ROS node: /cmd_vel -> MCU velocity frames over the UART, MCU encoder counts -> /odom and TF.
+"""ROS node: /cmd_vel -> MCU over the UART, MCU encoder counts -> /odom (and TF).
 
 All parameters come from config/base.yaml (no defaults here).
-Odometry: the MCU sends cumulative encoder counts; the change between two lines is the exact
-wheel movement, so a dropped line loses no distance.
-A reader thread blocks on the UART, so each line gets its arrival time and no CPU is used while waiting.
+A timer writes the command frame at command_rate. A reader thread blocks on the UART
+and handles every state frame from the MCU (it sends one per control period).
+Odometry: the change of the cumulative encoder counts is the exact wheel movement.
+The speed divides it by the exact MCU time (periods x feedback_period, from the MCU
+period counter); the message stamp is the Pi time when the frame arrived.
 """
 
 import math
@@ -20,11 +22,13 @@ import serial
 from tf2_ros import TransformBroadcaster
 
 from nala_base.kinematics import integrate_pose, limit_wheel_speed, wheels_to_body
-from nala_base.mcu_protocol import count_delta, encode_command, parse_line
+from nala_base.mcu_protocol import (
+    count_delta, encode_command, FLAG_BOOT, FLAG_TIMEOUT, split_frames)
 
 ODOM_FRAME = 'odom'
 BASE_FRAME = 'base_footprint'
-READ_TIMEOUT = 0.1   # s, a blocking read returns after this, so the reader thread can stop
+READ_TIMEOUT = 0.1        # s, a blocking read returns after this, so the reader thread can stop
+LOG_THROTTLE = 5.0        # s, repeat CRC error warnings at most this often
 
 
 class BaseNode(Node):
@@ -42,29 +46,35 @@ class BaseNode(Node):
         self.rad_per_count = 2 * math.pi / self.param('encoder_counts_per_rev', Parameter.Type.INTEGER)
         self.feedback_period = self.param('feedback_period', Parameter.Type.DOUBLE)
         self.feedback_timeout = self.param('feedback_timeout', Parameter.Type.DOUBLE)
+        self.publish_tf = self.param('publish_tf', Parameter.Type.BOOL)
+        self.twist_variance = self.param('odom_twist_variance', Parameter.Type.DOUBLE_ARRAY)
 
         self.serial = serial.Serial(port, baud, timeout=READ_TIMEOUT)
-        self.serial.reset_input_buffer()   # drop old lines from before the start
+        self.serial.reset_input_buffer()   # drop old bytes from before the start
+        self.crc_errors = 0       # state frames with a wrong CRC
+
         self.cmd = (0.0, 0.0, 0.0)
         self.cmd_time = None      # time.monotonic() of the last /cmd_vel
         self.stopped = True       # True while sending zero because /cmd_vel is too old
 
         self.pose = (0.0, 0.0, 0.0)            # x, y, yaw in the odom frame
-        self.counts = None                     # last counts line (None: the next line is only the reference)
-        self.feedback_time = time.monotonic()  # time of the last counts line (or the start)
-        self.feedback_lost = False             # True after feedback_timeout without counts
+        self.counts = None                     # last counts (None: the next frame is only the reference)
+        self.seq = 0                           # MCU period counter of the last frame
+        self.feedback_time = time.monotonic()  # time of the last valid state frame (or the start)
+        self.feedback_lost = False             # True after feedback_timeout without a valid frame
+        self.mcu_timed_out = False             # MCU reported its command timeout
 
         self.odom_pub = self.create_publisher(Odometry, 'odom', 10)
         self.tf_broadcaster = TransformBroadcaster(self)
         self.create_subscription(Twist, 'cmd_vel', self.on_cmd_vel, 10)
-        self.create_timer(1.0 / rate, self.on_command_timer)
+        self.create_timer(1.0 / rate, self.on_timer)
         self.reading = True
         self.reader = threading.Thread(target=self.read_loop, daemon=True)
         self.reader.start()
         self.get_logger().info(
             f'{port} at {baud} baud, sending at {rate} Hz. '
-            f'Max wheel speed: {self.max_wheel_speed} m/s. '
-            f'/cmd_vel timeout: {self.cmd_timeout} s.')
+            f'Max wheel speed: {self.max_wheel_speed} m/s. /cmd_vel timeout: {self.cmd_timeout} s. '
+            f'Odometry TF: {"on" if self.publish_tf else "off (published by the EKF)"}.')
 
     def param(self, name, param_type):
         self.declare_parameter(name, param_type)
@@ -75,12 +85,13 @@ class BaseNode(Node):
                                      self.k, self.max_wheel_speed)
         self.cmd_time = time.monotonic()
 
-    def on_command_timer(self):
+    def on_timer(self):
         self.send_command()
         if not self.feedback_lost and time.monotonic() - self.feedback_time > self.feedback_timeout:
             self.feedback_lost = True
             self.get_logger().warn(
-                f'No wheel counts from the MCU for {self.feedback_timeout} s: odometry stops.')
+                f'No valid state from the MCU for {self.feedback_timeout} s '
+                f'(CRC errors {self.crc_errors}): odometry stops.')
 
     def send_command(self):
         fresh = (self.cmd_time is not None
@@ -96,49 +107,39 @@ class BaseNode(Node):
         self.get_logger().debug(f'sent {frame.hex(" ")}')
 
     def read_loop(self):
-        """Reader thread: wait for MCU bytes and handle each complete line."""
-        rx_buffer = b''
+        """Reader thread: wait for MCU bytes and handle each complete state frame."""
+        buffer = b''
         while self.reading:
-            rx_buffer += self.serial.read(self.serial.in_waiting or 1)
-            *lines, rx_buffer = rx_buffer.split(b'\n')
-            if len(rx_buffer) > 1000:   # noise without any newline
-                rx_buffer = b''
-            for raw in lines:
-                self.handle_line(raw.decode('ascii', errors='replace'))
+            buffer += self.serial.read(self.serial.in_waiting or 1)
+            states, buffer, bad = split_frames(buffer)
+            if bad:
+                self.crc_errors += bad
+                self.get_logger().warn(f'State frame with a wrong CRC ({self.crc_errors} so far).',
+                                       throttle_duration_sec=LOG_THROTTLE)
+            for state in states:
+                self.on_state(*state)
 
-    def handle_line(self, line):
-        result = parse_line(line)
-        if result is None:
-            return
-        kind, value = result
-        if kind == 'counts':
-            self.on_counts(value)
-        elif kind == 'echo':
-            self.get_logger().debug(f'echo vx vy wz: {value}')
-        elif value == 'cmd timeout':
-            self.get_logger().warn('MCU: cmd timeout (no velocity frame for 200 ms)')
-        else:
-            if value == 'test':   # the MCU (re)started: its counters start again at 0
-                self.counts = None
-            self.get_logger().info(f'MCU: {value}')
-
-    def on_counts(self, counts):
-        """Integrate one line of cumulative encoder counts and publish /odom and TF.
-
-        The speed in /odom is the movement divided by the MCU periods the line covers
-        (normally 1; 2 if a line was dropped), counted from the arrival times.
-        """
-        now = time.monotonic()
-        periods = max(1, round((now - self.feedback_time) / self.feedback_period))
-        self.feedback_time = now
+    def on_state(self, seq, flags, counts):
+        """Integrate the count change since the last frame and publish /odom (and TF)."""
+        self.feedback_time = time.monotonic()
         if self.feedback_lost:
             self.feedback_lost = False
-            self.get_logger().info('Wheel counts from the MCU again.')
-        if self.counts is None:
-            self.counts = counts
+            self.get_logger().info('Valid state from the MCU again.')
+        timed_out = bool(flags & FLAG_TIMEOUT)
+        if timed_out and not self.mcu_timed_out:
+            self.get_logger().warn('MCU: cmd timeout (no valid command for 200 ms), stopped.')
+        self.mcu_timed_out = timed_out
+
+        if self.counts is None or flags & FLAG_BOOT:
+            if self.counts is not None:
+                self.get_logger().info('MCU restarted: its counters start again at 0.')
+            self.counts, self.seq = counts, seq
+            return
+        periods = (seq - self.seq) % 256
+        if periods == 0:          # the same MCU control period twice: nothing new
             return
         angles = [count_delta(new, old) * self.rad_per_count for new, old in zip(counts, self.counts)]
-        self.counts = counts
+        self.counts, self.seq = counts, seq
         dx, dy, dyaw = wheels_to_body(*angles, self.radius, self.k)   # movement in the robot frame
         self.pose = integrate_pose(*self.pose, dx, dy, dyaw, 1.0)
         dt = periods * self.feedback_period
@@ -147,10 +148,8 @@ class BaseNode(Node):
 
     def publish_odom(self, vx, vy, wz):
         x, y, yaw = self.pose
-        stamp = self.get_clock().now().to_msg()
-
         odom = Odometry()
-        odom.header.stamp = stamp
+        odom.header.stamp = self.get_clock().now().to_msg()
         odom.header.frame_id = ODOM_FRAME
         odom.child_frame_id = BASE_FRAME
         odom.pose.pose.position.x = x
@@ -160,15 +159,18 @@ class BaseNode(Node):
         odom.twist.twist.linear.x = vx
         odom.twist.twist.linear.y = vy
         odom.twist.twist.angular.z = wz
+        odom.twist.covariance[0] = self.twist_variance[0]    # vx
+        odom.twist.covariance[7] = self.twist_variance[1]    # vy
         self.odom_pub.publish(odom)
 
-        tf = TransformStamped()
-        tf.header = odom.header
-        tf.child_frame_id = BASE_FRAME
-        tf.transform.translation.x = x
-        tf.transform.translation.y = y
-        tf.transform.rotation = odom.pose.pose.orientation
-        self.tf_broadcaster.sendTransform(tf)
+        if self.publish_tf:
+            tf = TransformStamped()
+            tf.header = odom.header
+            tf.child_frame_id = BASE_FRAME
+            tf.transform.translation.x = x
+            tf.transform.translation.y = y
+            tf.transform.rotation = odom.pose.pose.orientation
+            self.tf_broadcaster.sendTransform(tf)
 
     def stop(self):
         """Stop the reader thread, send a zero command and close the port."""

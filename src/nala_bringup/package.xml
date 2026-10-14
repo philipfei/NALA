@@ -18,6 +18,7 @@
   <exec_depend>nala_description</exec_depend>
   <exec_depend>rplidar_ros</exec_depend>
   <exec_depend>slam_toolbox</exec_depend>
+  <exec_depend>robot_localization</exec_depend>
   <exec_depend>rviz2</exec_depend>
 
   <export>

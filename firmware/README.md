@@ -1,6 +1,6 @@
 # NALA firmware (ATmega328PB motor driver)
 
-Firmware for the NALA base. It receives body-velocity commands from the Pi over UART, runs a speed controller on four mecanum wheels and reports the cumulative encoder counts. Current version: **v1.1.1**. Toolchain: Atmel/Microchip Studio 7 (avr-gcc 5.4.0, ATmega_DFP 1.7.374), 16 MHz external crystal.
+Firmware for the NALA base. It receives body-velocity commands from the Pi over UART, runs a speed controller on four mecanum wheels and sends the cumulative encoder counts back. Current version: **v2.1.0**. Toolchain: Atmel/Microchip Studio 7 (avr-gcc 5.4.0, ATmega_DFP 1.7.374), 16 MHz external crystal.
 
 > ### HARDWARE POLARITY NOTE (read before touching the motor wiring)
 >
@@ -14,41 +14,42 @@ Firmware for the NALA base. It receives body-velocity commands from the Pi over 
 
 Pi side: [`../src/nala_base/nala_base/mcu_protocol.py`](../src/nala_base/nala_base/mcu_protocol.py), [`../docs/mcu_protocol.md`](../docs/mcu_protocol.md).
 
-## 1. Protocol
+## 1. Protocol (v2.1.0: UART, binary frames)
 
-UART0, **38400 8N1** (v1.1.0; was 9600), no flow control (MCU RXD0 = PD0, TXD0 = PD1, TTL levels).
+UART0, **38400 8N1**, no flow control. MCU **PD0 = RXD0, PD1 = TXD0** (5 V). The Pi (GPIO14 TX / GPIO15 RX, 3.3 V,
+`/dev/ttyAMA0`) is connected through the level shifter on the board.
 
-### Host -> MCU
+> **Level shifter:** the schematic says TXS0104E, but the part on the board is a **TXB** type (auto direction).
+> A TXB is fine for UART (push-pull signals) but **cannot do I2C** (it oscillates against pull-ups).
+> That is why the I2C link of v2.0.0 never worked. Do not put pull-up resistors on lines that go through the TXB.
 
-| Frame | Bytes | Meaning |
-|---|---|---|
-| Velocity | `80 86 Vx Vy w` | Set the body velocity |
-| Echo switch | `80 87 E` | `E=01` command echo on, `E=00` off, other values ignored |
+Only binary frames are sent, in both directions: no text. Every frame is `0xA5` (sync), an id, the data and a
+**CRC-8** of id + data (polynomial 0x07, initial value 0, no final XOR; `"123456789"` -> `0xF4`).
+Same code in `main.c` (`crc8`) and on the Pi (`mcu_protocol.crc8`).
 
-- `Vx Vy w` are signed **int8**: `value = count * 0.02`, so the host sends `round(value * 50)`. Range -2.56 .. +2.54. Units: m/s, m/s, rad/s.
-- Axes follow ROS (REP-103): Vx forward, Vy left, w counter-clockwise positive.
-- :fire:**Examples:** 
-  - stop `80 86 00 00 00` 
-  - forward 0.10 m/s `80 86 05 00 00` 
-  - reverse 0.10 m/s `80 86 FB 00 00` 
-  - left 0.10 m/s `80 86 00 05 00` 
-  - CCW 0.50 rad/s `80 86 00 00 19`
+### Pi -> MCU: command frame (9 bytes)
 
-- The parser finds frames by their two header bytes. Payload bytes are not searched for headers; a lost byte shifts the frame until the next header. A new frame replaces an unprocessed one.
-- A command is applied immediately (feed-forward) and then refined by the controller every 50 ms.
-- :fire:**Command timeout:** while the robot is moving, if no velocity frame arrives for **200 ms** (`CMD_TIMEOUT_MS`, 0 disables), all targets are set to zero and `cmd timeout` is sent once. The stop happens 200-250 ms after the last frame. A zero command never times out; the echo frame does not refresh the timeout. **The host must keep resending the command** (at most 150 ms apart, 20 Hz recommended).
+| Byte | 0 | 1 | 2-3 | 4-5 | 6-7 | 8 |
+|---|---|---|---|---|---|---|
+| Content | `0xA5` | `0x01` | vx | vy | w | CRC-8 of bytes 1-7 |
 
-### MCU -> host (text lines ending in `\n`)
+- vx, vy in **mm/s**, w in **mrad/s**, **int16 little endian**. Axes follow ROS (REP-103): vx forward, vy left, w counter-clockwise positive.
+- Examples: stop `A5 01 00 00 00 00 00 00 DF`; forward 0.3 m/s `A5 01 2C 01 00 00 00 00 crc`; right 0.1 m/s `A5 01 00 00 9C FF 00 00 crc`.
+- Receive state machine (`USART0_RX_vect`): **IDLE** (only here `0xA5` starts a frame) -> **HEADER_ACK** (`0x01` -> PAYLOAD, `0xA5` -> stay, other -> IDLE) -> **PAYLOAD** (6 data bytes + crc; a `0xA5` in here is data and never restarts the frame) -> complete (`cmd_ready`). The CRC is checked in the main loop; a frame with a wrong CRC is ignored.
+- A valid command is applied immediately (feed-forward) and then refined by the controller every 50 ms.
+- :fire:**Command timeout:** while the robot is moving, if no valid command arrives for **200 ms** (`CMD_TIMEOUT_MS`, 0 disables), all targets are set to zero and state flag bit1 is set (until the next valid command). A zero command never times out. **The Pi must keep sending the command** (20 Hz).
 
-| Line | When |
-|---|---|
-| `c n1 n2 n3 n4` - **cumulative encoder counts** of M1..M4 since power-up (int32, 1536 per wheel turn), positive = the wheel drove the robot forward. The host uses the difference of two lines, so a dropped line loses no distance | :exclamation:every 50 ms (20 Hz) |
-| `a`, `test` | once after reset |
-| `Vx Vy w` (3 floats) | after each velocity frame, only when echo is on (default off) |
-| `echo on` / `echo off` | after an echo frame |
-| `cmd timeout` | once, when the timeout stops the robot |
+### MCU -> Pi: state frame (21 bytes, every control period = 20 Hz)
 
-> **Link budget** (38400 baud = 3840 byte/s). A velocity frame is 5 bytes, so 20 Hz uses 2.6 % of the Pi -> MCU wire. A counts line is up to 50 bytes (13 ms), about 25 when driving: 20 Hz uses at most 26 % of the MCU -> Pi wire. The command echo at 20 Hz adds about 16 %. A line that does not fit into the 128-byte TX buffer is dropped, never waited for. If the Pi does not read the feedback, its RX buffer fills up (harmless); flush it (`reset_input_buffer()`) before reading.
+| Byte | 0 | 1 | 2 | 3 | 4-7 | 8-11 | 12-15 | 16-19 | 20 |
+|---|---|---|---|---|---|---|---|---|---|
+| Content | `0xA5` | `0x02` | seq | flags | M1 | M2 | M3 | M4 | CRC-8 of bytes 1-19 |
+
+- seq: control period counter (uint8, wraps at 256). The difference of two frames = the number of 50 ms periods between them: the exact time base for the speeds.
+- flags: bit0 = no valid command since power-up (the counters started at 0), bit1 = stopped by the command timeout.
+- Mn: **cumulative encoder counts** since power-up (int32 little endian, 1536 per wheel turn), positive = the wheel drove the robot forward. The Pi uses the difference of two frames, so a lost frame loses no distance.
+
+> **Link budget** (38400 baud = 3840 byte/s): commands 9 bytes x 20 Hz = 5 % of the Pi -> MCU wire, state frames 21 bytes x 20 Hz = 11 % of the MCU -> Pi wire. A frame that does not fit into the TX ring buffer (128 bytes, checked at compile time to be >= 32) is dropped, never waited for.
 
 ## 2. Interface
 
@@ -72,29 +73,28 @@ UART0, **38400 8N1** (v1.1.0; was 9600), no flow control (MCU RXD0 = PD0, TXD0 =
 | Wheel radius / half track / half wheelbase | 0.040 / 0.160 / 0.130 m |
 | Encoder counts per wheel revolution | 1536 (verified on the robot, 2026-10-07) |
 | Control period (Timer3, `OCR3A = 12499`) | 50 ms (20 Hz); one encoder count = 0.082 rad/s |
-| Feedback every | 1 period (20 Hz), cumulative encoder counts |
+| State frame | sent every period (20 Hz), cumulative encoder counts |
 | Command timeout | 200 ms |
-| UART / command scale | 38400 baud / 50 counts per unit (0.02) |
+| Pi link / command units | UART0 38400 baud, binary frames with CRC-8 / int16 mm/s and mrad/s |
 | Speed controller | positional PI + feed-forward + anti-windup: Kp 1.0, Ki 8.0, integral limit 25 % |
 | Feed-forward | table speed -> PWM from step tests (v1.1.1, `FF_*` in `config.h`): 0 -> 9 % (dead zone), 3.5 -> 15 %, 6.6 -> 21.5 %, 8.1 -> 29.5 %, 9.4 -> 37.5 %, 10.7 -> 45.5 %, 11.5 -> 54 %, 11.85 -> 63 %, 12.2 -> 72 %, 13.0 rad/s -> 100 % |
 | Output limit | +-100 % (8-bit PWM, 1/255 resolution) |
 | Measured top speed (100 % PWM) | 12.6-13.1 rad/s = 0.50-0.52 m/s rim speed, with and without load (2026-10-07) |
-| Command echo at power-up | off (`ECHO_COMMAND`) |
 
-Controller per wheel: `e = target - measured`, `pwm = 4.0*target + Kp*e + I`, `I += Ki*e*dt` (clamped, not integrated while saturated). Target 0 gives output 0 and clears `I`; `I` is also cleared when the target changes sign.
+Controller per wheel: `e = target - measured`, `pwm = FF(target) + Kp*e + I`, `I += Ki*e*dt` (clamped, not integrated while saturated). Target 0 gives output 0 and clears `I`; `I` is also cleared when the target changes sign.
 
 ## 4. Firmware structure
 
-Nothing blocks: interrupts only collect data and set flags, the main loop does the work. Diagram: [`docs/state_machine.svg`](docs/state_machine.svg) (labels in Chinese).
+Nothing blocks: interrupts only collect data and set flags, the main loop does the work. Diagram: [`docs/state_machine.svg`](docs/state_machine.svg) (labels in Chinese; it shows the v1.x text protocol: the frame parser and the feedback are different since v2.1.0).
 
 | Interrupt | Trigger | Does |
 |---|---|---|
 | `PCINT0/1/2_vect` | edge on an encoder A pin (ports B / C / D) | counts the edge (+1/-1 from B) |
 | `TIMER3_COMPA_vect` | every 50 ms, exact | snapshots the encoder counts, sets the control tick |
-| `USART0_RX_vect` | byte received | frame parser; sets `cmd_ready` / `echo_ack` |
+| `USART0_RX_vect` | byte received | command frame state machine (IDLE, HEADER_ACK, PAYLOAD); sets `cmd_ready` |
 | `USART0_UDRE_vect` | TX register empty | sends the next byte from the 128-byte ring buffer |
 
-Main loop: acknowledge an echo frame, apply a new command, and on each tick do speed measurement (counts / real elapsed time), timeout check, controller, motor output and the feedback line.
+Main loop: check (CRC) and apply a new command, and on each tick do speed measurement (counts / real elapsed time), timeout check, controller, motor output and send the state frame.
 
 ## 5. Build, flash, test
 
@@ -117,8 +117,13 @@ Main loop: acknowledge an echo frame, apply a new command, and on each tick do s
   3. Power the target: either from its own supply (then do **not** connect the Uno 5V) or from the Uno 5V.
   4. Test the link without writing anything: `avrdude -c stk500v1 -P COMx -b 19200 -p m328pb -v` must print the signature `1E 95 16`.
   5. Flash (command above) and wait for `verified`.
-  6. Remove the ISP wires, at least RESET, so the chip runs on its own. Then watch the serial port at 38400 baud: `a`, `test`, then a counts line (`c 0 0 0 0` at rest) every 50 ms.
-- **Tests** (models and simulation, not hardware): `python tests/rx_parser_model_test.py`, `timeout_model_test.py`, `motor_polarity_model_test.py`, `tx_budget.py`, `pid_sim.py`.
+  6. Remove the ISP wires, at least RESET, so the chip runs on its own. Then the UART (38400 baud) sends a 21-byte state frame (`A5 02 ...`) every 50 ms.
+- **Compile check on the Pi** (no flashing; avr-gcc 7.3 from apt). Ubuntu's avr-libc has no ATmega328PB header,
+  so take it from the same device pack Studio uses (unzip `gcc/dev/atmega328pb/` and `include/` to `/tmp/dfp/pack`):
+  `curl -fsSL -o /tmp/dfp/dfp.zip http://packs.download.atmel.com/Atmel.ATmega_DFP.1.7.374.atpack`, then
+  `avr-gcc -B /tmp/dfp/pack/gcc/dev/atmega328pb/ -I /tmp/dfp/pack/include -mmcu=atmega328pb -DF_CPU=16000000UL -Os -Wall -Wextra -o /tmp/fw.elf motor_driver_C/*.c`.
+  v2.0.0 (2026-10-09): 0 errors, 0 warnings, 7.3 KB flash, 428 B RAM. v2.1.0 (2026-10-12): 0 errors, 0 warnings, 7.0 KB flash, 374 B RAM.
+- **Tests** (models and simulation, not hardware): `python tests/uart_frame_model_test.py`, `timeout_model_test.py`, `motor_polarity_model_test.py`, `pid_sim.py`.
 
 ## 6. Changes per version
 
@@ -151,11 +156,25 @@ Main loop: acknowledge an echo frame, apply a new command, and on each tick do s
 - The step tests with v1.1.0 showed that the motor curve is not linear: no motion below ~8 %, 15 % -> 3.5 rad/s, 30 % -> 8 rad/s, 100 % -> 13 rad/s. 6.5 % per rad/s overshot by 30-90 % and settled only after ~2.5 s. The feed-forward is now a 10-point table (`FF_SPEED_RAD_S`, `FF_PWM_PCT`) with linear interpolation. Nothing else changed.
 - Checked on the robot (wheels in the air, steps 0.05-0.45 m/s): 90 % of the target in 0.2-0.4 s, overshoot 1-27 % (most <= 15 %), settled within ~1 s.
 
+**v2.0.0 (2026-10-09)** - the Pi link is I2C. **Needs the matching Pi code** (same commit).
+- The Pi UART pins (GPIO14/15) now belong to the IMU. The MCU is an I2C slave (TWI0, PC4/PC5, address 0x10) behind a level shifter.
+- Command: `0x01` + vx, vy, w as int16 (mm/s, mrad/s; was int8 x 0.02) + CRC-8. State: seq, flags, 4 x int32 cumulative counts + CRC-8, read by the Pi.
+- The TWI interrupt does no computation (Pi 4 clock stretching): double-buffered state frame, CRC check in the main loop.
+- Removed: UART command parser, echo frame, UART counts line. The UART only prints debug text.
+- Not used any more: `printf` (the `-lprintf_flt` linker flag is harmless).
+
+**v2.1.0 (2026-10-12)** - back to UART. **Needs the matching Pi code** (same commit).
+- The I2C link of v2.0.0 never worked on the robot: the level shifter on the board is a TXB type, which cannot do I2C. The TWI code is removed.
+- UART on PD0/PD1 again (38400 baud), now with binary frames that keep the v2.0.0 contents: command `A5 01` + vx, vy, w (int16 mm/s, mrad/s) + CRC-8; state `A5 02` + seq, flags, 4 x int32 cumulative counts + CRC-8, sent every 50 ms.
+- Receive state machine IDLE -> HEADER_ACK -> PAYLOAD; a `0xA5` inside the data never restarts a frame.
+- No text on the UART any more (boot text `a`, `test` and `cmd timeout` removed; the state flags carry that). `adc_init()` is no longer called.
+
 ## 7. Known limitations
 
 - The PI gains come from simulation of an *assumed* motor model. The feed-forward table is measured (wheels in the air); check it with step tests after flashing v1.1.1.
+- **v2.1.0 is compile-checked (2026-10-12, 0 warnings) but not tested on the MCU**: written while the Pi and the MCU were off.
 - The motors reach only ~13 rad/s (0.50-0.52 m/s). Faster targets saturate at 100 % PWM; the Pi limits every wheel to 0.45 m/s (`max_wheel_speed` in `config/base.yaml`).
 - Stopping is by coasting, so the stopping distance depends on friction.
 
 ---
-Last updated: 2026-10-07 (v1.1.1) · Stiffeel :octocat: · Claude
+Last updated: 2026-10-12 (v2.1.0) · Stiffeel :octocat: · Claude

@@ -1,10 +1,10 @@
 /*
- * main.c  --  NALA_v1 motor driver firmware
+ * main.c  --  NALA motor driver firmware
  *
- * Project  : NALA_v1 (ATmega328PB, 4 mecanum wheels, 4 quadrature encoders)
+ * Project  : NALA (ATmega328PB, 4 mecanum wheels, 4 quadrature encoders)
  * Author   : HY / Claude (NALA v1 revision)
- * Version  : v1.1.1
- * Date     : 2026-10-07
+ * Version  : v2.1.0
+ * Date     : 2026-10-12
  *
  * v1 vs v0: 20 Hz control loop; speed controller replaced by a positional PI with
  * feed-forward and anti-windup (the v0 incremental PID rang); M2/M3 motor polarity
@@ -12,6 +12,10 @@
  * v1.1.0: the feedback line carries the cumulative encoder counts and is sent every
  * period (20 Hz); UART 38400 baud; feed-forward 6.5 %/(rad/s) (measured).
  * v1.1.1: feed-forward from the measured speed -> PWM table FF_* in config.h.
+ * v2.0.0: Pi link over I2C (never worked on the robot: the board has a TXB level
+ *         shifter, which cannot do I2C). Commands in int16 mm/s and mrad/s, CRC-8.
+ * v2.1.0: back to UART (PD0/PD1, 38400 baud) with the v2.0.0 frame contents as binary
+ *         frames: sync byte, id, data, CRC-8. No text on the UART any more.
  *
  * Original : motor_driver_C by Floris van Mourik (created 9/18/2021), with pwm/timer
  *            code by Mathan and UART code by sojim. The untouched original sources
@@ -23,17 +27,18 @@
  *   wheel speed targets with the mecanum inverse kinematics, and runs one speed
  *   controller (PI + feed-forward) per wheel on the speed measured from the
  *   encoders. Its output drives four PWM motor channels. The cumulative encoder
- *   counts of the four wheels are printed back over the UART (odometry on the host).
+ *   counts of the four wheels are sent to the Pi every period (odometry on the Pi).
  *
  * STRUCTURE (no blocking loops, no software delays)
  *   - Encoders   : pin-change interrupts count edges continuously     (encoder.c)
  *   - Time base  : Timer3 compare interrupt, exactly every CONTROL_PERIOD_MS
  *                  (TIMER3_COMPA_vect below). It snapshots the encoder counts.
- *   - UART RX    : interrupt, only collects the 5-byte frame and sets a flag.
+ *   - UART RX    : interrupt, a small state machine that only collects a command
+ *                  frame and sets a flag.
  *   - UART TX    : ring buffer drained by the UDRE interrupt             (USART.c)
- *   - main loop  : (1) apply a newly received command,
+ *   - main loop  : (1) check (CRC) and apply a newly received command,
  *                  (2) when a control period has elapsed: compute speeds, run the
- *                      PI controllers, set the motor output, send telemetry.
+ *                      PI controllers, set the motor output, send the state frame.
  *
  * SPEED MEASUREMENT
  *   speed [rad/s] = (counts in the period / ENC_COUNTS_PER_REV) * 2*pi / period
@@ -44,20 +49,10 @@
  *   included), which made measured speeds and the PID I/D terms inaccurate.
  *   At the default 50 ms period one encoder count is 0.082 rad/s.
  *
- * UART PROTOCOL (frame layout unchanged; scale now 0.02, see below)
- *   Host -> MCU, 38400 8N1: 0x80 0x86 Vx Vy w   (3x int8; /50 -> m/s, m/s, rad/s; 0.02 per count)
- *   NOTE: the original scale was /100. The host (Pi) must send value*50.
- *   Axes: ROS convention, Vx forward, Vy left, w counter-clockwise positive.
- *   Safety: no velocity frame for CMD_TIMEOUT_MS (v1: 200 ms) while moving -> stop,
- *   MCU prints "cmd timeout\n" once. The host must therefore re-send commands
- *   (v1 expects ~20 Hz).
- *   Added in NALA_v0 (separate frame, does not affect the one above):
- *                           0x80 0x87 E          E=1 command echo on, E=0 off
- *                           -> MCU replies "echo on\n" / "echo off\n"
- *   MCU -> host (telemetry, once per TELEMETRY_EVERY_N_TICKS periods = 20 Hz in v1.1.0):
- *       "c <n1> <n2> <n3> <n4>\n"   cumulative encoder counts of M1..M4 since power-up
- *                                  (int32, + = the wheel drove the robot forward)
- *   Boot text: "a\n" (ADC init) and "test\n".
+ * PI LINK (UART0, 38400 8N1, binary): see the protocol block in config.h.
+ *   Pi -> MCU: 0xA5 0x01 vx vy w (int16 LE; mm/s, mm/s, mrad/s) crc8
+ *   MCU -> Pi: 0xA5 0x02 seq flags M1..M4 (int32 LE cumulative counts) crc8, every period
+ *   Safety: no valid command for CMD_TIMEOUT_MS (200 ms) while moving -> stop.
  *
  * WIRING / MAPPING : see config.h (motor <-> encoder association, signs, pins).
  * ---------------------------------------------------------------------------
@@ -66,12 +61,10 @@
 #include "config.h"
 
 #include <stdint.h>
-#include <stdio.h>
 #include <avr/io.h>
 #include <avr/interrupt.h>
 #include <util/atomic.h>
 
-#include "ADC.h"
 #include "Usart.h"
 #include "encoder.h"
 #include "motor_functions.h"
@@ -99,11 +92,14 @@ static float M_w[NUM_MOTORS];            /* target wheel speed   [rad/s] */
 static float M_w_measured[NUM_MOTORS];   /* measured wheel speed [rad/s] */
 static float M_pwm[NUM_MOTORS];          /* motor power command  [% duty, -100..100] */
 static float M_i[NUM_MOTORS];            /* integral part of the speed controller [% duty] */
-static int32_t M_count[NUM_MOTORS];      /* cumulative encoder counts since power-up (+ = forward), sent to the host */
+static int32_t M_count[NUM_MOTORS];      /* cumulative encoder counts since power-up (+ = forward), sent to the Pi */
+static uint8_t seq;                      /* control period counter (wraps), sent to the Pi */
 
 /* Command timeout bookkeeping (main-loop only, see CMD_TIMEOUT_MS in config.h). */
-static uint8_t cmd_age_ticks;    /* control periods since the last velocity frame (saturates at 255) */
+static uint8_t cmd_age_ticks;    /* control periods since the last valid command (saturates at 255) */
 static uint8_t cmd_active;       /* 1 = the last command was non-zero, i.e. the robot may be moving */
+static uint8_t timed_out;        /* 1 = stopped by the timeout, until the next valid command */
+static uint8_t boot = 1;         /* 1 = no valid command since power-up (state flags bit0) */
 
 /* ------------------------------------------------------------------------- */
 /* Control time base: Timer3 compare interrupt                                */
@@ -126,56 +122,91 @@ ISR(TIMER3_COMPA_vect)
 }
 
 /* ------------------------------------------------------------------------- */
-/* UART receive: frame parser (same state machine as the original)            */
+/* UART link to the Pi: binary frames                                         */
 /* ------------------------------------------------------------------------- */
-static volatile uint8_t rx_reading;                    /* 1 while collecting the payload */
-static volatile uint8_t rx_count;
-static volatile uint8_t rx_len;                        /* payload length of the frame being collected */
-static volatile uint8_t rx_is_echo;                    /* 1 = echo-control frame, 0 = velocity frame */
-static volatile uint8_t rx_prev;                       /* previous byte, for header detection */
-static volatile int8_t  rx_buf[FRAME_PAYLOAD_LEN];
-static volatile int8_t  cmd_val[FRAME_PAYLOAD_LEN];    /* last complete command: Vx, Vy, w */
-static volatile uint8_t cmd_ready;                     /* 1 = cmd_val holds an unprocessed command */
+/*
+ * Receive state machine for the command frame  0xA5 0x01 <6 data bytes> <crc>:
+ *   RX_IDLE       : only here a 0xA5 starts a frame (-> RX_HEADER_ACK). Other bytes are dropped.
+ *   RX_HEADER_ACK : 0x01 -> RX_PAYLOAD. 0xA5 -> stay here (a fresh header). Other -> RX_IDLE.
+ *   RX_PAYLOAD    : store the 6 data bytes and the crc. A 0xA5 in here is data: it never
+ *                   restarts the frame.
+ *   complete      : copy the bytes to cmd_frame, set cmd_ready, back to RX_IDLE.
+ * The interrupt does no checking: the CRC is checked in the main loop (handle_command).
+ */
+enum { RX_IDLE, RX_HEADER_ACK, RX_PAYLOAD };
 
-/* Command echo switch (default from config.h, changed by the echo-control frame). */
-static volatile uint8_t echo_enabled = ECHO_COMMAND;
-static volatile uint8_t echo_ack;                      /* 0 = nothing, 1 = announce "off", 2 = announce "on" */
+static volatile uint8_t rx_state = RX_IDLE;
+static volatile uint8_t rx_count;
+static volatile uint8_t rx_buf[FRAME_CMD_PAYLOAD];       /* data + crc of the frame being received */
+static volatile uint8_t cmd_frame[FRAME_CMD_PAYLOAD];    /* data + crc of the last complete frame */
+static volatile uint8_t cmd_ready;                       /* 1 = cmd_frame holds an unprocessed frame */
 
 ISR(USART0_RX_vect)
 {
-	uint8_t b = UDR0;
+	const uint8_t b = UDR0;
 
-	if (rx_reading) {
-		rx_buf[rx_count++] = (int8_t)b;
-		if (rx_count >= rx_len) {
-			if (rx_is_echo) {
-				/* Echo-control frame: 0x80 0x87 E   (E = 1 on, 0 off, anything else ignored) */
-				if (rx_buf[0] == 0 || rx_buf[0] == 1) {
-					echo_enabled = (uint8_t)rx_buf[0];
-					echo_ack     = (uint8_t)(1 + rx_buf[0]);
-				}
-			} else {
-				/* Velocity frame: 0x80 0x86 Vx Vy w */
-				for (uint8_t i = 0; i < FRAME_PAYLOAD_LEN; i++) {
-					cmd_val[i] = rx_buf[i];
-				}
-				cmd_ready = 1;       /* a newer frame simply replaces an unprocessed one */
-			}
-			rx_reading = 0;
-			rx_count   = 0;
-			rx_prev    = 0;          /* reset the header detection */
+	switch (rx_state) {
+	case RX_IDLE:
+		if (b == FRAME_SYNC) {
+			rx_state = RX_HEADER_ACK;
 		}
-		return;
+		break;
+	case RX_HEADER_ACK:
+		if (b == FRAME_ID_CMD) {
+			rx_count = 0;
+			rx_state = RX_PAYLOAD;
+		} else if (b != FRAME_SYNC) {
+			rx_state = RX_IDLE;
+		}
+		break;
+	default:                            /* RX_PAYLOAD */
+		rx_buf[rx_count++] = b;
+		if (rx_count >= FRAME_CMD_PAYLOAD) {             /* complete */
+			for (uint8_t i = 0; i < FRAME_CMD_PAYLOAD; i++) {
+				cmd_frame[i] = rx_buf[i];
+			}
+			cmd_ready = 1;              /* a newer frame simply replaces an unprocessed one */
+			rx_state = RX_IDLE;
+		}
+		break;
 	}
+}
 
-	/* Start flag = 0x80 0x86 (velocity) or 0x80 0x87 (echo control) */
-	if (rx_prev == FRAME_HDR1 && (b == FRAME_HDR2 || b == FRAME_HDR2_ECHO)) {
-		rx_reading = 1;
-		rx_count   = 0;
-		rx_is_echo = (b == FRAME_HDR2_ECHO);
-		rx_len     = rx_is_echo ? FRAME_ECHO_LEN : FRAME_PAYLOAD_LEN;
+/* CRC-8, polynomial 0x07, initial value 0 (same as crc8() on the Pi). */
+static uint8_t crc8(const uint8_t *data, uint8_t len)
+{
+	uint8_t crc = 0;
+	for (uint8_t i = 0; i < len; i++) {
+		crc ^= data[i];
+		for (uint8_t bit = 0; bit < 8; bit++) {
+			crc = (crc & 0x80) ? (uint8_t)((crc << 1) ^ 0x07) : (uint8_t)(crc << 1);
+		}
 	}
-	rx_prev = b;
+	return crc;
+}
+
+/*
+ * Queue the state frame  0xA5 0x02 seq flags M1..M4 crc  for the Pi (every control period).
+ * If the TX buffer has no room the frame is dropped, never waited for: the counts are
+ * cumulative and seq counts periods, so the Pi loses nothing.
+ */
+static void send_state_frame(void)
+{
+	uint8_t f[FRAME_STATE_LEN];
+
+	f[0] = FRAME_SYNC;
+	f[1] = FRAME_ID_STATE;
+	f[2] = seq;
+	f[3] = (uint8_t)(boot | (timed_out << 1));
+	for (uint8_t m = 0; m < NUM_MOTORS; m++) {
+		const uint32_t c = (uint32_t)M_count[m];
+		f[4 + 4 * m] = (uint8_t)c;
+		f[5 + 4 * m] = (uint8_t)(c >> 8);
+		f[6 + 4 * m] = (uint8_t)(c >> 16);
+		f[7 + 4 * m] = (uint8_t)(c >> 24);
+	}
+	f[FRAME_STATE_LEN - 1] = crc8(&f[1], FRAME_STATE_LEN - 2);   /* id .. last count byte */
+	usart_try_send_buf((const char *)f, FRAME_STATE_LEN);
 }
 
 /* ------------------------------------------------------------------------- */
@@ -288,40 +319,42 @@ static void speed_control(uint8_t m, float dt)
 /* ------------------------------------------------------------------------- */
 /* Main-loop work                                                             */
 /* ------------------------------------------------------------------------- */
-/* A command frame arrived: update the targets (feed-forward) and apply it now. */
+/* A command frame arrived: check its CRC, update the targets (feed-forward) and apply it now. */
 static void handle_command(void)
 {
-	int8_t v[FRAME_PAYLOAD_LEN];
+	uint8_t b[1 + FRAME_CMD_PAYLOAD];  /* id, 6 data bytes, crc */
 
+	b[0] = FRAME_ID_CMD;
 	ATOMIC_BLOCK(ATOMIC_FORCEON) {
-		for (uint8_t i = 0; i < FRAME_PAYLOAD_LEN; i++) {
-			v[i] = cmd_val[i];
+		for (uint8_t i = 0; i < FRAME_CMD_PAYLOAD; i++) {
+			b[1 + i] = cmd_frame[i];
 		}
 		cmd_ready = 0;
 	}
+	if (crc8(b, FRAME_CMD_PAYLOAD) != b[FRAME_CMD_PAYLOAD]) {
+		return;                        /* broken frame: ignore it (the next one comes in 50 ms) */
+	}
 
+	int16_t v[3];
+	for (uint8_t i = 0; i < 3; i++) {
+		v[i] = (int16_t)((uint16_t)b[1 + 2 * i] | ((uint16_t)b[2 + 2 * i] << 8));
+	}
 	float Vx = v[0] / CMD_SCALE;
 	float Vy = v[1] / CMD_SCALE;
 	float w  = v[2] / CMD_SCALE;
 	calc_angular_speed(Vx, Vy, w);
 
-	/* Any frame (even a zero one) proves the host is alive: restart the timeout. */
+	/* Any valid command (even a zero one) proves the Pi is alive: restart the timeout. */
 	cmd_age_ticks = 0;
 	cmd_active    = (v[0] != 0 || v[1] != 0 || v[2] != 0);
-
-	if (echo_enabled) {
-		char line[48];
-		int n = snprintf(line, sizeof(line), "%f %f %f\n", Vx, Vy, w);
-		if (n > 0 && n < (int)sizeof(line)) {
-			usart_try_send_buf(line, (uint8_t)n);
-		}
-	}
+	timed_out     = 0;
+	boot          = 0;
 
 	/* Output the feed-forward immediately instead of waiting for the next control period. */
 	set_motor_speed();
 }
 
-/* A control period elapsed: measure, run the speed controllers, drive the motors, report. */
+/* A control period elapsed: measure, run the speed controllers, drive the motors, send the state frame. */
 static void control_step(void)
 {
 	int32_t delta[ENC_COUNT];
@@ -341,6 +374,7 @@ static void control_step(void)
 
 	/* Exact elapsed time (normally exactly one period; more if the loop was late). */
 	const float dt = (float)periods * CONTROL_PERIOD_S;
+	seq += periods;
 
 #if (CMD_TIMEOUT_MS > 0)
 	/* Command timeout: no velocity frame for too long while moving -> stop. */
@@ -350,7 +384,7 @@ static void control_step(void)
 		if (cmd_age_ticks > CMD_TIMEOUT_TICKS) {
 			calc_angular_speed(0, 0, 0);          /* targets = 0, feed-forward PWM = 0 */
 			cmd_active = 0;                       /* report only once */
-			usart_try_send_buf("cmd timeout\n", 12);
+			timed_out = 1;
 		}
 	}
 #endif
@@ -365,18 +399,7 @@ static void control_step(void)
 		speed_control(m, dt);
 	}
 	set_motor_speed();
-
-	/* Telemetry (20 Hz): cumulative encoder counts; dropped (never blocking) if the TX buffer is full. */
-	static uint8_t tel_count;
-	if (++tel_count >= TELEMETRY_EVERY_N_TICKS) {
-		tel_count = 0;
-		char line[80];
-		int n = snprintf(line, sizeof(line), TELEMETRY_FMT,
-		                 (long)M_count[0], (long)M_count[1], (long)M_count[2], (long)M_count[3]);
-		if (n > 0 && n < (int)sizeof(line)) {
-			usart_try_send_buf(line, (uint8_t)n);
-		}
-	}
+	send_state_frame();
 }
 
 /* ------------------------------------------------------------------------- */
@@ -394,9 +417,7 @@ int main(void)
 	init_motor_timers();
 	set_motor_power(0, 0, 0, 0);
 
-	usart_enable(UART_BAUD);
-	adc_init(0);                       /* 5 V reference; prints "a\n". The ADC itself is unused. */
-	usart_send_str("test\n");
+	usart_enable(UART_BAUD);           /* binary frames only: no text is printed (v2.1.0) */
 
 	calc_angular_speed(0, 0, 0);       /* start with all targets = 0 */
 	set_motor_speed();
@@ -406,18 +427,6 @@ int main(void)
 	sei();
 
 	for (;;) {
-		if (echo_ack) {                /* confirm an echo-control frame (sent from here, not from the ISR) */
-			uint8_t ack;
-			ATOMIC_BLOCK(ATOMIC_FORCEON) {
-				ack = echo_ack;
-				echo_ack = 0;
-			}
-			if (ack == 2) {
-				usart_try_send_buf("echo on\n", 8);
-			} else {
-				usart_try_send_buf("echo off\n", 9);
-			}
-		}
 		if (cmd_ready) {
 			handle_command();
 		}

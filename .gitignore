@@ -22,3 +22,6 @@ firmware/**/Release/
 
 # Editor settings
 .vscode/
+
+# Arduino example code for the IMU (WitMotion): local reference only
+JY901 uno r3/
