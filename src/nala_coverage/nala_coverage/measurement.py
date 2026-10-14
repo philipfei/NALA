@@ -43,8 +43,11 @@ class Meter:
     def sensor(self, pose):
         return np.array([pose[0]+self.offset*math.cos(pose[2]),pose[1]+self.offset*math.sin(pose[2])])
 
-    def report(self):
-        cell=self.grid.resolution**2;total=int(self.denominator.sum());covered=int(self.covered.sum())
+    def report(self, keepout=None):
+        """keepout: contaminated floor the robot avoids; not covered there counts as avoided, not as missing."""
+        cell=self.grid.resolution**2;covered=int(self.covered.sum())
+        avoided=int((self.denominator&keepout&~self.covered).sum()) if keepout is not None else 0
+        total=int(self.denominator.sum())-avoided
         return {'known_free_m2':int(self.grid.free.sum())*cell,'coverable_m2':total*cell,
-                'covered_m2':covered*cell,'remaining_m2':(total-covered)*cell,
+                'covered_m2':covered*cell,'remaining_m2':(total-covered)*cell,'avoided_m2':avoided*cell,
                 'fraction':covered/total if total else 0.}

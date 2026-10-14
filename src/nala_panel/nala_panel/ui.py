@@ -1,8 +1,11 @@
-"""Touchscreen panel for app 3 (PyQt5): choose a map, set the base station, plan a path, choose a plan, drive.
+"""Touchscreen panel for app 3 (PyQt5), styled after the scan screen design (Scan_screen_visualiser.html).
 
-Screens: Maps -> Map (plans, new plan) -> Planning -> Drive. Sizes come from config/panel.yaml.
-A tap is a short touch without movement; dragging moves the map; +/- zoom.
+Screens: Maps -> Map (plans, new plan, last results) -> Planning -> Scan.
+The Scan screen shows where the robot actually was (trusted measured poses), what the sensor covered and what
+the scintillator measured (heatmap, numbered hotspots), with Start / Pause / Stop and go home / STOP.
+Sizes come from config/panel.yaml.
 """
+import datetime
 import math
 import sys
 import threading
@@ -13,25 +16,18 @@ from rclpy.executors import ExternalShutdownException, MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.parameter import Parameter
 from PyQt5 import QtCore, QtGui, QtWidgets
-import matplotlib
-matplotlib.use('Qt5Agg')
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg  # noqa: E402
-from matplotlib.colors import ListedColormap  # noqa: E402
-from matplotlib.figure import Figure  # noqa: E402
-from matplotlib.transforms import Affine2D  # noqa: E402
-from nala_coverage.geometry import Grid  # noqa: E402
-from nala_coverage.params import load_settings  # noqa: E402
-from . import library, planning  # noqa: E402
-from .drive import DriveSession, heading_arrow, plain_state  # noqa: E402
+from nala_coverage.geometry import Grid
+from nala_coverage.params import load_settings
+from . import library, planning, style
+from .drive import DriveSession, plain_state
+from .mapwidget import MapWidget
 
 PARAMS = {'repo_dir': Parameter.Type.STRING, 'maps_dir': Parameter.Type.STRING, 'fullscreen': Parameter.Type.BOOL,
           'window_width': Parameter.Type.INTEGER, 'window_height': Parameter.Type.INTEGER,
           'font_size': Parameter.Type.INTEGER, 'button_height': Parameter.Type.INTEGER,
           'update_period': Parameter.Type.DOUBLE, 'manual_period': Parameter.Type.DOUBLE,
-          'launch_stop_timeout': Parameter.Type.DOUBLE, 'hardware': Parameter.Type.BOOL}
-STATION_COLOR, START_COLOR, AREA_COLOR, PLAN_COLOR = '#1f77b4', '#d62728', '#1b9e4b', '#6a3fb5'
-ROBOT_COLOR, COVERED_COLOR = '#ff7f0e', '#2ca02c'
-TAP_PIXELS = 15      # a touch that moves less than this is a tap, more is a drag
+          'launch_stop_timeout': Parameter.Type.DOUBLE, 'hardware': Parameter.Type.BOOL,
+          'heatmap_width_m': Parameter.Type.DOUBLE}
 
 
 def read_params(node):
@@ -49,127 +45,55 @@ def plan_points(data):
     return [[p['x'], p['y']] for p in data.get('poses') or []]
 
 
-class MapView(FigureCanvasQTAgg):
-    """The map with overlays. Emits tapped(x, y) in map coordinates."""
-    tapped = QtCore.pyqtSignal(float, float)
-
-    def __init__(self):
-        self.figure = Figure(tight_layout=True)
-        super().__init__(self.figure)
-        self.ax = self.figure.add_subplot(111)
-        self.ax.set_axis_off()
-        self.grid = None
-        self.layers = {}
-        self.press = None
-        self.mpl_connect('button_press_event', self._press)
-        self.mpl_connect('motion_notify_event', self._move)
-        self.mpl_connect('button_release_event', self._release)
-
-    def set_grid(self, grid):
-        self.ax.clear()
-        self.ax.set_axis_off()
-        self.layers = {}
-        self.grid = grid
-        img = np.full(grid.cells.shape, 1, np.uint8)
-        img[grid.cells == 0] = 2
-        img[grid.cells > 0] = 0
-        self.ax.imshow(img, cmap=ListedColormap(['#2b2b2b', '#c8c8c8', '#ffffff']), vmin=0, vmax=2, origin='lower',
-                       extent=self._extent(), transform=self._transform(), interpolation='nearest', zorder=0)
-        self.ax.set_aspect('equal')
-        self.fit()
-
-    def _extent(self):
-        h, w = self.grid.cells.shape
-        ox, oy, _ = self.grid.origin
-        return [ox, ox + w * self.grid.resolution, oy, oy + h * self.grid.resolution]
-
-    def _transform(self):
-        ox, oy, yaw = self.grid.origin
-        return Affine2D().rotate_around(ox, oy, yaw) + self.ax.transData
-
-    def fit(self):
-        x0, x1, y0, y1 = self._extent()
-        self.ax.set_xlim(x0, x1)
-        self.ax.set_ylim(y0, y1)
-        self.draw_idle()
-
-    def zoom(self, factor):
-        (x0, x1), (y0, y1) = self.ax.get_xlim(), self.ax.get_ylim()
-        cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
-        self.ax.set_xlim(cx - (cx - x0) / factor, cx + (x1 - cx) / factor)
-        self.ax.set_ylim(cy - (cy - y0) / factor, cy + (y1 - cy) / factor)
-        self.draw_idle()
-
-    def layer(self, name, draw):
-        """Replace overlay `name` with what draw(ax) adds (a list of artists); draw=None removes it."""
-        for artist in self.layers.pop(name, []):
-            artist.remove()
-        if draw is not None and self.grid is not None:
-            self.layers[name] = [a for a in draw(self.ax) if a is not None]
-        self.draw_idle()
-
-    def mask_image(self, mask, color, alpha):
-        rgba = np.zeros(mask.shape + (4,))
-        rgba[mask] = list(matplotlib.colors.to_rgb(color)) + [alpha]
-        return self.ax.imshow(rgba, origin='lower', extent=self._extent(), transform=self._transform(),
-                              interpolation='nearest', zorder=1)
-
-    def _press(self, event):
-        if event.inaxes == self.ax:
-            self.press = (event.x, event.y, self.ax.get_xlim(), self.ax.get_ylim(), False)
-
-    def _move(self, event):
-        if self.press is None:
-            return
-        x, y, xlim, ylim, _ = self.press
-        if math.hypot(event.x - x, event.y - y) < TAP_PIXELS and not self.press[4]:
-            return
-        self.press = (x, y, xlim, ylim, True)
-        bbox = self.ax.bbox
-        dx = (event.x - x) * (xlim[1] - xlim[0]) / bbox.width
-        dy = (event.y - y) * (ylim[1] - ylim[0]) / bbox.height
-        self.ax.set_xlim(xlim[0] - dx, xlim[1] - dx)
-        self.ax.set_ylim(ylim[0] - dy, ylim[1] - dy)
-        self.draw_idle()
-
-    def _release(self, event):
-        press, self.press = self.press, None
-        if press and not press[4] and event.inaxes == self.ax and event.xdata is not None:
-            self.tapped.emit(float(event.xdata), float(event.ydata))
-
-
-def draw_pose(ax, pose, color, label):
-    x, y, dx, dy = heading_arrow(pose, 0.4)
-    return [ax.arrow(x, y, dx, dy, width=0.06, color=color, zorder=8, length_includes_head=True),
-            ax.text(x, y + 0.25, label, color=color, fontsize=9, ha='center', zorder=9)]
-
-
-def draw_point(ax, xy, color, label):
-    return [ax.plot(xy[0], xy[1], 'o', color=color, ms=10, mec='white', zorder=8)[0],
-            ax.text(xy[0], xy[1] + 0.25, label, color=color, fontsize=9, ha='center', zorder=9)]
-
-
-def draw_area(ax, corners, closed):
-    if not corners:
-        return []
-    a = np.asarray(corners + (corners[:1] if closed else []), float)
-    return ax.plot(a[:, 0], a[:, 1], '-o', color=AREA_COLOR, lw=2, ms=6, zorder=7)
-
-
-def draw_path(ax, points, color=PLAN_COLOR, lw=1.4):
-    if len(points) < 2:
-        return []
-    a = np.asarray(points, float)
-    return ax.plot(a[:, 0], a[:, 1], '-', color=color, lw=lw, zorder=3)
-
-
-def button(text, slot, style=''):
+def button(text, slot, kind=''):
     b = QtWidgets.QPushButton(text)
     b.clicked.connect(slot)
-    if style:
-        # A coloured button must still look grey when it cannot be pressed.
-        b.setStyleSheet(f'QPushButton {{{style}}} QPushButton:disabled {{background:#bdbdbd;color:#eeeeee}}')
+    if kind:
+        style.set_kind(b, kind)
     return b
+
+
+def label(text='', name='', wrap=True):
+    lab = QtWidgets.QLabel(text)
+    lab.setWordWrap(wrap)
+    if name:
+        lab.setObjectName(name)
+    return lab
+
+
+def hotspot_message(hotspots):
+    n = len(hotspots)
+    to_check = sum(not h.get('checked') for h in hotspots)
+    spots = 'spot' if n == 1 else 'spots'
+    if n == 0:
+        return 'No contamination found yet', False
+    if to_check:
+        return f'{n} contaminated {spots}, {to_check} to check', True
+    return f'All {n} contaminated {spots} checked', False
+
+
+class AlertBar(QtWidgets.QFrame):
+    """'N contaminated spots, M to check' over the map (magenta while spots are not checked)."""
+
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.setObjectName('alert')
+        lay = QtWidgets.QHBoxLayout(self)
+        lay.setContentsMargins(14, 8, 14, 8)
+        self.text = label('', wrap=False)
+        font = self.text.font()
+        font.setBold(True)
+        self.text.setFont(font)
+        lay.addWidget(self.text)
+
+    def show_hotspots(self, hotspots):
+        text, hot = hotspot_message(hotspots)
+        self.text.setText('◆  ' + text)
+        if self.property('hot') != hot:
+            self.setProperty('hot', hot)
+            for w in (self, self.text):          # the label's colour depends on the frame's property
+                w.style().unpolish(w)
+                w.style().polish(w)
 
 
 class MapsScreen(QtWidgets.QWidget):
@@ -180,7 +104,7 @@ class MapsScreen(QtWidgets.QWidget):
         self.panel = panel
         layout = QtWidgets.QVBoxLayout(self)
         title = QtWidgets.QHBoxLayout()
-        title.addWidget(QtWidgets.QLabel('<b>Choose a map</b>'))
+        title.addWidget(label('<b>NALA</b> - choose a map', wrap=False))
         title.addStretch()
         title.addWidget(button('Refresh', self.refresh))
         layout.addLayout(title)
@@ -192,8 +116,7 @@ class MapsScreen(QtWidgets.QWidget):
         self.list.setSpacing(12)
         self.list.itemClicked.connect(lambda item: panel.open_map(item.data(QtCore.Qt.UserRole)))
         layout.addWidget(self.list)
-        self.empty = QtWidgets.QLabel()
-        self.empty.setWordWrap(True)
+        self.empty = label(name='mute')
         layout.addWidget(self.empty)
 
     def refresh(self):
@@ -210,7 +133,7 @@ class MapsScreen(QtWidgets.QWidget):
 
 
 class MapScreen(QtWidgets.QWidget):
-    """One map: its plans, and a new plan (base station, start point, area)."""
+    """One map: its plans, a new plan (base station, start point, area), and the results of its last run."""
 
     def __init__(self, panel):
         super().__init__()
@@ -223,26 +146,32 @@ class MapScreen(QtWidgets.QWidget):
         self.station_xy = None      # first tap of "Set base station"
         self.start = None
         self.area, self.area_closed = [], False
+        self.run = None
         outer = QtWidgets.QHBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
         left = QtWidgets.QVBoxLayout()
+        left.setContentsMargins(8, 8, 0, 8)
         top = QtWidgets.QHBoxLayout()
         top.addWidget(button('< Maps', panel.show_maps))
-        self.title = QtWidgets.QLabel()
+        self.title = label(wrap=False)
         top.addWidget(self.title, 1)
-        top.addWidget(button('+', lambda: self.view.zoom(1.5)))
-        top.addWidget(button('-', lambda: self.view.zoom(1 / 1.5)))
-        top.addWidget(button('Fit', lambda: self.view.fit()))
         left.addLayout(top)
-        self.view = MapView()
+        self.view = MapWidget()
+        self.view.heat_width_m = panel.params['heatmap_width_m']
         self.view.tapped.connect(self.tap)
         left.addWidget(self.view, 1)
-        self.status = QtWidgets.QLabel()
-        self.status.setWordWrap(True)
+        self.status = label(name='mute')
         left.addWidget(self.status)
         outer.addLayout(left, 3)
 
+        side = QtWidgets.QFrame()
+        side.setObjectName('side')
+        side_lay = QtWidgets.QVBoxLayout(side)
         self.tabs = QtWidgets.QTabWidget()
-        self.tabs.setMinimumWidth(340)
+        side_lay.addWidget(self.tabs)
+        side.setMinimumWidth(360)
+        side.setMaximumWidth(380)
+
         plans = QtWidgets.QWidget()
         pl = QtWidgets.QVBoxLayout(plans)
         self.plan_list = QtWidgets.QListWidget()
@@ -250,7 +179,7 @@ class MapScreen(QtWidgets.QWidget):
         self.plan_list.currentRowChanged.connect(self.show_plan)
         pl.addWidget(self.plan_list, 1)
         row = QtWidgets.QHBoxLayout()
-        self.drive_button = button('Drive', self.drive, 'background:#2e7d32;color:white;font-weight:bold')
+        self.drive_button = button('Scan', self.drive, 'primary')
         row.addWidget(self.drive_button)
         row.addWidget(button('Delete', self.delete))
         pl.addLayout(row)
@@ -258,11 +187,10 @@ class MapScreen(QtWidgets.QWidget):
 
         new = QtWidgets.QWidget()
         nl = QtWidgets.QGridLayout(new)
-        self.station_label = QtWidgets.QLabel()
-        self.station_label.setWordWrap(True)
+        self.station_label = label()
         nl.addWidget(self.station_label, 0, 0, 1, 2)
         nl.addWidget(button('Set base station', lambda: self.set_mode('station')), 1, 0, 1, 2)
-        nl.addWidget(QtWidgets.QLabel('Coverage starts at:'), 2, 0, 1, 2)
+        nl.addWidget(label('Coverage starts at:'), 2, 0, 1, 2)
         self.at_station = QtWidgets.QRadioButton('Base station')
         self.at_point = QtWidgets.QRadioButton('Start point')
         self.at_station.setChecked(True)
@@ -270,16 +198,23 @@ class MapScreen(QtWidgets.QWidget):
         nl.addWidget(self.at_station, 3, 0)
         nl.addWidget(self.at_point, 3, 1)
         nl.addWidget(button('Set start point', lambda: self.set_mode('start')), 4, 0, 1, 2)
-        nl.addWidget(QtWidgets.QLabel('Area (optional, else the whole map):'), 5, 0, 1, 2)
+        nl.addWidget(label('Area (optional, else the whole map):'), 5, 0, 1, 2)
         nl.addWidget(button('Draw area', lambda: self.set_mode('area')), 6, 0)
         nl.addWidget(button('Undo corner', self.undo_corner), 6, 1)
         nl.addWidget(button('Close area', self.close_area), 7, 0)
         nl.addWidget(button('Clear area', self.clear_area), 7, 1)
-        nl.addWidget(button('Plan', self.plan, 'background:#1565c0;color:white;font-weight:bold'), 8, 0, 1, 2)
+        nl.addWidget(button('Plan', self.plan, 'primary'), 8, 0, 1, 2)
         nl.setRowStretch(9, 1)
         self.tabs.addTab(new, 'New plan')
+
+        results = QtWidgets.QWidget()
+        rl = QtWidgets.QVBoxLayout(results)
+        self.result_text = label()
+        rl.addWidget(self.result_text)
+        rl.addStretch()
+        self.tabs.addTab(results, 'Results')
         self.tabs.currentChanged.connect(lambda _: self.redraw())
-        outer.addWidget(self.tabs, 2)
+        outer.addWidget(side)
 
     # ---------------------------------------------------------------- loading
     def open(self, entry):
@@ -291,6 +226,7 @@ class MapScreen(QtWidgets.QWidget):
         self.at_station.setChecked(True)
         self.load_station()
         self.load_plans()
+        self.load_results()
         self.tabs.setCurrentIndex(0 if self.plans else 1)
         self.redraw()
 
@@ -311,13 +247,25 @@ class MapScreen(QtWidgets.QWidget):
         self.plan_list.clear()
         for plan in self.plans:
             reason = library.plan_status(self.entry, plan, self.grid, self.panel.settings, self.station)
-            item = QtWidgets.QListWidgetItem(plan.summary() + (f'\nCannot drive: {reason}' if reason else ''))
+            item = QtWidgets.QListWidgetItem(plan.summary() + (f'\nCannot scan: {reason}' if reason else ''))
             item.setData(QtCore.Qt.UserRole, reason)
             if reason:
-                item.setForeground(QtGui.QColor('#888888'))
+                item.setForeground(QtGui.QColor(style.MUTE))
             self.plan_list.addItem(item)
         if self.plans:
             self.plan_list.setCurrentRow(0)
+
+    def load_results(self):
+        self.run = library.last_run(self.entry)
+        if self.run is None:
+            self.result_text.setText('No scan of this map yet.')
+            return
+        r = self.run
+        text, _ = hotspot_message(r['hotspots'])
+        text = text.replace(' yet', '')          # a finished scan
+        bg = f"{r['background']:.1f} counts/s" if np.isfinite(r['background']) else 'not measured'
+        self.result_text.setText(f"<b>Last scan: {r['name']}</b><br>Background: {bg}<br>{text}<br>"
+                                 f"<span style='color:{style.MUTE}'>Saved in {r['folder']}</span>")
 
     # ---------------------------------------------------------------- map taps
     def say(self, text):
@@ -346,7 +294,7 @@ class MapScreen(QtWidgets.QWidget):
             except ValueError as error:
                 self.say(f'{error}. Tap "Set base station" and try another place.')
             else:
-                self.say('Base station saved. Plans made for the old base station can no longer be driven.')
+                self.say('Base station saved. Plans made for the old base station can no longer be scanned.')
                 self.load_station()
                 self.load_plans()
             self.mode = self.station_xy = None
@@ -391,27 +339,34 @@ class MapScreen(QtWidgets.QWidget):
     # ---------------------------------------------------------------- drawing
     def redraw(self):
         v = self.view
-        v.layer('station', (lambda ax: draw_pose(ax, self.station, STATION_COLOR, 'base')) if self.station else None)
-        new_plan = self.tabs.currentIndex() == 1
-        show_start = new_plan and self.at_point.isChecked() and self.start
-        v.layer('start', (lambda ax: draw_point(ax, self.start, START_COLOR, 'start')) if show_start else None)
-        v.layer('area', (lambda ax: draw_area(ax, self.area, self.area_closed)) if new_plan else None)
-        if new_plan:
-            v.layer('plan', None)
-        else:
+        tab = self.tabs.currentIndex()
+        v.station = self.station
+        v.marks = {'start': self.start if tab == 1 and self.at_point.isChecked() else None,
+                   'area': self.area if tab == 1 else [], 'area_closed': self.area_closed,
+                   'pending': self.station_xy}
+        run = self.run if tab == 2 else None
+        v.set_heatmap(run['value'] if run else None, run['threshold'] if run else None)
+        v.set_mask('keepout', run['keepout'] if run else None, style.MAG, 90)
+        v.trail = run['trail'] if run else []
+        v.hotspots = run['hotspots'] if run else []
+        if tab == 0:
             self.show_plan(self.plan_list.currentRow())
+        else:
+            v.plan = []
+            v.update()
 
     def show_plan(self, row):
         if not 0 <= row < len(self.plans):
-            self.view.layer('plan', None)
+            self.view.refresh(plan=[])
             self.drive_button.setEnabled(False)
             return
         plan = self.plans[row]
         reason = self.plan_list.item(row).data(QtCore.Qt.UserRole)
         self.drive_button.setEnabled(not reason)
         area = plan.data.get('area_polygon') or []
-        self.view.layer('plan', lambda ax: draw_path(ax, plan_points(plan.data)) + draw_area(ax, area, True))
-        self.say(reason or 'Tap "Drive" to start app 3 with this plan. The robot moves only after "Start".')
+        self.view.marks = {'start': None, 'area': area, 'area_closed': True, 'pending': None}
+        self.view.refresh(plan=plan_points(plan.data))
+        self.say(reason or 'Tap "Scan" to start app 3 with this plan. The robot moves only after "Start".')
 
     # ---------------------------------------------------------------- actions
     def plan(self):
@@ -469,14 +424,12 @@ class PlanningScreen(QtWidgets.QWidget):
         self.pages.addWidget(self.image)
         outer.addWidget(self.pages, 3)
         right = QtWidgets.QVBoxLayout()
-        self.title = QtWidgets.QLabel()
-        self.title.setWordWrap(True)
+        self.title = label()
         right.addWidget(self.title)
-        self.checks = QtWidgets.QLabel()
-        self.checks.setWordWrap(True)
+        self.checks = label()
         right.addWidget(self.checks, 1)
         self.cancel_button = button('Cancel', self.cancel)
-        self.keep_button = button('Keep plan', self.keep, 'background:#2e7d32;color:white;font-weight:bold')
+        self.keep_button = button('Keep plan', self.keep, 'primary')
         self.discard_button = button('Discard', self.discard)
         for b in (self.cancel_button, self.keep_button, self.discard_button):
             right.addWidget(b)
@@ -528,8 +481,8 @@ class PlanningScreen(QtWidgets.QWidget):
         self.panel.open_map(self.entry)
 
 
-class DriveScreen(QtWidgets.QWidget):
-    """App 3 running: live map, state, Start / Pause / Resume / Cancel / STOP, driving by hand while paused."""
+class ScanScreen(QtWidgets.QWidget):
+    """App 3 running, as the scan screen design: map + side panel; a large progress view while driving."""
 
     def __init__(self, panel):
         super().__init__()
@@ -538,97 +491,334 @@ class DriveScreen(QtWidgets.QWidget):
         self.entry = None
         self.held = None
         self.manual_on = False
-        self.drawn = (None, None)    # covered mask and pose last drawn: redraw the map only when they change
-        outer = QtWidgets.QHBoxLayout(self)
-        left = QtWidgets.QVBoxLayout()
-        top = QtWidgets.QHBoxLayout()
-        self.title = QtWidgets.QLabel()
-        top.addWidget(self.title, 1)
-        top.addWidget(button('+', lambda: self.view.zoom(1.5)))
-        top.addWidget(button('-', lambda: self.view.zoom(1 / 1.5)))
-        top.addWidget(button('Fit', lambda: self.view.fit()))
-        left.addLayout(top)
-        self.view = MapView()
-        left.addWidget(self.view, 1)
-        outer.addLayout(left, 3)
+        self.show_map_while_driving = False
+        self.drawn = {}
+        body = QtWidgets.QHBoxLayout(self)
+        body.setContentsMargins(0, 0, 0, 0)
+        body.setSpacing(0)
 
-        right = QtWidgets.QVBoxLayout()
-        right.addWidget(button('STOP', self.session.emergency_stop,
-                               'background:#c62828;color:white;font-weight:bold;font-size:20pt'))
-        self.state_label = QtWidgets.QLabel()
-        self.state_label.setWordWrap(True)
-        right.addWidget(self.state_label)
-        self.message = QtWidgets.QLabel()
-        self.message.setWordWrap(True)
-        right.addWidget(self.message)
-        grid = QtWidgets.QGridLayout()
-        self.start_button = button('Start', self.session.start, 'background:#2e7d32;color:white;font-weight:bold')
+        # Left: the map (or the large progress view while driving).
+        self.left = QtWidgets.QStackedWidget()
+        mapbox = QtWidgets.QWidget()
+        self.view = MapWidget(mapbox)
+        # The STOP banner of the design, over the top of the map (it takes no height from the 600 px screen).
+        self.banner = QtWidgets.QFrame(mapbox)
+        self.banner.setObjectName('banner')
+        bl = QtWidgets.QHBoxLayout(self.banner)
+        bl.addWidget(label('■  STOP active. Motors are off. Tap Resume or Go home.', wrap=False))
+        self.banner.hide()
+        self.view.hotspot_tapped.connect(self.select)
+        self.view.tapped.connect(lambda x, y: self.select(None))
+        self.alert = AlertBar(mapbox)
+        self.sheet = self._sheet(mapbox)
+        mapbox.resizeEvent = self._layout_map
+        self.mapbox = mapbox
+        self.left.addWidget(mapbox)
+        self.left.addWidget(self._drive_view())
+        body.addWidget(self.left, 1)
+
+        # Right: the side panel.
+        side = QtWidgets.QFrame()
+        side.setObjectName('side')
+        side.setFixedWidth(330)
+        sl = QtWidgets.QVBoxLayout(side)
+        head = QtWidgets.QHBoxLayout()
+        self.title = label('<b>NALA</b>', wrap=False)
+        head.addWidget(self.title, 1)
+        self.big_button = button('Big view', lambda: self._toggle_map(False))   # back to the progress view
+        head.addWidget(self.big_button)
+        self.back_button = button('Back', self.finish)
+        head.addWidget(self.back_button)
+        sl.addLayout(head)
+        chips = QtWidgets.QHBoxLayout()
+        self.chip_mode = label(wrap=False, name='chip')
+        self.chip_loc = label(wrap=False, name='chip')
+        chips.addWidget(self.chip_mode)
+        chips.addWidget(self.chip_loc)
+        chips.addStretch()
+        sl.addLayout(chips)
+        self.pct = label('0<small>%</small>', name='pct', wrap=False)
+        sl.addWidget(self.pct)
+        self.status = label(name='status')
+        sl.addWidget(self.status)
+        self.bar = QtWidgets.QProgressBar()
+        self.bar.setTextVisible(False)
+        sl.addWidget(self.bar)
+        self.area = label(name='mute')
+        sl.addWidget(self.area)
+        self.legend = label(f"<span style='color:{style.TEAL}'>&#9632;</span> Scanned&nbsp;&nbsp; "
+                            f"<span style='color:{style.MAG}'>&#9670;</span> Contaminated, avoided", name='mute')
+        sl.addWidget(self.legend)
+        self.toggles = QtWidgets.QWidget()
+        toggles = QtWidgets.QHBoxLayout(self.toggles)
+        toggles.setContentsMargins(0, 0, 0, 0)
+        for key, text in (('coverage', 'Coverage'), ('contamination', 'Contamination'), ('path', 'Path')):
+            b = style.set_kind(QtWidgets.QPushButton(text), 'toggle')
+            b.setCheckable(True)
+            b.setChecked(True)
+            b.toggled.connect(lambda on, k=key: self._layer(k, on))
+            toggles.addWidget(b)
+        sl.addWidget(self.toggles)
+        sl.addStretch()
+        self.message = label(name='mute')
+        sl.addWidget(self.message)
+        self.manual_box = self._manual()
+        sl.addWidget(self.manual_box)
+        self.side_controls = QtWidgets.QGridLayout()
+        sl.addLayout(self.side_controls)
+        body.addWidget(side)
+        self.side = side
+
+        self.start_button = button('Start', self.start, 'primary')
         self.pause_button = button('Pause', self.session.pause)
-        self.resume_button = button('Resume', self.resume)
-        self.cancel_button = button('Cancel task', self.session.cancel)
-        grid.addWidget(self.start_button, 0, 0)
-        grid.addWidget(self.pause_button, 0, 1)
-        grid.addWidget(self.resume_button, 1, 0)
-        grid.addWidget(self.cancel_button, 1, 1)
-        right.addLayout(grid)
-        self.manual_button = button('Drive by hand', self.toggle_manual)
-        right.addWidget(self.manual_button)
-        arrows = QtWidgets.QGridLayout()
-        self.arrows = {}
-        for key, text, row, col in (('w', '^', 0, 1), ('a', '<', 1, 0), ('d', '>', 1, 2), ('s', 'v', 2, 1)):
-            b = QtWidgets.QPushButton(text)
-            b.pressed.connect(lambda k=key: self.hold(k))
-            b.released.connect(lambda: self.hold(None))
-            arrows.addWidget(b, row, col)
-            self.arrows[key] = b
-        right.addLayout(arrows)
-        right.addStretch()
-        right.addWidget(button('Finish', self.finish))
-        outer.addLayout(right, 2)
+        self.home_button = button('Stop and go home', self.confirm_home, 'dark')
+        self.stop_button = button('STOP', self.session.emergency_stop, 'stop')
+        self._place_controls(driving=False)
+
         self.manual_timer = QtCore.QTimer(self)
         self.manual_timer.timeout.connect(self.manual_tick)
 
+    # ---------------------------------------------------------------- building blocks
+    def _sheet(self, parent):
+        sheet = QtWidgets.QFrame(parent)
+        sheet.setObjectName('sheet')
+        lay = QtWidgets.QVBoxLayout(sheet)
+        self.sheet_title = label()
+        self.sheet_text = label()
+        lay.addWidget(self.sheet_title)
+        lay.addWidget(self.sheet_text)
+        row = QtWidgets.QHBoxLayout()
+        self.check_button = button('Mark as checked', self.mark_checked, 'dark')
+        row.addWidget(self.check_button, 1)
+        row.addWidget(button('Close', lambda: self.select(None)))
+        lay.addLayout(row)
+        sheet.hide()
+        return sheet
+
+    def _drive_view(self):
+        w = QtWidgets.QWidget()
+        lay = QtWidgets.QVBoxLayout(w)
+        lay.setContentsMargins(32, 16, 32, 16)
+        lay.setSpacing(10)
+        self.d_alert = AlertBar(w)
+        lay.addWidget(self.d_alert)
+        lay.addStretch()
+        self.d_pct = label('0', name='bigpct', wrap=False)
+        lay.addWidget(self.d_pct)
+        self.d_status = label(name='bigstatus')
+        lay.addWidget(self.d_status)
+        self.d_bar = QtWidgets.QProgressBar()
+        self.d_bar.setTextVisible(False)
+        self.d_bar.setStyleSheet('QProgressBar { max-height: 22px; border-radius: 11px; } '
+                                 'QProgressBar::chunk { border-radius: 11px; }')
+        lay.addWidget(self.d_bar)
+        lay.addStretch()
+        self.drive_controls = QtWidgets.QGridLayout()
+        self.drive_controls.setSpacing(12)
+        lay.addLayout(self.drive_controls)
+        lay.addWidget(button('Show map', lambda: self._toggle_map(True)))
+        return w
+
+    def _manual(self):
+        box = QtWidgets.QWidget()
+        lay = QtWidgets.QGridLayout(box)
+        lay.setContentsMargins(0, 0, 0, 0)
+        self.manual_button = button('Drive by hand', self.toggle_manual)
+        lay.addWidget(self.manual_button, 0, 0, 1, 4)
+        self.arrows = {}
+        for key, text, row, col in (('a', '◀', 1, 0), ('w', '▲', 1, 1), ('s', '▼', 1, 2),
+                                    ('d', '▶', 1, 3)):
+            b = QtWidgets.QPushButton(text)
+            b.pressed.connect(lambda k=key: self.hold(k))
+            b.released.connect(lambda: self.hold(None))
+            lay.addWidget(b, row, col)
+            self.arrows[key] = b
+        return box
+
+    def _place_controls(self, driving):
+        grid = self.drive_controls if driving else self.side_controls
+        for b in (self.start_button, self.pause_button, self.home_button, self.stop_button):
+            b.setParent(None)
+        if driving:                              # as the design: no Start while driving (it cannot be pressed)
+            grid.addWidget(self.stop_button, 0, 0, 1, 2)
+            grid.addWidget(self.pause_button, 1, 0)
+            grid.addWidget(self.home_button, 1, 1)
+        else:                                    # side panel: two rows, so everything fits 600 px
+            grid.addWidget(self.stop_button, 0, 0)
+            grid.addWidget(self.start_button, 0, 1)
+            grid.addWidget(self.pause_button, 1, 0)
+            grid.addWidget(self.home_button, 1, 1)
+        self.home_button.setText('Stop and go home' if driving else 'Go home')
+        big = int(self.panel.params['button_height'] * (1.5 if driving else 1))
+        for b in (self.start_button, self.pause_button, self.home_button, self.stop_button):
+            b.setMinimumHeight(big)
+        self.driving_layout = driving
+
+    def _layout_map(self, event):
+        w, h = self.mapbox.width(), self.mapbox.height()
+        self.view.setGeometry(0, 0, w, h)
+        self.banner.setGeometry(0, 0, w, 44)
+        top = 56 if self.banner.isVisible() else 12
+        self.alert.setGeometry(12, top, w - 24, 46)
+        self.sheet.setGeometry(12, h - 212, w - 90, 200)
+
+    def _layer(self, key, on):
+        self.view.layers[key] = on
+        self.view.update()
+
+    def _toggle_map(self, show):
+        self.show_map_while_driving = show
+
+    # ---------------------------------------------------------------- start / stop
     def begin(self, entry, plan, grid, station):
         self.entry = entry
-        self.title.setText(f'<b>{entry.name}</b> / {plan.name}')
+        self.title.setText(f'<b>NALA</b> <span style="color:{style.MUTE}">{entry.name}</span>')
         self.view.set_grid(grid)
-        self.view.layer('plan', lambda ax: draw_path(ax, plan_points(plan.data), lw=1.0))
-        self.view.layer('station', lambda ax: draw_pose(ax, station, STATION_COLOR, 'base'))
+        self.view.heat_width_m = self.panel.params['heatmap_width_m']
+        cfg = self.panel.settings['geometry']
+        self.view.refresh(plan=plan_points(plan.data), station=station, sensor_offset=cfg['sensor_offset_m'],
+                          sensor_radius=cfg['coverage_disk_radius_m'])
         self.manual_on = False
-        self.drawn = (None, None)
+        self.show_map_while_driving = False
+        self.drawn = {}
+        self.select(None)
+        self.chip_mode.setText('Robot' if self.panel.params['hardware'] else 'Simulation')
         self.manual_timer.start(int(self.panel.params['manual_period'] * 1000))
         teleop = self.session.start_launch(entry.map_yaml, plan.path, library.new_run_dir(entry))
         self.panel.executor.add_node(teleop)
+        self.refresh()          # buttons follow the (still empty) state at once: no Start before the plan is checked
 
+    def start(self):
+        if self.session.state.get('state') == 'PAUSED':
+            self.session.resume()
+        else:
+            self.session.start()
+
+    def confirm_home(self):
+        if self.ask_home():
+            self.session.go_home()
+
+    def ask_home(self):
+        """The confirm dialog of the design: True = Stop and go home."""
+        box = QtWidgets.QMessageBox(self)
+        box.setWindowTitle('Stop scanning?')
+        box.setText('<b>Stop scanning?</b><br>The robot stops and drives back to the base station.')
+        yes = box.addButton('Stop and go home', QtWidgets.QMessageBox.AcceptRole)
+        style.set_kind(yes, 'dark')
+        box.addButton('Keep scanning', QtWidgets.QMessageBox.RejectRole)
+        box.exec_()
+        return box.clickedButton() is yes
+
+    # ---------------------------------------------------------------- hotspots
+    def select(self, hotspot_id):
+        self.view.selected = hotspot_id
+        h = next((h for h in self.session.hotspots if h['id'] == hotspot_id), None)
+        if h is None:
+            self.view.selected = None
+            self.sheet.hide()
+        else:
+            bg = self.session.radiation.get('background')
+            first = datetime.datetime.fromtimestamp(h['first_seen']).strftime('%H:%M:%S')
+            self.sheet_title.setText(f"<span style='font-size:{self.panel.params['font_size'] + 6}pt'>"
+                                     f"<b>Hotspot {h['id']}</b></span>")
+            self.sheet_text.setText(f"Highest reading: {h['peak']:.0f} counts/s"
+                                    + (f' (background about {bg:.0f})' if bg is not None else '')
+                                    + f"<br>Location: x {h['x']:.2f} m, y {h['y']:.2f} m<br>First seen: {first}")
+            self.check_button.setText('Checked' if h.get('checked') else 'Mark as checked')
+            self.check_button.setEnabled(not h.get('checked'))
+            self.sheet.show()
+            self.sheet.raise_()
+        self.view.update()
+
+    def mark_checked(self):
+        if self.view.selected is not None:
+            self.session.mark_checked(self.view.selected)
+            self.select(None)
+
+    # ---------------------------------------------------------------- refresh (timer)
     def refresh(self):
         s = self.session
         s.update()
-        state = s.state
-        paused = state.get('state') == 'PAUSED'
-        reason = state.get('reason') or state.get('trust_reason') or ''
+        state = s.state.get('state')
         running = s.launch_running()
-        text = plain_state(state) if running else 'App 3 stopped. Tap "Finish".'
-        self.state_label.setText(f"<b style='font-size:16pt'>{text}</b><br>"
-                                 f"{100 * state.get('fraction', 0.):.0f} % covered<br>{reason}")
+        paused = state == 'PAUSED'
+        driving = running and state in ('BACKGROUND', 'PREPARING', 'CONNECT_PLAN', 'CONNECT', 'SWEEP', 'DWELL',
+                                        'PHASE_WAIT', 'RETURN_PLAN', 'RETURN')
+        if not driving:
+            self.show_map_while_driving = False
+        big = driving and not self.show_map_while_driving      # the large progress view of the design
+        if big != self.driving_layout:
+            self._place_controls(big)
+        self.left.setCurrentIndex(1 if big else 0)
+        self.side.setVisible(not big)
+        self.big_button.setVisible(driving and not big)
+        self.back_button.setVisible(not driving)
+        if self.banner.isVisible() != s.stop_active():
+            self.banner.setVisible(s.stop_active())
+            self._layout_map(None)
+
+        m = s.measurement
+        pct = 100 * s.state.get('fraction', 0.)
+        reason = s.state.get('reason') or ''
+        text = plain_state(s.state) if running else 'App 3 stopped. Tap Back.'
+        if state == 'FINISHED' and reason == 'RETURNED_TO_BASE':
+            text = 'Scan stopped, back home' if s.state.get('root_cause') == 'OPERATOR_GO_HOME' else 'Scan complete'
+        self.pct.setText(f'{pct:.0f}<span style="font-size:20pt;color:{style.MUTE}"> %</span>')
+        self.d_pct.setText(f'{pct:.0f}<span style="font-size:40pt;color:{style.MUTE}"> %</span>')
+        self.status.setText(text)
+        self.d_status.setText(text)
+        self.bar.setValue(int(pct))
+        self.d_bar.setValue(int(pct))
+        lines = []
+        if m.get('coverable_m2'):
+            lines.append(f"{m.get('covered_m2', 0):.1f} of {m['coverable_m2']:.1f} m² scanned")
+        if s.radiation.get('avoided_m2'):
+            lines.append(f"{s.radiation['avoided_m2']:.1f} m² avoided (contaminated)")
+        if s.radiation.get('background') is not None:
+            lines.append(f"Background {s.radiation['background']:.0f} counts/s")
+        if paused and reason:
+            lines.append(f'Paused: {reason}')
+        self.area.setText('<br>'.join(lines))
         self.message.setText(s.message)
-        self.start_button.setEnabled(running and s.can_start())
+        self.chip_loc.setText('Localized' if s.state.get('trusted') else 'Not localized')
+        self.chip_loc.setProperty('on', bool(s.state.get('trusted')))
+        self.chip_loc.style().unpolish(self.chip_loc)
+        self.chip_loc.style().polish(self.chip_loc)
+        self.alert.show_hotspots(s.hotspots)
+        self.d_alert.show_hotspots(s.hotspots)
+
+        self.start_button.setText('Resume' if paused else 'New scan' if state in ('FINISHED', 'CANCELED', 'FAILED')
+                                  else 'Start')
+        self.start_button.setEnabled(running and ((paused and not self.manual_on) or s.can_start()))
         self.pause_button.setEnabled(running and s.active())
-        self.resume_button.setEnabled(running and paused and not self.manual_on)
-        self.cancel_button.setEnabled(running and (s.active() or paused))
-        self.manual_button.setEnabled(running and paused)
+        self.home_button.setEnabled(running and (s.active() or paused))
+        # Hide before show: if both were visible for a moment, Qt would grow the window past the screen.
+        self.legend.setVisible(not (running and paused))     # room for the hand control arrows
+        self.toggles.setVisible(not (running and paused))
+        self.manual_box.setVisible(running and paused)
         self.manual_button.setText('Hand control off' if self.manual_on else 'Drive by hand')
         for b in self.arrows.values():
             b.setEnabled(self.manual_on)
-        covered, pose = s.covered, s.pose
-        if covered is not None and covered is not self.drawn[0] and covered.shape == self.view.grid.cells.shape:
-            self.view.layer('covered', lambda ax: [self.view.mask_image(covered, COVERED_COLOR, 0.35)])
-        if pose is not None and pose is not self.drawn[1]:
-            self.view.layer('robot', lambda ax: draw_pose(ax, pose, ROBOT_COLOR, 'NALA'))
-        self.drawn = (covered, pose)
+        self._draw()
 
-    def resume(self):
-        self.session.resume()
+    def _draw(self):
+        """Redraw only the map layers whose data changed (cheap on the Pi)."""
+        s, v, d = self.session, self.view, self.drawn
+        if s.covered is not None and s.covered is not d.get('covered'):
+            v.set_mask('coverage', s.covered, style.TEAL, 120)
+            d['covered'] = s.covered
+        if s.keepout is not None and s.keepout is not d.get('keepout'):
+            v.set_mask('keepout', s.keepout, style.MAG, 90)
+            d['keepout'] = s.keepout
+        heat = (s.heatmap, s.radiation.get('threshold'))
+        if s.heatmap is not None and (heat[0] is not d.get('heat', (None, None))[0] or heat[1] != d['heat'][1]):
+            v.set_heatmap(*heat)
+            d['heat'] = heat
+        v.refresh(trail=s.trail, hotspots=s.hotspots, robot=s.pose)
+        if v.selected is not None:
+            self.select(v.selected)
 
+    # ---------------------------------------------------------------- driving by hand
     def toggle_manual(self):
         self.manual_on = not self.manual_on
         self.session.manual(self.manual_on)
@@ -646,22 +836,25 @@ class DriveScreen(QtWidgets.QWidget):
     def finish(self):
         s = self.session
         if s.active() or s.state.get('state') == 'PAUSED':
-            answer = QtWidgets.QMessageBox.question(self, 'Finish', 'A task is still running. Cancel it and stop app 3?')
+            answer = QtWidgets.QMessageBox.question(
+                self, 'Leave', 'A scan is still running. Cancel it and stop app 3? '
+                '(Use "Stop and go home" to bring the robot back first.)')
             if answer != QtWidgets.QMessageBox.Yes:
                 return
             s.cancel()
         if self.manual_on:
             self.toggle_manual()
         self.manual_timer.stop()
-        self.state_label.setText('<b>Stopping app 3...</b>')
+        self.status.setText('Stopping app 3...')
         QtWidgets.QApplication.processEvents()
         s.stop_launch()
         report = s.report()
         if report:
             skipped = sum(b.get('reason') == 'PLAN_STRETCH_SKIPPED' for b in report.get('temporary_blockages', []))
+            avoided = sum(b.get('reason') == 'CONTAMINATION_AVOIDED' for b in report.get('temporary_blockages', []))
             QtWidgets.QMessageBox.information(
-                self, 'Task report', f"{report.get('state')}: {report.get('reason')}\n"
-                f"Skipped stretches: {skipped}\nReport: {s.output_dir}")
+                self, 'Scan report', f"{report.get('state')}: {report.get('reason')}\n"
+                f"Skipped stretches: {skipped}, avoided (contaminated): {avoided}\nSaved in: {s.output_dir}")
         self.panel.open_map(self.entry)
 
 
@@ -681,8 +874,8 @@ class Panel(QtWidgets.QMainWindow):
         self.maps = MapsScreen(self)
         self.map = MapScreen(self)
         self.planning = PlanningScreen(self)
-        self.drive = DriveScreen(self)
-        for screen in (self.maps, self.map, self.planning, self.drive):
+        self.scan = ScanScreen(self)
+        for screen in (self.maps, self.map, self.planning, self.scan):
             self.stack.addWidget(screen)
         self.timer = QtCore.QTimer(self)
         self.timer.timeout.connect(self.tick)
@@ -694,8 +887,8 @@ class Panel(QtWidgets.QMainWindow):
         self.stack.setCurrentWidget(self.maps)
 
     def open_map(self, entry):
-        self.map.open(entry)
         self.stack.setCurrentWidget(self.map)
+        self.map.open(entry)
 
     def start_planning(self, entry, start, area):
         out_yaml, out_png = library.new_plan_paths(entry)
@@ -704,15 +897,15 @@ class Panel(QtWidgets.QMainWindow):
         self.stack.setCurrentWidget(self.planning)
 
     def start_drive(self, entry, plan):
-        self.drive.begin(entry, plan, self.map.grid, self.map.station)
-        self.stack.setCurrentWidget(self.drive)
+        self.stack.setCurrentWidget(self.scan)
+        self.scan.begin(entry, plan, self.map.grid, self.map.station)
 
     def tick(self):
         current = self.stack.currentWidget()
         if current is self.planning:
             self.planning.poll()
-        elif current is self.drive:
-            self.drive.refresh()
+        elif current is self.scan:
+            self.scan.refresh()
 
     def closeEvent(self, event):
         if self.planning.run is not None and not self.planning.run.done():
@@ -723,11 +916,7 @@ class Panel(QtWidgets.QMainWindow):
 
 def make_app(params):
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv[:1])
-    font = app.font()
-    font.setPointSize(params['font_size'])
-    app.setFont(font)
-    app.setStyleSheet(f"QPushButton {{ min-height: {params['button_height']}px; }}"
-                      f"QRadioButton::indicator {{ width: 28px; height: 28px; }}")
+    app.setStyleSheet(style.stylesheet(params['font_size'], params['button_height']))
     return app
 
 

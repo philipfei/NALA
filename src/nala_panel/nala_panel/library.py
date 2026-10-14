@@ -136,3 +136,30 @@ def new_run_dir(entry, now=None):
     folder = entry.folder / RUNS / new_name(now)
     folder.mkdir(parents=True, exist_ok=True)
     return folder
+
+
+def last_run(entry):
+    """The newest run of a map with radiation data: heatmap, keepout, hotspots and the actual trail, or None."""
+    import json
+    import numpy as np
+    runs = sorted((p for p in (entry.folder / RUNS).glob('*') if (p / 'heatmap.npz').is_file()), reverse=True) \
+        if (entry.folder / RUNS).is_dir() else []
+    if not runs:
+        return None
+    folder = runs[0]
+    data = np.load(folder / 'heatmap.npz')
+    hotspots = json.loads((folder / 'hotspots.json').read_text()) if (folder / 'hotspots.json').is_file() else {}
+    trail = []                     # segments of trusted measured poses; no line across a gap in time
+    for path in folder.glob('coverage_*.json'):
+        report = json.loads(path.read_text())
+        gap = report.get('effective_config', {}).get('measurement', {}).get('max_sample_gap_s', 0.3)
+        last = None
+        for stamp, x, y, *_ in report.get('actual_trajectory') or []:
+            if last is None or stamp - last > gap:
+                trail.append([])
+            trail[-1].append([x, y])
+            last = stamp
+    threshold = float(data['threshold'])
+    return {'name': folder.name, 'folder': folder, 'value': data['value'], 'keepout': data['keepout'],
+            'threshold': threshold if np.isfinite(threshold) else None,
+            'background': float(data['background']), 'hotspots': hotspots.get('hotspots', []), 'trail': trail}

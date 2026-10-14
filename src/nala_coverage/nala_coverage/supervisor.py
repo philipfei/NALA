@@ -1,7 +1,11 @@
 """Mission supervisor: drives an exported coverage_tool plan with Nav2 from the base station and back.
 Explicit commands, bounded actions, no automatic launch motion. Autodrive is forward only: every piece is
 followed forwards and the robot turns on the spot between pieces. After the plan the Nav2 planner drives the
-robot back to the base station (RETURN_PLAN, RETURN)."""
+robot back to the base station (RETURN_PLAN, RETURN).
+
+Radiation (radiation_node): a task starts with the background measurement on the base station (BACKGROUND).
+Contaminated floor (/radiation/keepout) is avoided: plan stretches in it are skipped (CONTAMINATION_AVOIDED).
+/coverage/go_home stops the plan and drives back to the base station."""
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 import signal
@@ -30,7 +34,7 @@ from .plan_file import check_base_station, load_plan
 from .ros_common import (Inputs, ActionSlot, LATCHED, LATEST, decode, json_msg,
                          diagnostic, pose_msg, path_msg, pose3, transform3, yaw, ros_now, stamp_seconds)
 
-ACTIVE={'CONNECT_PLAN','CONNECT','SWEEP','DWELL','PHASE_WAIT','RETURN_PLAN','RETURN','TEST_PLAN','TEST'}
+ACTIVE={'BACKGROUND','CONNECT_PLAN','CONNECT','SWEEP','DWELL','PHASE_WAIT','RETURN_PLAN','RETURN','TEST_PLAN','TEST'}
 DRIVING=('CONNECT','SWEEP','RETURN','TEST')
 
 
@@ -47,6 +51,9 @@ class Supervisor(Node):
         self.station=base_station.load(self.station_file,self.map_frame)
         base_station.check(self.base,self.station,cfg.collision)
         self.returning=False
+        # Radiation: background measured once per task; contaminated floor is avoided.
+        self.radiation={};self.radiation_time=0.;self.background_requested=None;self.background_done=False
+        self.keepout=None;self.keepout_changed=False
         h,w=self.base.cells.shape
         self.region=self.base.world([[-.5,-.5],[-.5,w-.5],[h-.5,w-.5],[h-.5,-.5]]).tolist()
         self.collision=cfg.collision;self.radius=cfg['geometry']['coverage_disk_radius_m']
@@ -84,11 +91,14 @@ class Supervisor(Node):
         self.create_subscription(String,'/safety/state',self.gate_received,LATEST)
         self.create_subscription(String,'/coverage/measurement',self.meter_received,LATEST)
         self.create_subscription(String,'/coverage/meter_config',self.meter_config_received,LATCHED)
+        self.create_subscription(String,'/radiation/state',self.radiation_received,LATEST)
+        self.create_subscription(OccupancyGrid,'/radiation/keepout',self.keepout_received,LATCHED)
+        self.background_client=self.create_client(Trigger,'/radiation/measure_background')
         self.create_subscription(PoseStamped,'/coverage/test_goal',self.goal_received,10)
         self.create_service(SetBool,'/control/manual',self.manual_service)
         for name,fn in [('preview',self.preview_service),('start',self.start),
                         ('pause',self.pause_service),('resume',self.resume),('cancel',self.cancel_service),
-                        ('test_navigation',self.test_navigation)]:
+                        ('go_home',self.go_home),('test_navigation',self.test_navigation)]:
             self.create_service(Trigger,'/coverage/'+name,self.service(fn))
         self.create_timer(1/self.settings['localization']['pose_rate_hz'],self.tick);self.create_timer(self.settings['localization']['nomotion_update_period_s'],self.stationary_update)
         self.create_timer(1.,self.check_nav_active)
@@ -136,6 +146,16 @@ class Supervisor(Node):
             d=decode(msg)
             if d['generation']==self.mission.generation:self.measurement=d;self.meter_time=time.monotonic()
         except (ValueError,KeyError):pass
+
+    def radiation_received(self,msg):
+        try:self.radiation=decode(msg);self.radiation_time=time.monotonic()
+        except ValueError:pass
+
+    def keepout_received(self,msg):
+        if (msg.info.height,msg.info.width)!=self.base.cells.shape:return
+        keepout=np.asarray(msg.data,np.int8).reshape(msg.info.height,msg.info.width)>0
+        if self.keepout is None or not np.array_equal(keepout,self.keepout):
+            self.keepout=keepout;self.keepout_changed=True
 
     def meter_config_received(self,msg):
         try:self.meter_config_hash=decode(msg)['config_hash']
@@ -246,13 +266,29 @@ class Supervisor(Node):
         battery=self.inputs.battery()
         if battery is not None and battery<self.settings['battery']['start_ratio']:raise ValueError(f"Start requires battery >= {100*self.settings['battery']['start_ratio']:g}%")
         self.check_start_component()
+        if self.settings['radiation']['enabled'] and not self.background_client.service_is_ready():
+            raise ValueError('NO_RADIATION_NODE: /radiation/measure_background is not available')
         self.mission.start(time.monotonic(),self.timeout)
         self.definition={'generation':self.mission.generation,'map_id':self.base.identity,
                          'config_hash':self.settings.hash,'denominator':np.flatnonzero(self.preview['denominator']).tolist()}
         self.definition_pub.publish(json_msg(self.definition));self.measurement={};self.meter_time=0.
         self.targets=list(self.preview['targets']);self.current=None;self.pending_phase='NEXT';self.stuck=None;self.returning=False
-        self.phase_since=time.monotonic();self.manual=False
+        self.phase_since=time.monotonic();self.manual=False;self.background_done=False
+        if self.settings['radiation']['enabled']:self.begin_background()
         return 'Task accepted; preparation checks precede motion'
+
+    def begin_background(self):
+        """The robot stands on the base station: the radiation node measures the background first."""
+        if not self.background_client.service_is_ready():raise ValueError('NO_RADIATION_NODE: /radiation/measure_background is not available')
+        self.mission.state='BACKGROUND';self.phase_since=time.monotonic();self.background_requested=None
+        def done(future):
+            if future.result() is not None and future.result().success:self.background_requested=time.monotonic()
+        self.background_client.call_async(Trigger.Request()).add_done_callback(done)
+
+    def background_ready(self):
+        # Only a radiation state sent after the request counts (an older one may still say "ready").
+        return bool(self.background_requested is not None and self.radiation_time>self.background_requested
+                    and self.radiation.get('background_ready') and not self.radiation.get('measuring'))
 
     def check_start_component(self):
         try:
@@ -281,9 +317,52 @@ class Supervisor(Node):
         if self.mission.coverage_finished:raise ValueError('Nothing left to resume; start a new task')
         self.check_start_component()
         self.mission.resume();self.stuck=None
+        if self.settings['radiation']['enabled'] and not self.background_done:
+            self.begin_background();return 'Resume accepted; measuring the background again'
         if self.current:self.targets.insert(0,self.current)
         self.current=None;self.pending_phase='RETURN' if self.returning else 'NEXT'
         self.phase_since=time.monotonic();return 'Resume accepted; original mission deadline kept'
+
+    def go_home(self):
+        """Stop the plan and drive back to the base station (the rest of the plan is not covered)."""
+        if self.mission.state not in ACTIVE and self.mission.state!='PAUSED':raise ValueError('No task to stop')
+        if self.mission.state in ('TEST_PLAN','TEST'):raise ValueError('Not during a test navigation')
+        if self.returning and self.mission.state!='PAUSED':return 'Already driving back to the base station'
+        if self.manual:raise ValueError('Relinquish manual ownership first')
+        rest=([self.plan_remainder()] if self.current else [])+[points_of(t) for t in self.targets]
+        left=sum(length(p) for p in rest if len(p)>1)
+        self.slot.cancel();self.targets=[];self.current=None;self.sweep_points=None
+        now=time.monotonic()
+        self.mission.events.append({'time':now,'reason':'STOPPED_BY_OPERATOR','plan_left_m':round(left,3)})
+        if not self.mission.root_cause:self.mission.root_cause='OPERATOR_GO_HOME'
+        self.returning=True;self.background_done=True
+        if self.mission.state=='PAUSED':self.mission.resume()
+        else:self.mission.state='PREPARING'
+        self.pending_phase='RETURN';self.phase_since=now
+        return 'Stopping the plan; driving back to the base station'
+
+    def avoid_keepout(self,target):
+        """The parts of a target outside the contaminated floor, each a target of its own (driven to first)."""
+        pts=points_of(target)
+        if self.keepout is None or not self.keepout.any():return [target]
+        dense=densify(pts,self.base.resolution) if len(pts)>1 else pts
+        inside=[self.base.valid(rc) and bool(self.keepout[rc]) for rc in map(self.base.cell,dense)]
+        if not any(inside):return [target]
+        runs=[];run=[]
+        for p,bad in zip(dense,inside):
+            if bad:
+                if run:runs.append(run);run=[]
+            else:run.append(list(p))
+        if run:runs.append(run)
+        skipped=sum(math.dist(a,b) for (a,b),bad in zip(zip(dense,dense[1:]),inside[1:]) if bad)
+        self.mission.blocked.append({'xy':list(dense[inside.index(True)]),'length_m':round(skipped,3),'radius':0.,
+                                     'reason':'CONTAMINATION_AVOIDED','time':time.monotonic()})
+        out=[]
+        for i,r in enumerate(runs):
+            n=poly_target(r if len(r)>1 else r*2,'plan');n.connect=True
+            n.end_yaw=getattr(target,'end_yaw',None) if i==len(runs)-1 and not inside[-1] else None
+            out.append(n)
+        return out
 
     def cancel_service(self):
         self.slot.cancel();self.manual=False;self.pending_phase=None
@@ -326,6 +405,10 @@ class Supervisor(Node):
         self.slot.send(FollowPath,'/follow_path',goal,feedback)
 
     def next_target(self):
+        while self.targets:
+            parts=self.avoid_keepout(self.targets[0])
+            self.targets[0:1]=parts
+            if parts:break
         self.current=self.targets.pop(0) if self.targets else None;self.sweep_points=None
         if self.current is None:self.finish_pass();return
         self.target_since=time.monotonic()
@@ -498,7 +581,23 @@ class Supervisor(Node):
         phase=self.mission.state
         try:
             if phase=='SWEEP' and self.sweep_points:self.update_sweep_index()
-            if phase in ACTIVE:
+            if phase=='BACKGROUND':
+                if self.background_ready():
+                    self.background_done=True;self.mission.state='PREPARING';self.phase_since=now
+                elif now-self.phase_since>=self.settings['radiation']['background_timeout_s']:
+                    self.pause('NO_SCINTILLATOR: no background readings within '
+                               f"{self.settings['radiation']['background_timeout_s']:g} s")
+            if self.keepout_changed:
+                self.keepout_changed=False
+                # New contamination on the rest of the piece being driven: stop and drive around it.
+                if phase=='SWEEP' and self.sweep_points:
+                    rest=self.plan_remainder()
+                    if any(self.base.valid(rc) and self.keepout[rc] for rc in map(self.base.cell,rest)):
+                        n=poly_target(rest,'plan');n.end_yaw=getattr(self.current,'end_yaw',None);n.connect=True
+                        self.slot.cancel();self.targets.insert(0,n);self.current=None;self.sweep_points=None
+                        self.mission.state='PREPARING';self.pending_phase='NEXT';self.phase_since=now
+            # BACKGROUND: the robot stands on the base station, like PREPARING (no motion, no fault pauses).
+            if phase in ACTIVE and phase!='BACKGROUND':
                 fault=self.gate.get('fault') or self.inputs.reason()
                 if now-self.gate_time>self.settings['health']['gate_age_s']:fault=fault or 'SAFETY_GATE_STALE'
                 if not self.gate.get('graph_ok'):fault=fault or 'VELOCITY_GRAPH_CONFLICT'

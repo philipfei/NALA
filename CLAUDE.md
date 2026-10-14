@@ -283,6 +283,18 @@ SLAM must not jump to a wrong but similar-looking place.
   name as the system package `python3-coverage`.
 - Global costmap robot_radius = collision radius + half a cell: NavFn measures from obstacle cell centres, the
   supervisor checks planner paths exactly against cell edges (else detours and the way back can be refused).
+- Robot screen GUI (user, 2026-10-14): PyQt5 (`nala_panel`), styled after the user's HTML design
+  `Scan_screen_visualiser.html` (colours, big %, alert bar, hotspot sheet, Stop and go home with confirm, large
+  progress view while driving). Every screen must fit 1024 x 600 (tested). Map drawing with QPainter (`mapwidget.py`).
+- The map shows only what really happened: the trail and the covered floor come from the coverage meter
+  (trusted measured poses), the heatmap from readings painted at the sensor point of trusted poses. Never the plan.
+- Scintillator (user, 2026-10-14): USB, counts per second, about 1 Hz; USB format unknown, so no driver yet.
+  Interface: `/scintillator/count_rate` (`nala_interfaces/CountRate`), `docs/scintillator.md`.
+- Radiation (user, 2026-10-14): background measured on the base station at the start of every task (state
+  BACKGROUND, before any motion); contaminated = 2x background; contaminated floor is shown AND avoided
+  (keepout zone: skipped plan stretches `CONTAMINATION_AVOIDED`, high cost layer in the global costmap).
+  Settings: `radiation` in `config/coverage.yaml` (placeholders); `radiation.enabled: false` runs app 3 without it.
+- Go home (user, 2026-10-14): `/coverage/go_home` stops the plan and drives back to the base station.
 
 ### Plan against SLAM pose jumps (tune and verify in stage 2)
 
@@ -308,7 +320,10 @@ SLAM must not jump to a wrong but similar-looking place.
 - [3] First robot tests of app 3: localization at the base station, costmaps, a short plan, an obstacle, the
   return; coverage speeds (`motion` in `config/coverage.yaml`, placeholders 0.12 m/s, 0.4 rad/s).
 - [3] Obstacles lower or higher than the LiDAR scan plane are not seen (no bumper).
-- [3] Robot screen: check picture and touch of the Waveshare (C) on the Pi; planning time on the Pi 4.
+- [3] Robot screen: check picture and touch of the Waveshare (C) on the Pi (GNOME, XWayland); planning time on the Pi 4.
+- [3] Scintillator: USB data format and driver; real background and source count rates. At low rates Poisson
+  noise alone reaches 2x background in one reading (false hotspots); then the rule must change (ask the user).
+  Placeholders in `config/coverage.yaml` `radiation`: background_readings, threshold_factor, keepout_margin_m.
 - [3] DDS on the Pi uses only the 10.42.0.0/24 network (`config/cyclonedds.xml`). Check that app 3 and the
   panel also work when the PC network is not there.
 - [2] Checked 2026-10-09 (old Pi installation): miniuart-bt + core_freq=250 -> `/dev/ttyAMA0`, core clock fixed

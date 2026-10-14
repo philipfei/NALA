@@ -22,7 +22,8 @@ class Trust:
             cov=np.asarray(covariance).reshape(6,6)
             sigma=math.sqrt(max(0,float(np.linalg.eigvalsh(cov[:2,:2]).max())))
             yaw_sigma=math.sqrt(max(0,float(cov[5,5])))
-            if np.any(np.diag(cov)<0):reason='AMCL_INVALID'
+            # A tightly converged filter can report a variance a hair below zero (rounding): that is zero.
+            if np.any(np.diag(cov)<-self.cfg['covariance_rounding']):reason='AMCL_INVALID'
             elif sigma>self.cfg['position_sigma_m']+1e-10:reason='POSITION_UNCERTAIN'
             elif yaw_sigma>math.radians(self.cfg['heading_sigma_deg'])+1e-10:reason='HEADING_UNCERTAIN'
             elif endpoints<self.cfg['min_endpoints']:reason='TOO_FEW_SCAN_ENDPOINTS'

@@ -18,6 +18,7 @@ setup(
     entry_points={'console_scripts': [
         'coverage_supervisor = nala_coverage.supervisor:main',
         'coverage_meter = nala_coverage.meter:main',
+        'radiation_node = nala_coverage.radiation_node:main',
         'velocity_gate = nala_coverage.gate_node:main',
         'coverage_teleop = nala_coverage.keyboard_teleop:main',
         'base_station_picker = nala_coverage.base_station_picker_node:main',
