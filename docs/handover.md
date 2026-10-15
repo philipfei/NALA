@@ -124,6 +124,10 @@ Status 2026-10-14 (network back on 10.42.0.0/24, the Pi is 10.42.0.154):
   0.20 m/s, 30-57 % on the rear wheels at 0.05-0.10 m/s). Higher kp (8) makes the start overshoot worse.
 - The user fixed a mechanical problem at M2. After that **M3 sticks**: no motion at 15 and 21.5 % PWM, then
   0.7 s late start and 73 % overshoot. Waiting for a mechanical check of M3.
+- Without wheels (all 4 removed): M3 is normal (its wheel was the problem). The motors differ in gain up to 2x at
+  low PWM (M4 weakest, M3 strongest), so one shared FF table overshoots on M2/M3 (40-83 % at 0.05 m/s). Next:
+  user decision on firmware v2.3.0 (one ff_pwm row per motor), then tune again with the wheels on.
+  The MCU runs the defaults (nothing saved in the EEPROM).
 - SD card full from vc4 kernel warnings (core_freq=250): fixed with core_freq=500 (CLAUDE.md open questions).
 
 ### Next steps (in this order)

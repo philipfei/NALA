@@ -299,6 +299,12 @@ SLAM must not jump to a wrong but similar-looking place.
 - [1] Motor test 2026-10-15 (v2.2.0, in the air): wheel directions confirmed by the user. Dead zone 11.6-13.6 % PWM
   (not 8 % as in v1.1.1), the wheels differ a lot at low PWM. After the user fixed M2 mechanically, **M3 does not
   turn below ~25 % PWM** and starts 0.7 s late with 73 % overshoot: check M3 mechanically before tuning.
+  Test without wheels (user removed all 4, 2026-10-15): M3 normal again (the problem was in its wheel). No dead zone
+  above 9.5 % PWM and no breakaway jump without wheels: the wheels add the stick-slip. The motors differ in gain:
+  at 15 % PWM M1 3.5, M2 5.1, M3 5.6, M4 2.8 rad/s; M4 needs ~1.4x the PWM of M3 for the same mid speed.
+  With the shared FF table: overshoot M2/M3 40-83 % at 0.05 m/s, 28 % at 0.30 m/s; M4 7-24 %. kp 4 / ki 20 /
+  accel_limit 20 settles faster (0.4-0.9 s, steady error < 1 %) but does not remove the start overshoot.
+  Proposal: firmware v2.3.0 with one ff_pwm row per motor (user decision pending).
 - [1] Pi boot splash: `scripts/setup_splash.sh` ran 2026-10-15 (Plymouth theme `nala` with `firmware/prayer.jpeg`).
   Shown correctly at the reboot of 2026-10-15 (monitor connected). The headless boot waits ~31 s in `plymouth-quit-wait` for the GNOME
   autologin session: normal, SSH works earlier.
