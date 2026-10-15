@@ -237,7 +237,7 @@ Main loop: check (CRC) and apply a new command; check (CRC) and answer a paramet
 - The PI gains come from simulation of an *assumed* motor model. The feed-forward table is measured (wheels in the air); check it with step tests after flashing v1.1.1.
 - **v2.1.0**: on the MCU 2026-10-14/15: state frames at 20 Hz without CRC errors; motors, encoders and kinematics signs correct (wheels in the air).
 - **v2.2.0**: flashed 2026-10-15, setting mode works on the robot.
-- **v2.3.0**: compile-checked 2026-10-15 (0 warnings), tested only with Python models and a fake MCU. Not flashed yet.
+- **v2.3.0**: flashed 2026-10-15, per-motor rows measured without wheels (the motors then agree within ~6 %). Not tuned with the wheels on yet.
 - The speed controller is not tuned on the robot yet: use `scripts/tune_motors.py` (in the air: `ff --apply` until measured = table, then `sweep`; then `sweep --floor`).
 - The motors reach only ~13 rad/s (0.50-0.52 m/s). Faster targets saturate at 100 % PWM; the Pi limits every wheel to 0.45 m/s (`max_wheel_speed` in `config/base.yaml`).
 - Stopping is by coasting, so the stopping distance depends on friction.
