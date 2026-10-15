@@ -386,7 +386,9 @@ def restore(link, cfg, original):
 
 
 def base_node_running():
-    return subprocess.run(['pgrep', '-f', 'nala_base/base_node'], capture_output=True).returncode == 0
+    # Exact process name (the ros2 entry point script), not -f: that would also match any shell
+    # whose command line only contains the text "base_node".
+    return subprocess.run(['pgrep', '-x', 'base_node'], capture_output=True).returncode == 0
 
 
 def main():
