@@ -134,30 +134,25 @@ Status 2026-10-14 (network back on 10.42.0.0/24, the Pi is 10.42.0.154):
 
 ### Next steps (in this order)
 
-1. (Done) v2.3.0 flashed. Test without wheels:
-  speed points 0, 1, 2, 3.5, 5, 6.6, 8.1, 9.4, 11.5, 13 rad/s (better than the default points at the low end),
-  two `ff --apply` rounds -> all motors within ~6 % of the table from 2 rad/s up, dead zones 7.2-7.9 %.
-  Open loop the motors then reach the target WITHOUT overshoot; closed loop the overshoot comes from the
-  integral during the rise (0.3-0.7 s) and the ~50-75 ms measurement delay. Best without wheels: kp 2, ki 8,
-  i_limit 3, accel_limit 0 (overshoot 7-9 % at 0.30 m/s, 13-18 % at 0.20, 15-31 % at 0.05-0.10; steady error <= 3 %).
-  Not saved (wheels and floor change friction and load). Next: wheels on, measure again.
-   The MCU runs the defaults again (nothing saved).
+1. (Done 2026-10-15) v2.3.0 flashed (second try; the first flash still had v2.2.0). Test without wheels:
+   speed points 0, 1, 2, 3.5, 5, 6.6, 8.1, 9.4, 11.5, 13 rad/s (better than the default points at the low end),
+   two `ff --apply` rounds -> all motors within ~6 % of the table from 2 rad/s up, dead zones 7.2-7.9 %.
+   Open loop the motors then reach the target WITHOUT overshoot; closed loop the overshoot comes from the
+   integral during the rise (0.3-0.7 s) and the ~50-75 ms measurement delay. Best without wheels: kp 2, ki 8,
+   i_limit 3, accel_limit 0 (overshoot 7-9 % at 0.30 m/s, 13-18 % at 0.20, 15-31 % at 0.05-0.10; steady error <= 3 %).
+   Not saved (wheels and floor change friction and load). The MCU runs the defaults again.
 2. With the wheels on (in the air): set the speed points
    `set ff_speed1 1 ff_speed2 2 ff_speed3 3.5 ff_speed4 5 ff_speed5 6.6 ff_speed6 8.1 ff_speed7 9.4 ff_speed8 11.5`
-   (`ff_speed0` 0 and `ff_speed9` 13 stay), then `ff --apply` twice, `ff` to check. With the wheels the dead zone
-   is higher (11.6-13.6 %, stick-slip): check that the fitted `ff_mN_pwm0` makes every wheel start.
-3. Gains: start from kp 2, ki 8, i_limit 3-5, accel_limit 0 and run `sweep`. On the floor (user's ok) the
-   load is much bigger: check i_limit again (too small = steady error or a wheel that does not start). Then `save`.
-2. `python3 ~/NALA/scripts/tune_motors.py show`: the defaults, flag "RAM differs from the EEPROM".
-   Then app 1 runs as before (`/odom` 20 Hz, no warnings).
-3. Wheels on and in the air: `tune_motors.py --yes ff --apply`, then `ff` again until measured = table speed
-   (+-5 %) for every motor. Look at the low end (`ff_mN_pwm0` is the dead-zone point, `ff` does not measure it) for the 0.05 m/s problem.
-4. `tune_motors.py --yes sweep`: then adjust kp / ki / i_limit / accel_limit (for example accel_limit 20-40 rad/s^2
-   against step overshoot). Goal: overshoot < 10 %, settled < 0.5 s, also at 0.05 m/s. `save` when good.
-5. **Only with the user's explicit permission:** on the floor, `tune_motors.py sweep --floor` (each step <= 0.5 m,
-   each pair comes back). Then a 1 m drive against a tape measure.
-6. Write the final values into `config.h` (defaults) and the docs.
-7. Xbox pairing (README "Setup, Pi"), drive with the controller, then app 2 (SLAM test).
+   (`ff_speed0` 0 and `ff_speed9` 13 stay), then `ff --apply` twice, `ff` to check (+-5 % for every motor).
+   With the wheels the dead zone is higher (11.6-13.6 %, stick-slip): check that the fitted `ff_mN_pwm0` makes
+   every wheel start.
+3. Gains: start from kp 2, ki 8, i_limit 3-5, accel_limit 0 and run `sweep`. Goal: overshoot < 10 %,
+   settled < 0.5 s. `save` when good.
+4. **Only with the user's explicit permission:** on the floor, `tune_motors.py sweep --floor` (each step <= 0.5 m,
+   each pair comes back). The load is much bigger: check i_limit again (too small = steady error or a wheel that
+   does not start). Then a 1 m drive against a tape measure.
+5. Write the final values into `config.h` (defaults) and the docs.
+6. Xbox pairing (README "Setup, Pi"), drive with the controller, then app 2 (SLAM test).
 
 The user connects the parts. Claude tests each one before the next:
 
