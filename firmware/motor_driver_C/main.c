@@ -3,7 +3,7 @@
  *
  * Project  : NALA (ATmega328PB, 4 mecanum wheels, 4 quadrature encoders)
  * Author   : HY / Claude (NALA v1 revision)
- * Version  : v2.3.0
+ * Version  : v2.3.1
  * Date     : 2026-10-15
  *
  * v1 vs v0: 20 Hz control loop; speed controller replaced by a positional PI with
@@ -21,6 +21,7 @@
  *         in the EEPROM. Target ramp (accel_limit). A non-zero command is applied at the
  *         next control step (no P-less output between steps).
  * v2.3.0: one feed-forward PWM row per motor (shared speed points): the motors differ.
+ * v2.3.1: new defaults in config.h (values tuned on the floor). No code change.
  *
  * Original : motor_driver_C by Floris van Mourik (created 9/18/2021), with pwm/timer
  *            code by Mathan and UART code by sojim. The untouched original sources

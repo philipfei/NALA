@@ -3,7 +3,7 @@
  *
  * Project : NALA motor driver (ATmega328PB, 4x mecanum wheels, 4x quadrature encoders)
  * Author  : HY (NALA v1 revision)
- * Version : v2.3.0
+ * Version : v2.3.1
  * Date    : 2026-10-15
  *
  * v1 changes vs v0: 20 Hz control/feedback (50 ms period), speed controller
@@ -23,6 +23,7 @@
  * New: target ramp (ACCEL_LIMIT). No D term (the speed estimate is quantised).
  * v2.3.0: one feed-forward PWM row per motor (FF_M1_PWM_PCT .. FF_M4_PWM_PCT), the speed points
  * stay shared. The motors differ: for the same speed M4 needs ~1.5x the PWM of M3.
+ * v2.3.1: the defaults are the values tuned on the floor (2026-10-15), the same as saved in the EEPROM.
  *
  * Everything that is "a number you may want to change" or "a wire you may want to
  * re-assign" lives in this file. The .c files contain no magic numbers for these.
@@ -114,9 +115,9 @@
  * Gains were chosen by that simulation; they are NOT tuned on the real robot.
  * No derivative term: the speed estimate is quantised (0.082 rad/s) so it only adds noise.
  */
-#define PI_KP               1.0f      /* [% pwm per rad/s] */
+#define PI_KP               2.0f      /* [% pwm per rad/s]  (v2.3.1, floor tuning; was 1.0) */
 #define PI_KI               8.0f      /* [% pwm per rad/s per s] */
-#define PI_I_LIMIT          25.0f     /* [% pwm] anti-windup clamp of the integral */
+#define PI_I_LIMIT          10.0f     /* [% pwm] anti-windup clamp of the integral (v2.3.1; was 25: less windup) */
 
 /* Target ramp (v2.2.0): each control period the target used by the controller moves toward
  * the commanded wheel speed by at most ACCEL_LIMIT * period. 0 = off (the target jumps, as before).
@@ -133,13 +134,15 @@
  * If the wheels overshoot at start-up lower the PWM of that speed, if they lag raise it.
  * v2.3.0: one PWM row per motor, because the motors differ (steady-state test 2026-10-15, no
  * wheels: for 5 rad/s M1 17.3 %, M2 14.5 %, M3 13.6 %, M4 19.9 %). The speed points are shared.
- * Defaults: the v2.2.0 shared row for all four (measure and set them with tune_motors.py ff). */
+ * v2.3.1 defaults = tuned 2026-10-15 on the floor (tune_motors.py, firmware/README.md section 6):
+ * speed points with more points at the low end; each row = the floor load (open loop, robot straight)
+ * + half of that motor's difference from the mean measured in the air. */
 #define FF_TABLE_N          10
-#define FF_SPEED_RAD_S      { 0.0f, 3.5f, 6.6f, 8.1f, 9.4f, 10.7f, 11.5f, 11.85f, 12.2f, 13.0f }
-#define FF_M1_PWM_PCT       { 9.0f, 15.0f, 21.5f, 29.5f, 37.5f, 45.5f, 54.0f, 63.0f, 72.0f, 100.0f }
-#define FF_M2_PWM_PCT       { 9.0f, 15.0f, 21.5f, 29.5f, 37.5f, 45.5f, 54.0f, 63.0f, 72.0f, 100.0f }
-#define FF_M3_PWM_PCT       { 9.0f, 15.0f, 21.5f, 29.5f, 37.5f, 45.5f, 54.0f, 63.0f, 72.0f, 100.0f }
-#define FF_M4_PWM_PCT       { 9.0f, 15.0f, 21.5f, 29.5f, 37.5f, 45.5f, 54.0f, 63.0f, 72.0f, 100.0f }
+#define FF_SPEED_RAD_S      { 0.0f, 1.0f, 2.0f, 3.5f, 5.0f, 6.6f, 8.1f, 9.4f, 11.5f, 13.0f }
+#define FF_M1_PWM_PCT       { 10.71f, 12.80f, 14.89f, 17.86f, 21.05f, 25.35f, 30.72f, 37.82f, 67.37f, 100.0f }
+#define FF_M2_PWM_PCT       { 10.88f, 12.58f, 14.30f, 16.72f, 19.53f, 24.04f, 29.14f, 35.88f, 63.73f, 98.73f }
+#define FF_M3_PWM_PCT       { 11.07f, 12.49f, 13.92f, 16.16f, 18.98f, 23.67f, 28.66f, 35.48f, 63.35f, 99.49f }
+#define FF_M4_PWM_PCT       { 10.86f, 12.94f, 15.02f, 18.39f, 21.92f, 27.34f, 33.42f, 41.49f, 73.74f, 100.0f }
 #define PWM_LIMIT           100.0f
 
 /* A wheel target below this is treated as "stopped" [rad/s]. */

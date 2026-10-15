@@ -1,6 +1,6 @@
 # NALA firmware (ATmega328PB motor driver)
 
-Firmware for the NALA base. It receives body-velocity commands from the Pi over UART, runs a speed controller on four mecanum wheels and sends the cumulative encoder counts back. Current version: **v2.3.0**. Toolchain: Atmel/Microchip Studio 7 (avr-gcc 5.4.0, ATmega_DFP 1.7.374), 16 MHz external crystal.
+Firmware for the NALA base. It receives body-velocity commands from the Pi over UART, runs a speed controller on four mecanum wheels and sends the cumulative encoder counts back. Current version: **v2.3.1**. Toolchain: Atmel/Microchip Studio 7 (avr-gcc 5.4.0, ATmega_DFP 1.7.374), 16 MHz external crystal.
 
 > ### HARDWARE POLARITY NOTE (read before touching the motor wiring)
 >
@@ -232,15 +232,40 @@ Main loop: check (CRC) and apply a new command; check (CRC) and answer a paramet
 - `ff_m1_pwm0..9` .. `ff_m4_pwm0..9` (parameters 14-53) replace `ff_pwm0..9`; the speed points `ff_speed0..9` stay shared. 54 parameters, EEPROM layout version 2.
 - Defaults: the v2.2.0 row for all four motors (behaviour unchanged until `tune_motors.py ff --apply` + `save`).
 
+**v2.3.1 (2026-10-15)** - new defaults only (no code change): the values tuned on the floor.
+
+| Parameter | Value (saved in the MCU EEPROM 2026-10-15 = `config.h` defaults since v2.3.1) |
+|---|---|
+| kp / ki / i_limit / accel_limit | 2.0 / 8.0 / 10 % / 0 (off) |
+| ff_speed0..9 [rad/s] | 0, 1, 2, 3.5, 5, 6.6, 8.1, 9.4, 11.5, 13 |
+| ff_m1_pwm0..9 [%] | 10.71, 12.80, 14.89, 17.86, 21.05, 25.35, 30.72, 37.82, 67.37, 100 |
+| ff_m2_pwm0..9 [%] | 10.88, 12.58, 14.30, 16.72, 19.53, 24.04, 29.14, 35.88, 63.73, 98.73 |
+| ff_m3_pwm0..9 [%] | 11.07, 12.49, 13.92, 16.16, 18.98, 23.67, 28.66, 35.48, 63.35, 99.49 |
+| ff_m4_pwm0..9 [%] | 10.86, 12.94, 15.02, 18.39, 21.92, 27.34, 33.42, 41.49, 73.74, 100 |
+
+How they were found (`scripts/tune_motors.py`, robot on the floor, 2 m free, a person watching):
+- Open-loop FF measurement on the floor works only at first: with the same PWM the strong rear-right side pushes harder
+  and the robot turns, then the wheels scrub and the friction rises (second run: no motion below ~20 %). On the floor the
+  four wheels are coupled, so a per-motor row cannot be measured there.
+- So each row = the floor load (first floor run, robot still straight; the same for all four) + 0.5 x the difference of
+  that motor from the mean, measured in the air without wheels. With the full difference M4 ran 5-13 % too fast, without
+  it the result was about the same as with half.
+- Floor steps, forward and back, legs <= 0.5 m: overshoot 5-23 % and steady error 0-9 % at 0.20-0.30 m/s; 18-50 %
+  overshoot at 0.05-0.10 m/s (stick-slip of the whole robot: it needs ~12-17 % PWM to break free). The firmware defaults
+  of v2.3.0 gave 8-77 % overshoot and up to 52 % steady error. A ramp (accel_limit 10) and ki 15 were worse.
+- What is left (overshoot, slow settling) comes from the integral during the rise; a firmware change could help
+  (integrate only near the target).
+- The tuned values are in the EEPROM; a reflash keeps them (EESAVE). `tune_motors.py defaults` loads the same values.
+
 ## 7. Known limitations
 
 - The PI gains come from simulation of an *assumed* motor model. The feed-forward table is measured (wheels in the air); check it with step tests after flashing v1.1.1.
 - **v2.1.0**: on the MCU 2026-10-14/15: state frames at 20 Hz without CRC errors; motors, encoders and kinematics signs correct (wheels in the air).
 - **v2.2.0**: flashed 2026-10-15, setting mode works on the robot.
-- **v2.3.0**: flashed 2026-10-15, per-motor rows measured without wheels (the motors then agree within ~6 %). Not tuned with the wheels on yet.
-- The speed controller is not tuned on the robot yet: use `scripts/tune_motors.py` (in the air: `ff --apply` until measured = table, then `sweep`; then `sweep --floor`).
+- **v2.3.0**: flashed 2026-10-15. Tuned on the floor and saved in the EEPROM (section 6, v2.3.1). v2.3.1 only changes the defaults: no reflash needed.
+- The speed controller is tuned on the floor (section 6, v2.3.1), but the overshoot at low speed is still high.
 - The motors reach only ~13 rad/s (0.50-0.52 m/s). Faster targets saturate at 100 % PWM; the Pi limits every wheel to 0.45 m/s (`max_wheel_speed` in `config/base.yaml`).
 - Stopping is by coasting, so the stopping distance depends on friction.
 
 ---
-Last updated: 2026-10-15 (v2.3.0) · Stiffeel :octocat: · Claude
+Last updated: 2026-10-15 (v2.3.1) · Stiffeel :octocat: · Claude

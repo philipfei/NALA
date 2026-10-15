@@ -18,7 +18,7 @@ FF_OK, FF_UNCHECKED, FF_INVALID = range(3)
 LAYOUT_VERSION = 2
 PERIOD = 0.05
 DEFAULTS = ([1.0, 8.0, 25.0, 0.0] + [0.0, 3.5, 6.6, 8.1, 9.4, 10.7, 11.5, 11.85, 12.2, 13.0]
-            + [9.0, 15.0, 21.5, 29.5, 37.5, 45.5, 54.0, 63.0, 72.0, 100.0] * 4)       # config.h, rows M1..M4
+            + [9.0, 15.0, 21.5, 29.5, 37.5, 45.5, 54.0, 63.0, 72.0, 100.0] * 4)       # v2.3.0 defaults (test values for the logic)
 
 
 def f32(x):                                   # AVR float = IEEE 754 single

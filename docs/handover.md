@@ -141,17 +141,13 @@ Status 2026-10-14 (network back on 10.42.0.0/24, the Pi is 10.42.0.154):
    integral during the rise (0.3-0.7 s) and the ~50-75 ms measurement delay. Best without wheels: kp 2, ki 8,
    i_limit 3, accel_limit 0 (overshoot 7-9 % at 0.30 m/s, 13-18 % at 0.20, 15-31 % at 0.05-0.10; steady error <= 3 %).
    Not saved (wheels and floor change friction and load). The MCU runs the defaults again.
-2. With the wheels on (in the air): set the speed points
-   `set ff_speed1 1 ff_speed2 2 ff_speed3 3.5 ff_speed4 5 ff_speed5 6.6 ff_speed6 8.1 ff_speed7 9.4 ff_speed8 11.5`
-   (`ff_speed0` 0 and `ff_speed9` 13 stay), then `ff --apply` twice, `ff` to check (+-5 % for every motor).
-   With the wheels the dead zone is higher (11.6-13.6 %, stick-slip): check that the fitted `ff_mN_pwm0` makes
-   every wheel start.
-3. Gains: start from kp 2, ki 8, i_limit 3-5, accel_limit 0 and run `sweep`. Goal: overshoot < 10 %,
-   settled < 0.5 s. `save` when good.
-4. **Only with the user's explicit permission:** on the floor, `tune_motors.py sweep --floor` (each step <= 0.5 m,
-   each pair comes back). The load is much bigger: check i_limit again (too small = steady error or a wheel that
-   does not start). Then a 1 m drive against a tape measure.
-5. Write the final values into `config.h` (defaults) and the docs.
+2. (Done 2026-10-15) Tuned on the floor and saved in the EEPROM: kp 2, ki 8, i_limit 10, accel_limit 0, new speed
+   points, per-motor rows (values and method: `firmware/README.md` section 6, v2.3.1). Open-loop `ff --floor` is not
+   usable on its own: the robot turns. Overshoot at 0.05-0.10 m/s is still 18-50 % (whole-robot stick-slip).
+3. Optional later: firmware change against the windup during the rise (integrate only near the target), if the
+   driving (app 1/2, Nav2) needs a smoother start.
+4. 1 m drive against a tape measure with the new values (odometry scale), strafe and 360 deg turn.
+5. (Done) The final values are in `config.h` (v2.3.1) and the docs.
 6. Xbox pairing (README "Setup, Pi"), drive with the controller, then app 2 (SLAM test).
 
 The user connects the parts. Claude tests each one before the next:

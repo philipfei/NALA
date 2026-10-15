@@ -184,7 +184,8 @@ Everything below is project-specific and must be kept up to date.
 
 - A teammate owns the firmware (`firmware/`) and builds and flashes it. **Claude may edit `firmware/`** (user, 2026-10-07).
   The PC has no avr-gcc (the user chose not to install it); Claude compile-checks on the Pi (avr-gcc 7.3).
-- Version in the repo: **v2.3.0** (2026-10-15, by Claude): v2.2.0 + one feed-forward PWM row per motor
+- Version in the repo: **v2.3.1** (2026-10-15, by Claude; v2.3.0 + the tuned values as `config.h` defaults, no code change;
+  the MCU runs v2.3.0 with the same values in its EEPROM). v2.3.0 = v2.2.0 + one feed-forward PWM row per motor
   (`ff_m1_pwm0..9` .. `ff_m4_pwm0..9`, shared `ff_speed0..9`; 54 parameters, EEPROM layout 2). Compile-checked on the
   Pi (0 errors, 0 warnings, 9.7 KB flash, 970 B RAM, 219 B EEPROM). Firmware and Pi code must match.
   v2.3.0 flashed 2026-10-15 (second try; the first flash still had v2.2.0). Test without wheels:
@@ -193,7 +194,10 @@ Everything below is project-specific and must be kept up to date.
   Open loop the motors then reach the target WITHOUT overshoot; closed loop the overshoot comes from the
   integral during the rise (0.3-0.7 s) and the ~50-75 ms measurement delay. Best without wheels: kp 2, ki 8,
   i_limit 3, accel_limit 0 (overshoot 7-9 % at 0.30 m/s, 13-18 % at 0.20, 15-31 % at 0.05-0.10; steady error <= 3 %).
-  Not saved (wheels and floor change friction and load). Next: wheels on, measure again.
+  Then **tuned on the floor and saved in the EEPROM** (2026-10-15, user permission, 2 m free, watched): kp 2, ki 8,
+  i_limit 10, accel_limit 0; FF rows = floor load + 0.5 x the motor's air difference (open-loop FF on the floor makes
+  the robot turn). Values: `firmware/README.md` section 6 (v2.3.1) = `config.h`. Floor result: 5-23 % overshoot at
+  0.20-0.30 m/s, 18-50 % at 0.05-0.10 m/s (whole-robot stick-slip). Left: integral windup during the rise.
 - v2.2.0 setting mode: parameter request `0xA5 0x03 op idx float32 crc` (9 bytes, like a command), reply
   `0xA5 0x04 op idx status float32 crc`. ops get / set / save (EEPROM, CRC-16 block) / defaults / reload. Every op
   except get only while stopped ("busy"). Target ramp `accel_limit` (default 0 = off). No D term (user decision).
@@ -221,12 +225,12 @@ Everything below is project-specific and must be kept up to date.
 
 | Stage | App | Goal | Status |
 |---|---|---|---|
-| 1 | Teleop | Drive the chassis with the keyboard or the Xbox controller | Done and driven on the robot (2026-10-07, firmware v1.1.1). v2.3.0 flashed, motors measured without wheels (2026-10-15). Next: tune with the wheels on, pair the Xbox controller |
+| 1 | Teleop | Drive the chassis with the keyboard or the Xbox controller | Done and driven on the robot (2026-10-07, firmware v1.1.1). v2.3.0: speed control tuned on the floor and saved (2026-10-15). Next: pair the Xbox controller, drive app 1 |
 | 2 | Mapping | Teleop + real-time LiDAR SLAM + RViz on the PC + save the map and copy it back to the PC | Code done. IMU + EKF added and checked on the Pi (2026-10-09). Driving test and SLAM tuning pending |
 | 3 | Coverage | The user sets a base station on the PC, in the map saved by app 2. The robot starts at the base station, covers the whole house, then returns to it | Code on the branch `stage3-coverage` (tested in simulation only), not merged into main |
 
-**Current stage: 2** (mapping). Next (`docs/handover.md`): tune the speed control with the wheels on (in the air,
-then on the floor with the user's ok), pair the Xbox controller, then the driving test and SLAM tuning.
+**Current stage: 2** (mapping). Next (`docs/handover.md`): pair the Xbox controller, drive app 1 on the floor,
+then the driving test (odometry, strafe, 360 deg turn) and SLAM tuning.
 
 Stage 2 special requirement: the house has many very similar rooms.
 SLAM must not jump to a wrong but similar-looking place.
