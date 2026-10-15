@@ -127,6 +127,8 @@ Status 2026-10-14 (network back on 10.42.0.0/24, the Pi is 10.42.0.154):
 - Without wheels (all 4 removed): M3 is normal (its wheel was the problem). The motors differ in gain up to 2x at
   low PWM (M4 weakest, M3 strongest), so one shared FF table overshoots on M2/M3 (40-83 % at 0.05 m/s). Next:
   user decision on firmware v2.3.0 (one ff_pwm row per motor), then tune again with the wheels on.
+  Steady-state check (3 s settle, 2 s measured per PWM): same differences, so they are not a transient.
+  For 5 rad/s: M1 17.3 %, M2 14.5 %, M3 13.6 %, M4 19.9 % PWM.
   The MCU runs the defaults (nothing saved in the EEPROM).
 - SD card full from vc4 kernel warnings (core_freq=250): fixed with core_freq=500 (CLAUDE.md open questions).
 
