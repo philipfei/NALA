@@ -3,8 +3,8 @@
  *
  * Project  : NALA (ATmega328PB, 4 mecanum wheels, 4 quadrature encoders)
  * Author   : HY / Claude (NALA v1 revision)
- * Version  : v2.1.0
- * Date     : 2026-10-12
+ * Version  : v2.2.0
+ * Date     : 2026-10-15
  *
  * v1 vs v0: 20 Hz control loop; speed controller replaced by a positional PI with
  * feed-forward and anti-windup (the v0 incremental PID rang); M2/M3 motor polarity
@@ -16,6 +16,10 @@
  *         shifter, which cannot do I2C). Commands in int16 mm/s and mrad/s, CRC-8.
  * v2.1.0: back to UART (PD0/PD1, 38400 baud) with the v2.0.0 frame contents as binary
  *         frames: sync byte, id, data, CRC-8. No text on the UART any more.
+ * v2.2.0: setting mode: the controller parameters (PI gains, integral limit, target ramp,
+ *         feed-forward table) are read and written over the UART while stopped and saved
+ *         in the EEPROM. Target ramp (accel_limit). A non-zero command is applied at the
+ *         next control step (no P-less output between steps).
  *
  * Original : motor_driver_C by Floris van Mourik (created 9/18/2021), with pwm/timer
  *            code by Mathan and UART code by sojim. The untouched original sources
@@ -34,11 +38,18 @@
  *   - Time base  : Timer3 compare interrupt, exactly every CONTROL_PERIOD_MS
  *                  (TIMER3_COMPA_vect below). It snapshots the encoder counts.
  *   - UART RX    : interrupt, a small state machine that only collects a command
- *                  frame and sets a flag.
+ *                  or parameter frame (one slot each) and sets a flag.
  *   - UART TX    : ring buffer drained by the UDRE interrupt             (USART.c)
  *   - main loop  : (1) check (CRC) and apply a newly received command,
- *                  (2) when a control period has elapsed: compute speeds, run the
+ *                  (2) check (CRC) and answer a parameter request (setting mode),
+ *                  (3) when a control period has elapsed: compute speeds, run the
  *                      PI controllers, set the motor output, send the state frame.
+ *
+ * CONCURRENCY RULE: param[], the targets and the controller state are used ONLY in the
+ *   main loop (handle_command, handle_param, control_step run one after the other), never
+ *   in an interrupt. So a float is never read half-written, and the control is paused
+ *   while a parameter changes. If the controller is ever moved into an interrupt, wrap
+ *   every parameter write in ATOMIC_BLOCK.
  *
  * SPEED MEASUREMENT
  *   speed [rad/s] = (counts in the period / ENC_COUNTS_PER_REV) * 2*pi / period
@@ -52,6 +63,8 @@
  * PI LINK (UART0, 38400 8N1, binary): see the protocol block in config.h.
  *   Pi -> MCU: 0xA5 0x01 vx vy w (int16 LE; mm/s, mm/s, mrad/s) crc8
  *   MCU -> Pi: 0xA5 0x02 seq flags M1..M4 (int32 LE cumulative counts) crc8, every period
+ *   Pi -> MCU: 0xA5 0x03 op idx value (float32 LE) crc8          parameter request
+ *   MCU -> Pi: 0xA5 0x04 op idx status value (float32 LE) crc8   parameter reply
  *   Safety: no valid command for CMD_TIMEOUT_MS (200 ms) while moving -> stop.
  *
  * WIRING / MAPPING : see config.h (motor <-> encoder association, signs, pins).
@@ -61,9 +74,14 @@
 #include "config.h"
 
 #include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+#include <math.h>
 #include <avr/io.h>
 #include <avr/interrupt.h>
+#include <avr/eeprom.h>
 #include <util/atomic.h>
+#include <util/crc16.h>
 
 #include "Usart.h"
 #include "encoder.h"
@@ -88,7 +106,8 @@ static const int8_t motor_enc_sign[NUM_MOTORS] = {
 /* ------------------------------------------------------------------------- */
 /* Controller state (main-loop only)                                          */
 /* ------------------------------------------------------------------------- */
-static float M_w[NUM_MOTORS];            /* target wheel speed   [rad/s] */
+static float M_goal[NUM_MOTORS];         /* commanded wheel speed [rad/s] (from the kinematics) */
+static float M_w[NUM_MOTORS];            /* target wheel speed used by the controller [rad/s] (ramped toward M_goal) */
 static float M_w_measured[NUM_MOTORS];   /* measured wheel speed [rad/s] */
 static float M_pwm[NUM_MOTORS];          /* motor power command  [% duty, -100..100] */
 static float M_i[NUM_MOTORS];            /* integral part of the speed controller [% duty] */
@@ -97,9 +116,130 @@ static uint8_t seq;                      /* control period counter (wraps), sent
 
 /* Command timeout bookkeeping (main-loop only, see CMD_TIMEOUT_MS in config.h). */
 static uint8_t cmd_age_ticks;    /* control periods since the last valid command (saturates at 255) */
+static uint8_t cmd_fresh;        /* 1 = a valid command was handled since the last control step */
+static uint8_t cmd_ticks_before; /* control periods already pending (not yet consumed) when it was handled */
 static uint8_t cmd_active;       /* 1 = the last command was non-zero, i.e. the robot may be moving */
 static uint8_t timed_out;        /* 1 = stopped by the timeout, until the next valid command */
 static uint8_t boot = 1;         /* 1 = no valid command since power-up (state flags bit0) */
+
+/* ------------------------------------------------------------------------- */
+/* Run-time parameters (setting mode, v2.2.0)                                 */
+/* ------------------------------------------------------------------------- */
+/* Index of each parameter in param[] (same order as mcu_protocol.PARAM_NAMES on the Pi). */
+enum {
+	P_KP, P_KI, P_I_LIMIT, P_ACCEL,
+	P_FF_SPEED,                               /* ff_speed0..9 [rad/s] */
+	P_FF_PWM = P_FF_SPEED + FF_TABLE_N,       /* ff_pwm0..9   [% duty] */
+	NUM_PARAMS = P_FF_PWM + FF_TABLE_N
+};
+
+/* Parameter request ops and reply status (protocol block in config.h). */
+enum { OP_GET, OP_SET, OP_SAVE, OP_DEFAULTS, OP_RELOAD };
+enum { ST_OK, ST_BAD_INDEX, ST_OUT_OF_RANGE, ST_BUSY, ST_BAD_TABLE, ST_BAD_OP, ST_NO_EEPROM };
+
+/* State of the feed-forward table after edits (it is checked only when it is needed). */
+enum { FF_OK, FF_UNCHECKED, FF_INVALID };
+
+static float param[NUM_PARAMS];          /* the values in use (main loop only, see CONCURRENCY RULE) */
+static uint8_t ff_state = FF_OK;
+static uint8_t params_in_eeprom;         /* 1 = param[] equals the EEPROM block (state flags bit2) */
+
+static const float ff_speed_default[FF_TABLE_N] = FF_SPEED_RAD_S;   /* rad/s, increasing */
+static const float ff_pwm_default[FF_TABLE_N]   = FF_PWM_PCT;       /* % duty */
+
+/* EEPROM block (CRC-16 over version and data, see config.h). */
+typedef struct {
+	uint8_t  version;
+	float    value[NUM_PARAMS];
+	uint16_t crc;
+} param_block_t;
+
+static param_block_t EEMEM ee_params;
+
+static void load_defaults(void)
+{
+	param[P_KP]      = PI_KP;
+	param[P_KI]      = PI_KI;
+	param[P_I_LIMIT] = PI_I_LIMIT;
+	param[P_ACCEL]   = ACCEL_LIMIT;
+	for (uint8_t i = 0; i < FF_TABLE_N; i++) {
+		param[P_FF_SPEED + i] = ff_speed_default[i];
+		param[P_FF_PWM + i]   = ff_pwm_default[i];
+	}
+	ff_state = FF_OK;
+}
+
+/* Largest allowed value of a parameter (all minimums are 0). */
+static float param_max(uint8_t idx)
+{
+	if (idx >= P_FF_PWM)   return PARAM_FF_PWM_MAX;
+	if (idx >= P_FF_SPEED) return PARAM_FF_SPEED_MAX;
+	switch (idx) {
+	case P_KP:      return PARAM_KP_MAX;
+	case P_KI:      return PARAM_KI_MAX;
+	case P_I_LIMIT: return PARAM_I_LIMIT_MAX;
+	default:        return PARAM_ACCEL_MAX;
+	}
+}
+
+/* 1 if v is a finite number within 0 .. param_max(idx). NaN and +-Inf are rejected. */
+static uint8_t param_in_range(uint8_t idx, float v)
+{
+	return isfinite(v) && v >= 0.0f && v <= param_max(idx);
+}
+
+/* 1 if the feed-forward table in t[] is usable: speeds start at 0 and strictly increase. */
+static uint8_t ff_table_valid(const float *t)
+{
+	if (t[P_FF_SPEED] != 0.0f) {
+		return 0;
+	}
+	for (uint8_t i = 1; i < FF_TABLE_N; i++) {
+		if (!(t[P_FF_SPEED + i] > t[P_FF_SPEED + i - 1])) {
+			return 0;
+		}
+	}
+	return 1;
+}
+
+static uint16_t block_crc(const param_block_t *b)
+{
+	const uint8_t *p = (const uint8_t *)b;
+	uint16_t crc = 0;
+	for (uint8_t i = 0; i < offsetof(param_block_t, crc); i++) {
+		crc = _crc_xmodem_update(crc, p[i]);
+	}
+	return crc;
+}
+
+/* Load param[] from the EEPROM. Returns 0 (param[] unchanged) if the block is not valid. */
+static uint8_t load_eeprom(void)
+{
+	param_block_t b;
+	eeprom_read_block(&b, &ee_params, sizeof b);
+	if (b.version != EEPROM_LAYOUT_VERSION || b.crc != block_crc(&b) || !ff_table_valid(b.value)) {
+		return 0;
+	}
+	for (uint8_t i = 0; i < NUM_PARAMS; i++) {
+		if (!param_in_range(i, b.value[i])) {
+			return 0;
+		}
+	}
+	memcpy(param, b.value, sizeof param);
+	ff_state = FF_OK;
+	return 1;
+}
+
+/* Write param[] to the EEPROM. Blocks the main loop up to ~0.35 s (3.4 ms per changed byte);
+ * the interrupts keep running (encoders, Timer3 tick, UART RX into its slots, UART TX). */
+static void save_eeprom(void)
+{
+	param_block_t b;
+	b.version = EEPROM_LAYOUT_VERSION;
+	memcpy(b.value, param, sizeof param);
+	b.crc = block_crc(&b);
+	eeprom_update_block(&b, &ee_params, sizeof b);
+}
 
 /* ------------------------------------------------------------------------- */
 /* Control time base: Timer3 compare interrupt                                */
@@ -125,21 +265,28 @@ ISR(TIMER3_COMPA_vect)
 /* UART link to the Pi: binary frames                                         */
 /* ------------------------------------------------------------------------- */
 /*
- * Receive state machine for the command frame  0xA5 0x01 <6 data bytes> <crc>:
+ * Receive state machine for the command frame    0xA5 0x01 <6 data bytes> <crc>
+ *                     and the parameter request  0xA5 0x03 <6 data bytes> <crc>:
  *   RX_IDLE       : only here a 0xA5 starts a frame (-> RX_HEADER_ACK). Other bytes are dropped.
- *   RX_HEADER_ACK : 0x01 -> RX_PAYLOAD. 0xA5 -> stay here (a fresh header). Other -> RX_IDLE.
+ *   RX_HEADER_ACK : 0x01 or 0x03 -> remember the id, RX_PAYLOAD. 0xA5 -> stay here (a fresh
+ *                   header). Other -> RX_IDLE.
  *   RX_PAYLOAD    : store the 6 data bytes and the crc. A 0xA5 in here is data: it never
  *                   restarts the frame.
- *   complete      : copy the bytes to cmd_frame, set cmd_ready, back to RX_IDLE.
- * The interrupt does no checking: the CRC is checked in the main loop (handle_command).
+ *   complete      : copy the bytes to the slot of that id (cmd_frame or param_frame), set its
+ *                   ready flag, back to RX_IDLE. Two slots: the stream of drive commands can
+ *                   never overwrite a parameter request that waits (e.g. during an EEPROM save).
+ * The interrupt does no checking: the CRC is checked in the main loop (handle_command, handle_param).
  */
 enum { RX_IDLE, RX_HEADER_ACK, RX_PAYLOAD };
 
 static volatile uint8_t rx_state = RX_IDLE;
+static volatile uint8_t rx_id;                           /* id of the frame being received */
 static volatile uint8_t rx_count;
 static volatile uint8_t rx_buf[FRAME_CMD_PAYLOAD];       /* data + crc of the frame being received */
-static volatile uint8_t cmd_frame[FRAME_CMD_PAYLOAD];    /* data + crc of the last complete frame */
+static volatile uint8_t cmd_frame[FRAME_CMD_PAYLOAD];    /* data + crc of the last complete command */
 static volatile uint8_t cmd_ready;                       /* 1 = cmd_frame holds an unprocessed frame */
+static volatile uint8_t param_frame[FRAME_CMD_PAYLOAD];  /* data + crc of the last complete parameter request */
+static volatile uint8_t param_ready;                     /* 1 = param_frame holds an unprocessed frame */
 
 ISR(USART0_RX_vect)
 {
@@ -152,7 +299,8 @@ ISR(USART0_RX_vect)
 		}
 		break;
 	case RX_HEADER_ACK:
-		if (b == FRAME_ID_CMD) {
+		if (b == FRAME_ID_CMD || b == FRAME_ID_PARAM) {
+			rx_id    = b;
 			rx_count = 0;
 			rx_state = RX_PAYLOAD;
 		} else if (b != FRAME_SYNC) {
@@ -162,10 +310,17 @@ ISR(USART0_RX_vect)
 	default:                            /* RX_PAYLOAD */
 		rx_buf[rx_count++] = b;
 		if (rx_count >= FRAME_CMD_PAYLOAD) {             /* complete */
-			for (uint8_t i = 0; i < FRAME_CMD_PAYLOAD; i++) {
-				cmd_frame[i] = rx_buf[i];
+			if (rx_id == FRAME_ID_CMD) {
+				for (uint8_t i = 0; i < FRAME_CMD_PAYLOAD; i++) {
+					cmd_frame[i] = rx_buf[i];
+				}
+				cmd_ready = 1;          /* a newer command simply replaces an unprocessed one */
+			} else {
+				for (uint8_t i = 0; i < FRAME_CMD_PAYLOAD; i++) {
+					param_frame[i] = rx_buf[i];
+				}
+				param_ready = 1;        /* the Pi sends one request at a time */
 			}
-			cmd_ready = 1;              /* a newer frame simply replaces an unprocessed one */
 			rx_state = RX_IDLE;
 		}
 		break;
@@ -197,7 +352,7 @@ static void send_state_frame(void)
 	f[0] = FRAME_SYNC;
 	f[1] = FRAME_ID_STATE;
 	f[2] = seq;
-	f[3] = (uint8_t)(boot | (timed_out << 1));
+	f[3] = (uint8_t)(boot | (timed_out << 1) | (params_in_eeprom << 2) | ((ff_state == FF_INVALID) << 3));
 	for (uint8_t m = 0; m < NUM_MOTORS; m++) {
 		const uint32_t c = (uint32_t)M_count[m];
 		f[4 + 4 * m] = (uint8_t)c;
@@ -210,17 +365,21 @@ static void send_state_frame(void)
 }
 
 /* ------------------------------------------------------------------------- */
-/* Feed-forward: measured motor curve (config.h FF_*)                         */
+/* Feed-forward: measured motor curve (param[] ff_speed / ff_pwm)             */
 /* ------------------------------------------------------------------------- */
-static const float ff_speed[FF_TABLE_N] = FF_SPEED_RAD_S;   /* rad/s, increasing */
-static const float ff_pwm[FF_TABLE_N]   = FF_PWM_PCT;       /* % duty */
-
-/* PWM [%] for a wheel target speed [rad/s]: linear interpolation in the table, same sign. */
+/* PWM [%] for a wheel target speed [rad/s]: linear interpolation in the table, same sign.
+ * Segments whose speeds do not increase are skipped (never a division by zero, even while
+ * the table is being edited; driving with an invalid table is blocked in handle_command). */
 static float feed_forward(float target)
 {
+	const float *ff_speed = &param[P_FF_SPEED];
+	const float *ff_pwm   = &param[P_FF_PWM];
 	const float s = (target < 0.0f) ? -target : target;
-	float pwm = ff_pwm[FF_TABLE_N - 1];                     /* faster than the table: 100 % */
+	float pwm = ff_pwm[FF_TABLE_N - 1];                     /* faster than the table: last point */
 	for (uint8_t i = 1; i < FF_TABLE_N; i++) {
+		if (!(ff_speed[i] > ff_speed[i - 1])) {
+			continue;
+		}
 		if (s <= ff_speed[i]) {
 			pwm = ff_pwm[i - 1] + (ff_pwm[i] - ff_pwm[i - 1]) * (s - ff_speed[i - 1])
 			                      / (ff_speed[i] - ff_speed[i - 1]);
@@ -234,39 +393,65 @@ static float feed_forward(float target)
 /* Kinematics                                                                 */
 /* ------------------------------------------------------------------------- */
 /*
- * Mecanum inverse kinematics. Vx, Vy in m/s, w in rad/s. Result: target wheel
- * speeds M_w[] in rad/s (wheel speed = rim speed / radius) and the immediate
- * motor power (feed-forward + the integral already accumulated).
+ * Mecanum inverse kinematics. Vx, Vy in m/s, w in rad/s. Result: the commanded wheel
+ * speeds M_goal[] in rad/s (wheel speed = rim speed / radius).
  * Rim speed of each wheel = Vx -/+ Vy -/+ (W+H)*w.
  *
- * The integral M_i[] is cleared when a wheel's target becomes zero or changes sign;
- * otherwise it is kept, so a stream of similar commands (e.g. 20 per second) does
- * not throw away what the controller has learned.
+ * A wheel whose goal is zero stops at once (target, integral and output 0: it coasts).
+ * A non-zero goal is applied by the next control step (ramp_target, <= 50 ms later), so
+ * every output comes from the full controller (v2.1.0 wrote FF + I without the P term here).
  */
 static void calc_angular_speed(float Vx, float Vy, float w)
 {
 	const float k = 1.0f / WHEEL_RADIUS_M;
-	float target[NUM_MOTORS];
 
-	target[0] = k * (Vx - Vy - ROT_ARM_M * w);   /* M1 */
-	target[1] = k * (Vx + Vy - ROT_ARM_M * w);   /* M2 */
-	target[2] = k * (Vx - Vy + ROT_ARM_M * w);   /* M3 */
-	target[3] = k * (Vx + Vy + ROT_ARM_M * w);   /* M4 */
+	M_goal[0] = k * (Vx - Vy - ROT_ARM_M * w);   /* M1 */
+	M_goal[1] = k * (Vx + Vy - ROT_ARM_M * w);   /* M2 */
+	M_goal[2] = k * (Vx - Vy + ROT_ARM_M * w);   /* M3 */
+	M_goal[3] = k * (Vx + Vy + ROT_ARM_M * w);   /* M4 */
 
 	for (uint8_t m = 0; m < NUM_MOTORS; m++) {
-		const uint8_t stopped = (target[m] < W_ZERO_EPS && target[m] > -W_ZERO_EPS);
-		if (stopped) {
-			target[m] = 0.0f;
+		if (M_goal[m] < W_ZERO_EPS && M_goal[m] > -W_ZERO_EPS) {
+			M_goal[m] = 0.0f;
+			M_w[m]    = 0.0f;
 			M_i[m]    = 0.0f;
 			M_pwm[m]  = 0.0f;
-		} else {
-			if ((target[m] > 0.0f) != (M_w[m] > 0.0f)) {
-				M_i[m] = 0.0f;                    /* direction change (or start from rest) */
-			}
-			M_pwm[m] = feed_forward(target[m]) + M_i[m];
 		}
-		M_w[m] = target[m];
 	}
+}
+
+/*
+ * Move the controller target M_w[m] toward the goal: at most accel_limit * dt per step
+ * (accel_limit 0 = jump to the goal). The integral is cleared when the wheel starts from 0
+ * or changes direction; otherwise it is kept, so a stream of similar commands (20 per
+ * second) does not throw away what the controller has learned.
+ */
+static void ramp_target(uint8_t m, float dt)
+{
+	const float goal = M_goal[m];
+	const float prev = M_w[m];
+	float next = goal;
+
+	if (goal != 0.0f && param[P_ACCEL] > 0.0f) {
+		const float step = param[P_ACCEL] * dt;
+		if (next > prev + step) next = prev + step;
+		if (next < prev - step) next = prev - step;
+	}
+	if (prev == 0.0f || (next > 0.0f) != (prev > 0.0f)) {
+		M_i[m] = 0.0f;
+	}
+	M_w[m] = next;
+}
+
+/* 1 if no wheel is commanded to move (the setting mode is open only then). */
+static uint8_t robot_stopped(void)
+{
+	for (uint8_t m = 0; m < NUM_MOTORS; m++) {
+		if (M_goal[m] != 0.0f || M_w[m] != 0.0f) {
+			return 0;
+		}
+	}
+	return 1;
 }
 
 /* Clamp the power commands and send them to the motors. */
@@ -284,11 +469,13 @@ static void set_motor_speed(void)
 /* ------------------------------------------------------------------------- */
 /*
  * e   = target - measured                         [rad/s]  (textbook sign)
- * pwm = FF(target) + PI_KP*e + I                  [% duty]
- * I  += PI_KI * e * dt, clamped to +-PI_I_LIMIT, and NOT integrated while the
+ * pwm = FF(target) + kp*e + I                     [% duty]
+ * I  += ki * e * dt, clamped to +-i_limit, and NOT integrated while the
  *       output is saturated (unless the error pulls it back out).
+ * kp, ki, i_limit and the FF table are run-time parameters (param[], setting mode).
  * A wheel with target 0 gets output 0 and I = 0.
- * dt is the real elapsed time of the measurement in seconds.
+ * dt is the control time step: the elapsed time, but at most one period (after a long
+ * pause, e.g. an EEPROM save, the integral and the ramp do not jump).
  *
  * The v0 controller added a PID output to the power every period (pwm -= u), which
  * made the integral term a double integrator; together with truncating u to an int
@@ -302,24 +489,28 @@ static void speed_control(uint8_t m, float dt)
 		return;
 	}
 
+	const float kp = param[P_KP];
+	const float i_limit = param[P_I_LIMIT];
 	const float e  = M_w[m] - M_w_measured[m];
 	const float ff = feed_forward(M_w[m]);
-	const float u  = ff + PI_KP * e + M_i[m];
+	const float u  = ff + kp * e + M_i[m];
 
 	/* Anti-windup: integrate unless the output is saturated AND the error would push it further. */
 	if ((u < PWM_LIMIT && u > -PWM_LIMIT) || ((u > 0.0f) != (e > 0.0f))) {
-		M_i[m] += PI_KI * e * dt;
-		if (M_i[m] >  PI_I_LIMIT) M_i[m] =  PI_I_LIMIT;
-		if (M_i[m] < -PI_I_LIMIT) M_i[m] = -PI_I_LIMIT;
+		M_i[m] += param[P_KI] * e * dt;
+		if (M_i[m] >  i_limit) M_i[m] =  i_limit;
+		if (M_i[m] < -i_limit) M_i[m] = -i_limit;
 	}
 
-	M_pwm[m] = ff + PI_KP * e + M_i[m];
+	M_pwm[m] = ff + kp * e + M_i[m];
 }
 
 /* ------------------------------------------------------------------------- */
 /* Main-loop work                                                             */
 /* ------------------------------------------------------------------------- */
-/* A command frame arrived: check its CRC, update the targets (feed-forward) and apply it now. */
+/* A command frame arrived: check its CRC and update the wheel goals. A stop is applied now,
+ * a non-zero goal by the next control step. With an invalid FF table a non-zero command is
+ * treated as a stop (state flags bit3). */
 static void handle_command(void)
 {
 	uint8_t b[1 + FRAME_CMD_PAYLOAD];  /* id, 6 data bytes, crc */
@@ -339,19 +530,104 @@ static void handle_command(void)
 	for (uint8_t i = 0; i < 3; i++) {
 		v[i] = (int16_t)((uint16_t)b[1 + 2 * i] | ((uint16_t)b[2 + 2 * i] << 8));
 	}
-	float Vx = v[0] / CMD_SCALE;
-	float Vy = v[1] / CMD_SCALE;
-	float w  = v[2] / CMD_SCALE;
-	calc_angular_speed(Vx, Vy, w);
+	uint8_t moving = (v[0] != 0 || v[1] != 0 || v[2] != 0);
+	if (moving && ff_state == FF_UNCHECKED) {
+		ff_state = ff_table_valid(param) ? FF_OK : FF_INVALID;   /* checked once after an edit */
+	}
+	if (ff_state == FF_INVALID) {
+		v[0] = v[1] = v[2] = 0;
+		moving = 0;
+	}
+	calc_angular_speed(v[0] / CMD_SCALE, v[1] / CMD_SCALE, v[2] / CMD_SCALE);
 
 	/* Any valid command (even a zero one) proves the Pi is alive: restart the timeout. */
 	cmd_age_ticks = 0;
-	cmd_active    = (v[0] != 0 || v[1] != 0 || v[2] != 0);
+	cmd_fresh     = 1;
+	cmd_ticks_before = tick_periods;   /* periods that passed before this command (e.g. an EEPROM save) */
+	cmd_active    = moving;
 	timed_out     = 0;
 	boot          = 0;
 
-	/* Output the feed-forward immediately instead of waiting for the next control period. */
+	/* Wheels with a zero goal stop now; the others keep their output until the next control step. */
 	set_motor_speed();
+}
+
+/* Queue the parameter reply  0xA5 0x04 op idx status value crc  (dropped if the TX buffer is full:
+ * the Pi then times out and asks again). */
+static void send_param_reply(uint8_t op, uint8_t idx, uint8_t status)
+{
+	uint8_t f[FRAME_REPLY_LEN];
+	const float value = (idx < NUM_PARAMS) ? param[idx] : 0.0f;
+
+	f[0] = FRAME_SYNC;
+	f[1] = FRAME_ID_PARAM_REPLY;
+	f[2] = op;
+	f[3] = idx;
+	f[4] = status;
+	memcpy(&f[5], &value, 4);                    /* AVR float = IEEE 754 single, little endian */
+	f[FRAME_REPLY_LEN - 1] = crc8(&f[1], FRAME_REPLY_LEN - 2);
+	usart_try_send_buf((const char *)f, FRAME_REPLY_LEN);
+}
+
+/* A parameter request arrived (setting mode): check its CRC, do the op, answer. Every op except
+ * get needs the robot stopped. Runs in the main loop (CONCURRENCY RULE at the top). */
+static void handle_param(void)
+{
+	uint8_t b[1 + FRAME_CMD_PAYLOAD];  /* id, op, idx, 4 value bytes, crc */
+
+	b[0] = FRAME_ID_PARAM;
+	ATOMIC_BLOCK(ATOMIC_FORCEON) {
+		for (uint8_t i = 0; i < FRAME_CMD_PAYLOAD; i++) {
+			b[1 + i] = param_frame[i];
+		}
+		param_ready = 0;
+	}
+	if (crc8(b, FRAME_CMD_PAYLOAD) != b[FRAME_CMD_PAYLOAD]) {
+		return;                        /* broken frame: no reply, the Pi asks again */
+	}
+
+	const uint8_t op  = b[1];
+	const uint8_t idx = b[2];
+	float value;
+	memcpy(&value, &b[3], 4);
+	uint8_t status = ST_OK;
+
+	if (op > OP_RELOAD) {
+		status = ST_BAD_OP;
+	} else if ((op == OP_GET || op == OP_SET) && idx >= NUM_PARAMS) {
+		status = ST_BAD_INDEX;
+	} else if (op != OP_GET && !robot_stopped()) {
+		status = ST_BUSY;
+	} else if (op == OP_SET) {
+		if (!param_in_range(idx, value)) {
+			status = ST_OUT_OF_RANGE;      /* also NaN and +-Inf; the value is not changed */
+		} else {
+			param[idx] = value;
+			params_in_eeprom = 0;
+			if (idx >= P_FF_SPEED) {
+				ff_state = FF_UNCHECKED;   /* checked at the next drive command or save */
+			}
+		}
+	} else if (op == OP_SAVE) {
+		if (!ff_table_valid(param)) {
+			status = ST_BAD_TABLE;
+		} else {
+			save_eeprom();
+			ff_state = FF_OK;
+			params_in_eeprom = 1;
+			cmd_age_ticks = 0;             /* the save blocked the loop: no timeout from that pause */
+		}
+	} else if (op == OP_DEFAULTS) {
+		load_defaults();
+		params_in_eeprom = 0;
+	} else if (op == OP_RELOAD) {
+		if (load_eeprom()) {
+			params_in_eeprom = 1;
+		} else {
+			status = ST_NO_EEPROM;
+		}
+	}
+	send_param_reply(op, idx, status);
 }
 
 /* A control period elapsed: measure, run the speed controllers, drive the motors, send the state frame. */
@@ -372,14 +648,25 @@ static void control_step(void)
 		return;
 	}
 
-	/* Exact elapsed time (normally exactly one period; more if the loop was late). */
-	const float dt = (float)periods * CONTROL_PERIOD_S;
+	/* Exact elapsed time (normally exactly one period; more if the loop was late, e.g. during an
+	 * EEPROM save). dt_meas is the time base of the speeds and of seq (the Pi odometry); the
+	 * controller (integral, ramp) uses at most one period, so a long pause causes no jump. */
+	const float dt_meas = (float)periods * CONTROL_PERIOD_S;
+	const float dt_ctrl = (periods > 1) ? CONTROL_PERIOD_S : dt_meas;
 	seq += periods;
 
 #if (CMD_TIMEOUT_MS > 0)
-	/* Command timeout: no velocity frame for too long while moving -> stop. */
+	/* Command timeout: no velocity frame for too long while moving -> stop.
+	 * For a command handled since the last step only the periods after it count (at least 1):
+	 * a command that waited in its slot during a pause (EEPROM save) does not time out at once,
+	 * and a late loop after the command is still counted in full. */
 	if (cmd_active) {
-		uint16_t age = (uint16_t)cmd_age_ticks + periods;
+		uint16_t age;
+		if (cmd_fresh) {
+			age = (periods > cmd_ticks_before + 1u) ? (uint16_t)(periods - cmd_ticks_before) : 1u;
+		} else {
+			age = (uint16_t)cmd_age_ticks + periods;
+		}
 		cmd_age_ticks = (age > 255u) ? 255u : (uint8_t)age;
 		if (cmd_age_ticks > CMD_TIMEOUT_TICKS) {
 			calc_angular_speed(0, 0, 0);          /* targets = 0, feed-forward PWM = 0 */
@@ -388,15 +675,17 @@ static void control_step(void)
 		}
 	}
 #endif
+	cmd_fresh = 0;
 
 	for (uint8_t m = 0; m < NUM_MOTORS; m++) {
 		int32_t counts = delta[motor_encoder[m]] * motor_enc_sign[m];
-		M_w_measured[m] = ((float)counts / ENC_COUNTS_PER_REV) / dt * TWO_PI_F;   /* rad/s */
+		M_w_measured[m] = ((float)counts / ENC_COUNTS_PER_REV) / dt_meas * TWO_PI_F;   /* rad/s */
 		M_count[m] += counts;
 	}
 
 	for (uint8_t m = 0; m < NUM_MOTORS; m++) {
-		speed_control(m, dt);
+		ramp_target(m, dt_ctrl);
+		speed_control(m, dt_ctrl);
 	}
 	set_motor_speed();
 	send_state_frame();
@@ -419,6 +708,9 @@ int main(void)
 
 	usart_enable(UART_BAUD);           /* binary frames only: no text is printed (v2.1.0) */
 
+	load_defaults();                   /* config.h values ... */
+	params_in_eeprom = load_eeprom();  /* ... replaced by a valid EEPROM block (setting mode) */
+
 	calc_angular_speed(0, 0, 0);       /* start with all targets = 0 */
 	set_motor_speed();
 
@@ -429,6 +721,9 @@ int main(void)
 	for (;;) {
 		if (cmd_ready) {
 			handle_command();
+		}
+		if (param_ready) {
+			handle_param();
 		}
 		if (tick_periods) {
 			control_step();

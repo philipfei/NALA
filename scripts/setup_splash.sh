@@ -60,5 +60,14 @@ echo "== Rebuild the initramfs (about 1 minute; flash-kernel copies it to /boot/
 sudo update-initramfs -u
 
 echo "== Check"
-plymouth-set-default-theme
+# (Ubuntu has no plymouth-set-default-theme.)
+echo "Default theme: $(readlink -f /etc/alternatives/default.plymouth)"
+INITRD=/boot/firmware/initrd.img
+[ -f "$INITRD" ] || INITRD=/boot/initrd.img
+if lsinitramfs "$INITRD" | grep -q 'themes/nala/prayer.png'; then
+  echo "Theme is in $INITRD."
+else
+  echo "ERROR: the nala theme is not in $INITRD." >&2
+  exit 1
+fi
 echo "Done. The splash shows at the next boot on a connected display."

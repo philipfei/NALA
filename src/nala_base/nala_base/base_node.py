@@ -23,7 +23,7 @@ from tf2_ros import TransformBroadcaster
 
 from nala_base.kinematics import integrate_pose, limit_wheel_speed, wheels_to_body
 from nala_base.mcu_protocol import (
-    count_delta, encode_command, FLAG_BOOT, FLAG_TIMEOUT, split_frames)
+    count_delta, encode_command, FLAG_BOOT, FLAG_FF_INVALID, FLAG_TIMEOUT, split_frames)
 
 ODOM_FRAME = 'odom'
 BASE_FRAME = 'base_footprint'
@@ -63,6 +63,7 @@ class BaseNode(Node):
         self.feedback_time = time.monotonic()  # time of the last valid state frame (or the start)
         self.feedback_lost = False             # True after feedback_timeout without a valid frame
         self.mcu_timed_out = False             # MCU reported its command timeout
+        self.ff_invalid = False                # MCU reported an invalid feed-forward table
 
         self.odom_pub = self.create_publisher(Odometry, 'odom', 10)
         self.tf_broadcaster = TransformBroadcaster(self)
@@ -111,7 +112,7 @@ class BaseNode(Node):
         buffer = b''
         while self.reading:
             buffer += self.serial.read(self.serial.in_waiting or 1)
-            states, buffer, bad = split_frames(buffer)
+            states, _, buffer, bad = split_frames(buffer)   # parameter replies: only for tune_motors.py
             if bad:
                 self.crc_errors += bad
                 self.get_logger().warn(f'State frame with a wrong CRC ({self.crc_errors} so far).',
@@ -129,6 +130,11 @@ class BaseNode(Node):
         if timed_out and not self.mcu_timed_out:
             self.get_logger().warn('MCU: cmd timeout (no valid command for 200 ms), stopped.')
         self.mcu_timed_out = timed_out
+        ff_invalid = bool(flags & FLAG_FF_INVALID)
+        if ff_invalid and not self.ff_invalid:
+            self.get_logger().error('MCU: feed-forward table invalid, it ignores drive commands. '
+                                    'Fix it with scripts/tune_motors.py (show, set, defaults or reload).')
+        self.ff_invalid = ff_invalid
 
         if self.counts is None or flags & FLAG_BOOT:
             if self.counts is not None:

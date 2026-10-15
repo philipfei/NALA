@@ -94,6 +94,9 @@ Everything below is project-specific and must be kept up to date.
 - Every setting the user may want to change lives in `config/` at the repo root: speed limits, timeouts,
   serial port, chassis parameters, LiDAR, SLAM, Nav2, coverage, teleop start speeds, DDS/network.
 - No tunable numbers in code or launch files. Nodes declare parameters without defaults, so a missing value fails loudly.
+- **Exception (user decision 2026-10-15):** the MCU speed controller parameters (kp, ki, i_limit, accel_limit,
+  feed-forward table) are kept in the **MCU EEPROM** (firmware v2.2.0 setting mode), set with `scripts/tune_motors.py`.
+  Their defaults are in `firmware/motor_driver_C/config.h`. After tuning, write the final values into `config.h` too.
 - `nala_bringup` installs `config/` into its share folder. Launch files read it from there.
   With `--symlink-install`, an edited file works after `git pull` without a rebuild (a new file needs a rebuild).
 - Config files are edited on the PC and pushed, like code.
@@ -180,8 +183,18 @@ Everything below is project-specific and must be kept up to date.
 
 - A teammate owns the firmware (`firmware/`) and builds and flashes it. **Claude may edit `firmware/`** (user, 2026-10-07).
   The PC has no avr-gcc (the user chose not to install it); Claude compile-checks on the Pi (avr-gcc 7.3).
-- Version in the repo: **v2.1.0** (2026-10-12, by Claude): UART with binary frames. Compile-checked on the Pi
-  (2026-10-12: 0 errors, 0 warnings). Flashed 2026-10-14: UART link checked (20 Hz frames, no CRC errors, `/odom` 20 Hz). Firmware and Pi code must match.
+- Version in the repo: **v2.2.0** (2026-10-15, by Claude): v2.1.0 + setting mode. Compile-checked on the Pi
+  (0 errors, 0 warnings, 9.3 KB flash, 610 B RAM, 99 B EEPROM). **Not flashed yet** (the MCU runs v2.1.0). Firmware and Pi code must match.
+- v2.2.0 setting mode: parameter request `0xA5 0x03 op idx float32 crc` (9 bytes, like a command), reply
+  `0xA5 0x04 op idx status float32 crc`. ops get / set / save (EEPROM, CRC-16 block) / defaults / reload. Every op
+  except get only while stopped ("busy"). Target ramp `accel_limit` (default 0 = off). No D term (user decision).
+  State flags bit2 = parameters are the EEPROM block, bit3 = FF table invalid (drive commands ignored).
+  EEPROM survives a reflash (EESAVE fuse). Pi tool: `scripts/tune_motors.py` (show, set, save, reload, defaults,
+  step, sweep [--floor], ff); it needs base_node stopped.
+- v2.1.0 flashed 2026-10-14: UART link checked (20 Hz frames, no CRC errors, `/odom` 20 Hz).
+  2026-10-15 (wheels in the air): wheel numbering, encoder signs and kinematics signs correct in forward, back,
+  strafe and turn. 0.15 m/s (3.75 rad/s): target in ~0.5 s, 25-30 % overshoot. 0.05 m/s (1.25 rad/s): starts
+  0.6-1 s late, then 2-3x overshoot and stick-slip (FF table too low near the dead zone, integral winds up).
 - Protocol source of truth: `firmware/README.md` (protocol, parameters, changes per version).
 - v2.1.0: UART 38400, binary frames `0xA5, id, data, crc8` (CRC-8 poly 0x07 of id + data). Command (id 0x01):
   vx, vy, w as int16 LE in mm/s, mrad/s. State (id 0x02, every 50 ms): seq, flags, 4 x int32 cumulative counts.
@@ -198,11 +211,12 @@ Everything below is project-specific and must be kept up to date.
 
 | Stage | App | Goal | Status |
 |---|---|---|---|
-| 1 | Teleop | Drive the chassis with the keyboard or the Xbox controller | Done and driven on the robot (2026-10-07, firmware v1.1.1). To test again with firmware v2.1.0 after the Pi reinstall |
+| 1 | Teleop | Drive the chassis with the keyboard or the Xbox controller | Done and driven on the robot (2026-10-07, firmware v1.1.1). v2.1.0: motors checked in the air (2026-10-15). Next: flash v2.2.0, tune the speed control, pair the Xbox controller |
 | 2 | Mapping | Teleop + real-time LiDAR SLAM + RViz on the PC + save the map and copy it back to the PC | Code done. IMU + EKF added and checked on the Pi (2026-10-09). Driving test and SLAM tuning pending |
 | 3 | Coverage | The user sets a base station on the PC, in the map saved by app 2. The robot starts at the base station, covers the whole house, then returns to it | Code on the branch `stage3-coverage` (tested in simulation only), not merged into main |
 
-**Current stage: 2** (mapping). Next: Pi reinstall and firmware v2.1.0 (`docs/handover.md`), then the driving test and SLAM tuning.
+**Current stage: 2** (mapping). Next (`docs/handover.md`): flash firmware v2.2.0 and tune the speed control
+(in the air, then on the floor with the user's ok), pair the Xbox controller, then the driving test and SLAM tuning.
 
 Stage 2 special requirement: the house has many very similar rooms.
 SLAM must not jump to a wrong but similar-looking place.
@@ -273,9 +287,13 @@ SLAM must not jump to a wrong but similar-looking place.
   250 MHz, Bluetooth and the Xbox controller work on the mini UART; `setup_imu.py` -> 115200 baud, 50 Hz, only
   0x51/0x52; `/imu` 50 Hz; gyro sign correct (counter-clockwise = positive); EKF 30 Hz without TF warnings,
   360 deg turns by hand tracked.
-- [1] **After the Pi reinstall (Ubuntu Desktop 24.04): follow `docs/handover.md`.** Phase A with the Pi alone
-  (install, build, firmware compile check, RViz on the Pi screen) is done (2026-10-12). Wait for the user's "ok". Phase B: connect and
-  test IMU, INA260, Xbox, MCU (firmware v2.1.0 flashed), LiDAR, chassis, one part at a time.
+- [1] **After the Pi reinstall (Ubuntu Desktop 24.04): follow `docs/handover.md`.** Phase A done (2026-10-12).
+  Phase B: IMU, LiDAR, MCU link, motors + encoders in the air done (2026-10-14/15). INA260 on hold.
+  Open: speed control tuning (firmware v2.2.0, after the teammate flashes it), Xbox pairing (the user does it later),
+  chassis on the floor (only with the user's permission), app 2.
+- [1] Pi boot splash: `scripts/setup_splash.sh` ran 2026-10-15 (Plymouth theme `nala` with `firmware/prayer.jpg`).
+  Not seen yet (no display connected). The headless boot waits ~31 s in `plymouth-quit-wait` for the GNOME
+  autologin session: normal, SSH works earlier.
 - [2] IMU gyro bias at rest: about -0.0015 rad/s = -5 deg/min of yaw drift while standing (2026-10-09).
   Not compensated yet (idea: average the gyro while standing still at start, or while the wheels do not move).
 - [2] IMU mount position and x direction (placeholders in `config/robot.yaml`; do not change the turn rate).

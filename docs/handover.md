@@ -1,4 +1,4 @@
-# Handover (2026-10-12)
+# Handover (2026-10-15)
 
 For the next Claude Code session, after the Pi is reinstalled. Read `CLAUDE.md` first: it has the rules,
 the hardware facts and the open questions. This file says where the work stopped and what to do next.
@@ -94,7 +94,41 @@ Status 2026-10-14 (network back on 10.42.0.0/24, the Pi is 10.42.0.154):
   runs, `/odom` 20.0 Hz, no warnings (only the INA260 one). Before it worked: a loose UART cable, and pull-up
   resistors on the TXB lines (removed; a TXB cannot pull a line low against them). With v1.1.1 and later
   v2.1.0 frames then arrived; the exact last fix was not confirmed.
-- Open: encoders (turn each wheel by hand: positive forward), Xbox, motors, chassis, app 2.
+- Motors + encoders: done (2026-10-15, motor power on, wheels in the air, v2.1.0). Forward, back, strafe left
+  and turn counter-clockwise at 0.05 m/s: every wheel has the right sign (M1..M4 = + + + +, - - - -, - + - +,
+  - - + +). Speed control: at 0.15 m/s good enough (target in ~0.5 s, 25-30 % overshoot); at 0.05 m/s bad
+  (0.6-1 s late start, 2-3x overshoot, stick-slip, once all wheels stopped for 0.6 s while commanded).
+  Raw test with a pyserial script, base_node stopped. Not confirmed yet by the user: that the wheels turned the
+  right way physically (the encoders only show their own sign).
+- Xbox: not paired yet (fresh Pi). A scan for 3 min found nothing; the user pairs it later.
+- Boot splash: `scripts/setup_splash.sh` ran (theme `nala` in the initramfs). Not seen yet (no display).
+- Open: firmware v2.2.0 (flash, then tune), Xbox, chassis on the floor, app 2.
+
+## 2026-10-15: firmware v2.2.0 setting mode (code done, **not flashed**)
+
+- The controller parameters (kp, ki, i_limit, accel_limit = new target ramp, feed-forward table) can be read and
+  set over the UART while stopped, and saved in the MCU EEPROM (user decision: EEPROM, not `config/`).
+  Protocol: `firmware/README.md` section 1. Pi tool: `scripts/tune_motors.py` (README, "Tune the wheel speed controller").
+- Tested on the PC: unit tests (48), firmware model tests (uart 22, timeout 13, param 37), the tool against a fake
+  MCU on a pty (show/set/save/reload/defaults, NaN/Inf rejected, busy while driving, slow save, Ctrl+C restore,
+  restore failure exits in 0.4 s, sweep --floor, ff), base_node with the v2.2.0 frames (`/odom` 20 Hz).
+  Compile check on the Pi: 0 errors, 0 warnings.
+- Defaults = the v2.1.0 values, so the behaviour is the same until parameters are set (only: a command starts
+  at the next control step, <= 50 ms later).
+
+### Next steps (in this order)
+
+1. The teammate flashes v2.2.0 (wheels in the air). The EEPROM is empty, so the MCU uses the defaults.
+2. `python3 ~/NALA/scripts/tune_motors.py show`: the defaults, flag "RAM differs from the EEPROM".
+   Then app 1 runs as before (`/odom` 20 Hz, no warnings).
+3. Wheels in the air: `tune_motors.py --yes ff` -> apply the suggested `ff_pwm` row (`set ...`), run `ff` again
+   until measured = table speed (+-5 %). Look at the low end (dead zone, ff_pwm0/ff_pwm1) for the 0.05 m/s problem.
+4. `tune_motors.py --yes sweep`: then adjust kp / ki / i_limit / accel_limit (for example accel_limit 20-40 rad/s^2
+   against step overshoot). Goal: overshoot < 10 %, settled < 0.5 s, also at 0.05 m/s. `save` when good.
+5. **Only with the user's explicit permission:** on the floor, `tune_motors.py sweep --floor` (each step <= 0.5 m,
+   each pair comes back). Then a 1 m drive against a tape measure.
+6. Write the final values into `config.h` (defaults) and the docs.
+7. Xbox pairing (README "Setup, Pi"), drive with the controller, then app 2 (SLAM test).
 
 The user connects the parts. Claude tests each one before the next:
 

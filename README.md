@@ -8,7 +8,7 @@ The PC runs the keyboard teleop, RViz and the map tools. An Xbox controller (pai
 
 | App | What it does | Status |
 |---|---|---|
-| 1. Teleop | Drive the chassis with the PC keyboard or an Xbox controller | Code done. Hardware test pending (motors not connected yet) |
+| 1. Teleop | Drive the chassis with the PC keyboard or an Xbox controller | Driven 2026-10-07. Firmware v2.1.0: MCU link, motors and encoders checked in the air (2026-10-15). Speed control tuning with v2.2.0 pending |
 | 2. Mapping | App 1 + real-time LiDAR SLAM on the Pi (wheel odometry + IMU in an EKF) + RViz on the PC + save the map and copy it to the PC | Code done. IMU and EKF checked on the Pi (2026-10-09). The new MCU link (firmware v2.1.0) is not tested on the robot yet: see [docs/handover.md](docs/handover.md). SLAM tuning needs driving |
 | 3. Coverage | Pick a base station in the saved map on the PC. The robot starts there, covers the whole house, and returns | Not started |
 
@@ -91,6 +91,8 @@ NALA/
 │   ├── cyclonedds.xml                     [1] Cyclone DDS: use only the robot network 10.42.0.0/24
 │   ├── robot.yaml                         [2] Robot model: body size, LiDAR and IMU mount poses (read by the URDF)
 │   ├── battery.yaml                       [1] INA260 battery monitor: I2C address, full / low / empty voltage
+│   ├── tune_motors.yaml                   [1] Test settings of scripts/tune_motors.py (step times, sweep speeds, timeouts).
+│   │                                      The controller parameters themselves are in the MCU EEPROM
 │   ├── imu.yaml                           [2] WT901 IMU: serial port, baud rate, gyro variance; rate written by setup_imu.py
 │   ├── ekf.yaml                           [2] robot_localization EKF: wheel vx, vy + IMU turn rate -> odom TF
 │   ├── rplidar.yaml                       [2] RPLIDAR A2M8 driver params: port, baud rate, frame, scan mode
@@ -105,14 +107,15 @@ NALA/
 │   └── imu_ekf.md                         [2] IMU wiring and setup, EKF design: why only the gyro turn rate
 │
 ├── firmware/                              MCU motor driver (ATmega328PB), Microchip Studio project.
-│   │                                      Owned by a teammate, who builds and flashes it. v1.1.1 (by Claude).
+│   │                                      Owned by a teammate, who builds and flashes it. v2.2.0 (by Claude).
 │   ├── README.md                          Protocol (source of truth), parameters, build/flash, changes per version
 │   ├── prayer.jpg                         The team's prayer picture (JPEG). Also the Pi boot splash (scripts/setup_splash.sh)
 │   ├── docs/
 │   │   └── state_machine.svg              Firmware state machine (labels in Chinese)
 │   ├── tests/                             Model tests and simulations (Python, run on a PC)
-│   │   ├── uart_frame_model_test.py       UART frames: receive state machine, CRC-8 (same bytes as the Pi)
-│   │   ├── timeout_model_test.py          200 ms command timeout
+│   │   ├── uart_frame_model_test.py       UART frames: receive state machine, parameter frames, CRC-8 (same bytes as the Pi)
+│   │   ├── timeout_model_test.py          200 ms command timeout (also after a pause, e.g. an EEPROM save)
+│   │   ├── param_model_test.py            Setting mode: parameter ops, busy rule, NaN/Inf, FF table check, EEPROM CRC-16, ramp
 │   │   ├── motor_polarity_model_test.py   Motor direction pins
 │   │   ├── pid_sim.py                     Speed controller simulation
 │   ├── arduino_uart_test/
@@ -129,9 +132,9 @@ NALA/
 │       ├── motor_driver_C.cproj           Studio project: device, compiler and linker settings
 │       ├── motor_driver_C.componentinfo.xml   Studio device pack info
 │       ├── config.h                       All firmware parameters and the wiring map
-│       ├── main.c                         Command handling, kinematics, PID loop, feedback, timeout
+│       ├── main.c                         Command handling, kinematics, PI loop + ramp, feedback, timeout, setting mode + EEPROM
 │       ├── encoder.c / encoder.h          Encoder counting in pin-change interrupts
-│       ├── USART.c / Usart.h              UART driver (debug text only since v2.0.0; TX ring buffer)
+│       ├── USART.c / Usart.h              UART driver (TX ring buffer; the frame parser is in main.c)
 │       ├── motor_functions.c / .h         Set PWM duty and direction of each motor
 │       ├── pwm.c / pwm.h                  PWM pin and timer setup
 │       ├── timer.c / timer.h              Timer helpers (Timer3 is the 50 ms control tick)
@@ -144,6 +147,7 @@ NALA/
 ├── scripts/
 │   ├── setup_pi.sh                        [1] One-time Pi setup: ROS, Cyclone DDS, UART, I2C, USB serial rules, permissions, ~/.bashrc
 │   ├── setup_imu.py                       [2] Pi, once: IMU output (acc + gyro), 50 Hz, 115200 baud
+│   ├── tune_motors.py                     [1] Pi: MCU speed controller tuning (show/set/save parameters, step, sweep, ff test)
 │   ├── setup_splash.sh                    Pi, once: boot splash = firmware/prayer.jpg (Plymouth theme, rebuilds the initramfs)
 │   ├── splash/
 │   │   ├── nala.plymouth                  Plymouth theme description (script plugin)
@@ -168,7 +172,8 @@ NALA/
     │   │   └── nala_base                  (empty) [1] ament index marker. Stays empty
     │   ├── nala_base/
     │   │   ├── __init__.py                (empty) [1] Python package marker. Stays empty
-    │   │   ├── mcu_protocol.py            [1] UART command and state frames, CRC-8 (no ROS)
+    │   │   ├── mcu_protocol.py            [1] UART command, state and parameter frames, CRC-8 (no ROS)
+    │   │   ├── step_metrics.py            [1] Step-response metrics of the wheel speeds, for tune_motors.py (no ROS)
     │   │   ├── kinematics.py              [1] Wheel speed limit. [2] Wheel speeds -> body speed, pose integration (no ROS)
     │   │   ├── base_node.py               [1] ROS node: UART, wheel speed limit, /cmd_vel timeout. [2] /odom (and TF)
     │   │   ├── ina260.py                  [1] INA260 register decoding, voltage -> charge (no ROS)
@@ -179,6 +184,7 @@ NALA/
     │       ├── test_mcu_protocol.py       [1] Unit tests for mcu_protocol.py
     │       ├── test_ina260.py             [1] Unit tests for ina260.py
     │       ├── test_kinematics.py         [1] Unit tests for kinematics.py
+    │       ├── test_step_metrics.py       [1] Unit tests for step_metrics.py
     │       └── test_wt901.py              [2] Unit tests for wt901.py
     │
     ├── nala_teleop/                       PC keyboard teleop with fixed speeds (no speed keys)
@@ -353,6 +359,26 @@ Both:
 - Strafe and turn work at the same time. If a command needs a wheel faster than the motors can go
   (`max_wheel_speed` in `config/base.yaml`), the Pi slows the whole command down by the same factor.
 - Stop: Ctrl+C in either terminal. The Pi sends a stop frame when it exits.
+
+### Tune the wheel speed controller (MCU firmware v2.2.0)
+
+The PI gains, the target ramp and the feed-forward table live in the MCU (RAM, saved in its EEPROM).
+Stop app 1 / app 2 first (same UART). **Pi terminal** (`ssh nala@nala.local`):
+
+```bash
+python3 ~/NALA/scripts/tune_motors.py show                  # what the MCU uses now
+python3 ~/NALA/scripts/tune_motors.py ff                    # wheels in the air: measure the feed-forward table
+python3 ~/NALA/scripts/tune_motors.py sweep                 # wheels in the air: steps in 6 directions, 4 speeds
+python3 ~/NALA/scripts/tune_motors.py step --vx 0.15        # one step, metrics per wheel (--csv FILE for the data)
+python3 ~/NALA/scripts/tune_motors.py set kp 2 accel_limit 20   # change in RAM (only while stopped)
+python3 ~/NALA/scripts/tune_motors.py save                  # keep it after power-off (EEPROM)
+python3 ~/NALA/scripts/tune_motors.py reload                # undo unsaved changes
+python3 ~/NALA/scripts/tune_motors.py defaults              # the firmware defaults (config.h); then save
+python3 ~/NALA/scripts/tune_motors.py sweep --floor         # on the floor: short steps, each pair comes back
+```
+
+Every motion asks first ("Wheels lifted or floor clear?"). Ctrl+C stops at once; `ff` puts the original gains back.
+Parameter names: `kp`, `ki`, `i_limit`, `accel_limit`, `ff_speed0`..`ff_speed9`, `ff_pwm0`..`ff_pwm9`.
 
 ### App 2: mapping
 

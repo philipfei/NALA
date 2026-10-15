@@ -1,6 +1,6 @@
 # NALA firmware (ATmega328PB motor driver)
 
-Firmware for the NALA base. It receives body-velocity commands from the Pi over UART, runs a speed controller on four mecanum wheels and sends the cumulative encoder counts back. Current version: **v2.1.0**. Toolchain: Atmel/Microchip Studio 7 (avr-gcc 5.4.0, ATmega_DFP 1.7.374), 16 MHz external crystal.
+Firmware for the NALA base. It receives body-velocity commands from the Pi over UART, runs a speed controller on four mecanum wheels and sends the cumulative encoder counts back. Current version: **v2.2.0**. Toolchain: Atmel/Microchip Studio 7 (avr-gcc 5.4.0, ATmega_DFP 1.7.374), 16 MHz external crystal.
 
 > ### HARDWARE POLARITY NOTE (read before touching the motor wiring)
 >
@@ -14,7 +14,7 @@ Firmware for the NALA base. It receives body-velocity commands from the Pi over 
 
 Pi side: [`../src/nala_base/nala_base/mcu_protocol.py`](../src/nala_base/nala_base/mcu_protocol.py), [`../docs/mcu_protocol.md`](../docs/mcu_protocol.md).
 
-## 1. Protocol (v2.1.0: UART, binary frames)
+## 1. Protocol (v2.2.0: UART, binary frames, setting mode)
 
 UART0, **38400 8N1**, no flow control. MCU **PD0 = RXD0, PD1 = TXD0** (5 V). The Pi (GPIO14 TX / GPIO15 RX, 3.3 V,
 `/dev/ttyAMA0`) is connected through the level shifter on the board.
@@ -43,7 +43,8 @@ Same code in `main.c` (`crc8`) and on the Pi (`mcu_protocol.crc8`).
 - vx, vy in **mm/s**, w in **mrad/s**, **int16 little endian**. Axes follow ROS (REP-103): vx forward, vy left, w counter-clockwise positive.
 - Examples: stop `A5 01 00 00 00 00 00 00 DF`; forward 0.3 m/s `A5 01 2C 01 00 00 00 00 crc`; right 0.1 m/s `A5 01 00 00 9C FF 00 00 crc`.
 - Receive state machine (`USART0_RX_vect`): **IDLE** (only here `0xA5` starts a frame) -> **HEADER_ACK** (`0x01` -> PAYLOAD, `0xA5` -> stay, other -> IDLE) -> **PAYLOAD** (6 data bytes + crc; a `0xA5` in here is data and never restarts the frame) -> complete (`cmd_ready`). The CRC is checked in the main loop; a frame with a wrong CRC is ignored.
-- A valid command is applied immediately (feed-forward) and then refined by the controller every 50 ms.
+- A valid zero command stops the wheels at once (they coast). A non-zero command is applied by the next control step (<= 50 ms), so every output comes from the full controller (since v2.2.0).
+- While the feed-forward table is invalid (state flag bit3), non-zero commands are ignored (treated as a stop).
 - :fire:**Command timeout:** while the robot is moving, if no valid command arrives for **200 ms** (`CMD_TIMEOUT_MS`, 0 disables), all targets are set to zero and state flag bit1 is set (until the next valid command). A zero command never times out. **The Pi must keep sending the command** (20 Hz).
 
 ### MCU -> Pi: state frame (21 bytes, every control period = 20 Hz)
@@ -53,10 +54,48 @@ Same code in `main.c` (`crc8`) and on the Pi (`mcu_protocol.crc8`).
 | Content | `0xA5` | `0x02` | seq | flags | M1 | M2 | M3 | M4 | CRC-8 of bytes 1-19 |
 
 - seq: control period counter (uint8, wraps at 256). The difference of two frames = the number of 50 ms periods between them: the exact time base for the speeds.
-- flags: bit0 = no valid command since power-up (the counters started at 0), bit1 = stopped by the command timeout.
+- flags: bit0 = no valid command since power-up (the counters started at 0), bit1 = stopped by the command timeout, bit2 = the parameters in RAM are the EEPROM block (loaded or saved, unchanged since), bit3 = the feed-forward table is invalid (non-zero drive commands are ignored).
 - Mn: **cumulative encoder counts** since power-up (int32 little endian, 1536 per wheel turn), positive = the wheel drove the robot forward. The Pi uses the difference of two frames, so a lost frame loses no distance.
 
 > **Link budget** (38400 baud = 3840 byte/s): commands 9 bytes x 20 Hz = 5 % of the Pi -> MCU wire, state frames 21 bytes x 20 Hz = 11 % of the MCU -> Pi wire. A frame that does not fit into the TX ring buffer (128 bytes, checked at compile time to be >= 32) is dropped, never waited for.
+
+### Setting mode (v2.2.0): parameter request and reply
+
+The controller parameters live in RAM (`param[]` in `main.c`). They can be read and changed over the UART and
+saved in the EEPROM. Tool on the Pi: `scripts/tune_motors.py` (see the main README).
+
+Pi -> MCU, **parameter request, 9 bytes** (same length as a command: 6 data bytes + CRC after sync and id, no padding):
+
+| Byte | 0 | 1 | 2 | 3 | 4-7 | 8 |
+|---|---|---|---|---|---|---|
+| Content | `0xA5` | `0x03` | op | idx | value (float32 LE) | CRC-8 of bytes 1-7 |
+
+MCU -> Pi, **parameter reply, 10 bytes**:
+
+| Byte | 0 | 1 | 2 | 3 | 4 | 5-8 | 9 |
+|---|---|---|---|---|---|---|---|
+| Content | `0xA5` | `0x04` | op | idx | status | value (float32 LE) after the op | CRC-8 of bytes 1-8 |
+
+- op: 0 get, 1 set (RAM), 2 save all to the EEPROM, 3 load the `config.h` defaults (RAM), 4 reload from the EEPROM (RAM). idx is ignored by ops 2-4 (the Pi sends 0).
+- status: 0 ok, 1 bad index, 2 out of range (also NaN and +-Inf; the value is not changed), 3 busy, 4 bad feed-forward table, 5 bad op, 6 no valid EEPROM block.
+- **Only while stopped:** every op except get needs all wheel targets at 0, otherwise the reply is "busy".
+- The Pi sends **one request at a time** and waits for the reply (0.2 s; save 1.0 s). A request with a wrong CRC gets no reply.
+- The RX state machine keeps **one slot per id** (command, parameter request): drive commands that arrive while the main loop is busy never overwrite a waiting request.
+- A parameter request is not a drive command: it does not restart the command timeout and does not clear the boot flag.
+
+| idx | name | default (`config.h`) | range |
+|---|---|---|---|
+| 0 | kp | `PI_KP` 1.0 % per rad/s | 0..50 |
+| 1 | ki | `PI_KI` 8.0 % per rad/s per s | 0..200 |
+| 2 | i_limit | `PI_I_LIMIT` 25 % | 0..100 |
+| 3 | accel_limit | `ACCEL_LIMIT` 0 rad/s^2 (0 = off) | 0..200 |
+| 4-13 | ff_speed0..9 | `FF_SPEED_RAD_S` | 0..20 rad/s |
+| 14-23 | ff_pwm0..9 | `FF_PWM_PCT` | 0..100 % |
+
+- **Feed-forward table edits:** a set of one point only checks that value's range. The whole table (ff_speed0 = 0, speeds strictly increasing) is checked at the next non-zero drive command and at save. Invalid: drive commands are ignored and flag bit3 is set (until an edit makes it valid again); save is refused (status 4).
+- **EEPROM:** one block = layout version (`EEPROM_LAYOUT_VERSION`) + the 24 floats + **CRC-16** (XMODEM: poly 0x1021, init 0) over version and data, 99 bytes. At power-up a block with the right version and CRC, finite values within range and a valid table replaces the defaults; otherwise the defaults are used. The fuse `hfuse 0xD1` has EESAVE set, so **a reflash keeps the saved parameters** (use op 3 + save, or `tune_motors.py defaults` + `save`, to go back to `config.h`). Change `EEPROM_LAYOUT_VERSION` when the parameter list changes.
+- **Save** blocks the main loop for up to ~0.35 s (3.4 ms per changed byte). Interrupts keep running (encoders, Timer3, UART RX into its slots, UART TX). The next control step uses the real elapsed time for the speeds and `seq`, but at most one period for the integral and the ramp; a command that waited during the save does not time out at once.
+- Concurrency: `param[]` and the controller state are only used in the main loop, never in an interrupt, so a float is never read half-written.
 
 ## 2. Interface
 
@@ -83,12 +122,12 @@ Same code in `main.c` (`crc8`) and on the Pi (`mcu_protocol.crc8`).
 | State frame | sent every period (20 Hz), cumulative encoder counts |
 | Command timeout | 200 ms |
 | Pi link / command units | UART0 38400 baud, binary frames with CRC-8 / int16 mm/s and mrad/s |
-| Speed controller | positional PI + feed-forward + anti-windup: Kp 1.0, Ki 8.0, integral limit 25 % |
+| Speed controller | positional PI + feed-forward + anti-windup + target ramp (no D term). Defaults: Kp 1.0, Ki 8.0, integral limit 25 %, ramp off. Run-time values: setting mode (section 1), saved in the EEPROM |
 | Feed-forward | table speed -> PWM from step tests (v1.1.1, `FF_*` in `config.h`): 0 -> 9 % (dead zone), 3.5 -> 15 %, 6.6 -> 21.5 %, 8.1 -> 29.5 %, 9.4 -> 37.5 %, 10.7 -> 45.5 %, 11.5 -> 54 %, 11.85 -> 63 %, 12.2 -> 72 %, 13.0 rad/s -> 100 % |
 | Output limit | +-100 % (8-bit PWM, 1/255 resolution) |
 | Measured top speed (100 % PWM) | 12.6-13.1 rad/s = 0.50-0.52 m/s rim speed, with and without load (2026-10-07) |
 
-Controller per wheel: `e = target - measured`, `pwm = FF(target) + Kp*e + I`, `I += Ki*e*dt` (clamped, not integrated while saturated). Target 0 gives output 0 and clears `I`; `I` is also cleared when the target changes sign.
+Controller per wheel: `e = target - measured`, `pwm = FF(target) + Kp*e + I`, `I += Ki*e*dt` (clamped, not integrated while saturated). Target 0 gives output 0 and clears `I`; `I` is also cleared when the target changes sign. With `accel_limit` > 0 the target moves toward the commanded wheel speed by at most `accel_limit * dt` per step (a stop is always at once). `dt` for the integral and the ramp is at most one period.
 
 ## 4. Firmware structure
 
@@ -98,10 +137,10 @@ Nothing blocks: interrupts only collect data and set flags, the main loop does t
 |---|---|---|
 | `PCINT0/1/2_vect` | edge on an encoder A pin (ports B / C / D) | counts the edge (+1/-1 from B) |
 | `TIMER3_COMPA_vect` | every 50 ms, exact | snapshots the encoder counts, sets the control tick |
-| `USART0_RX_vect` | byte received | command frame state machine (IDLE, HEADER_ACK, PAYLOAD); sets `cmd_ready` |
+| `USART0_RX_vect` | byte received | frame state machine (IDLE, HEADER_ACK, PAYLOAD) for commands and parameter requests; one slot each, sets `cmd_ready` / `param_ready` |
 | `USART0_UDRE_vect` | TX register empty | sends the next byte from the 128-byte ring buffer |
 
-Main loop: check (CRC) and apply a new command, and on each tick do speed measurement (counts / real elapsed time), timeout check, controller, motor output and send the state frame.
+Main loop: check (CRC) and apply a new command; check (CRC) and answer a parameter request (setting mode); on each tick do speed measurement (counts / real elapsed time), timeout check, ramp, controller, motor output and send the state frame.
 
 ## 5. Build, flash, test
 
@@ -129,8 +168,8 @@ Main loop: check (CRC) and apply a new command, and on each tick do speed measur
   so take it from the same device pack Studio uses (unzip `gcc/dev/atmega328pb/` and `include/` to `/tmp/dfp/pack`):
   `curl -fsSL -o /tmp/dfp/dfp.zip http://packs.download.atmel.com/Atmel.ATmega_DFP.1.7.374.atpack`, then
   `avr-gcc -B /tmp/dfp/pack/gcc/dev/atmega328pb/ -I /tmp/dfp/pack/include -mmcu=atmega328pb -DF_CPU=16000000UL -Os -Wall -Wextra -o /tmp/fw.elf motor_driver_C/*.c`.
-  v2.0.0 (2026-10-09): 0 errors, 0 warnings, 7.3 KB flash, 428 B RAM. v2.1.0 (2026-10-12): 0 errors, 0 warnings, 7.0 KB flash, 374 B RAM.
-- **Tests** (models and simulation, not hardware): `python tests/uart_frame_model_test.py`, `timeout_model_test.py`, `motor_polarity_model_test.py`, `pid_sim.py`.
+  v2.0.0 (2026-10-09): 0 errors, 0 warnings, 7.3 KB flash, 428 B RAM. v2.1.0 (2026-10-12): 0 errors, 0 warnings, 7.0 KB flash, 374 B RAM. v2.2.0 (2026-10-15): 0 errors, 0 warnings, 9.3 KB flash (9547 B), 610 B RAM, 99 B EEPROM.
+- **Tests** (models and simulation, not hardware): `python tests/uart_frame_model_test.py`, `timeout_model_test.py`, `param_model_test.py`, `motor_polarity_model_test.py`, `pid_sim.py`.
 
 ## 6. Changes per version
 
@@ -176,12 +215,23 @@ Main loop: check (CRC) and apply a new command, and on each tick do speed measur
 - Receive state machine IDLE -> HEADER_ACK -> PAYLOAD; a `0xA5` inside the data never restarts a frame.
 - No text on the UART any more (boot text `a`, `test` and `cmd timeout` removed; the state flags carry that). `adc_init()` is no longer called.
 
+**v2.2.0 (2026-10-15)** - setting mode. **Needs the matching Pi code** (same commit).
+- Why: the motor test with v2.1.0 (2026-10-15, wheels in the air) showed 25-30 % overshoot at 3.75 rad/s and, at 1.25 rad/s, a start 0.6-1 s late, then 2-3x overshoot and stick-slip. Each gain change needed a reflash.
+- Parameter request `0xA5 0x03` / reply `0xA5 0x04` (section 1): kp, ki, i_limit, accel_limit and the 10-point feed-forward table can be read and changed while stopped, and saved in the EEPROM (CRC-16 block, loaded at power-up).
+- New target ramp (`accel_limit`, default 0 = off). No D term (the speed estimate is quantised to 0.082 rad/s).
+- A non-zero command is applied by the next control step: v2.1.0 wrote `FF + I` (without the P term) when a command arrived, between the control steps.
+- Integral and ramp use at most one period as `dt` after a late loop; the command timeout counts only the periods after a command (no false timeout after an EEPROM save).
+- State flags bit2 (parameters = EEPROM block) and bit3 (feed-forward table invalid).
+- The defaults (`config.h`) are the v2.1.0 values. With them the only change in behaviour is the start of a command: up to 50 ms later, through the full controller.
+
 ## 7. Known limitations
 
 - The PI gains come from simulation of an *assumed* motor model. The feed-forward table is measured (wheels in the air); check it with step tests after flashing v1.1.1.
-- **v2.1.0**: compile-checked 2026-10-12 (0 warnings). On the MCU 2026-10-14: state frames at 20 Hz without CRC errors, commands accepted. Motors and encoders not tested yet.
+- **v2.1.0**: on the MCU 2026-10-14/15: state frames at 20 Hz without CRC errors; motors, encoders and kinematics signs correct (wheels in the air).
+- **v2.2.0**: compile-checked 2026-10-15 (0 warnings), tested only with Python models and a fake MCU. Not flashed yet.
+- The speed controller is not tuned on the robot yet: use `scripts/tune_motors.py` (in the air: `ff`, `sweep`; then `sweep --floor`).
 - The motors reach only ~13 rad/s (0.50-0.52 m/s). Faster targets saturate at 100 % PWM; the Pi limits every wheel to 0.45 m/s (`max_wheel_speed` in `config/base.yaml`).
 - Stopping is by coasting, so the stopping distance depends on friction.
 
 ---
-Last updated: 2026-10-12 (v2.1.0) · Stiffeel :octocat: · Claude
+Last updated: 2026-10-15 (v2.2.0) · Stiffeel :octocat: · Claude

@@ -4,8 +4,8 @@ The firmware is owned by a teammate, who builds and flashes it (Claude may edit 
 
 - [firmware/README.md](../firmware/README.md): the protocol, parameters and changes per version.
 
-This file is the Pi-side summary, for firmware **v2.1.0 (2026-10-12)**: UART with binary frames.
-The Pi code only works with v2.1.0 or newer.
+This file is the Pi-side summary, for firmware **v2.2.0 (2026-10-15)**: UART with binary frames, plus the
+setting mode (parameter frames). `base_node` works with v2.1.0 or newer; `scripts/tune_motors.py` needs v2.2.0.
 When the firmware protocol changes, update the Pi code (`src/nala_base/nala_base/mcu_protocol.py`)
 and this file in the same commit.
 
@@ -49,7 +49,24 @@ valid command). A zero command never times out. A stop lets the motors coast: no
 | seq | MCU control period counter (50 ms, wraps at 256) |
 | flags bit0 | no valid command since the MCU started: its counters start at 0 |
 | flags bit1 | stopped by the command timeout |
+| flags bit2 | the MCU parameters are its EEPROM block (loaded or saved, unchanged since) (v2.2.0) |
+| flags bit3 | the feed-forward table is invalid: the MCU ignores non-zero drive commands (v2.2.0; `base_node` logs an error) |
 | M1..M4 | cumulative encoder counts since the MCU start, + = the wheel drove the robot forward |
+
+### Setting mode (v2.2.0): parameter request (9 bytes) and reply (10 bytes)
+
+Used only by `scripts/tune_motors.py` (with `base_node` stopped). Details and the parameter table: `firmware/README.md`.
+
+- Pi -> MCU `0xA5, 0x03, op, idx, value (float32 LE), crc`: same length as a command (6 data bytes + crc).
+  op 0 get, 1 set (RAM), 2 save to the EEPROM, 3 load the firmware defaults, 4 reload from the EEPROM.
+- MCU -> Pi `0xA5, 0x04, op, idx, status, value (float32 LE), crc`. status 0 ok, 1 bad index, 2 out of range
+  (or not finite), 3 busy (not stopped), 4 bad feed-forward table, 5 bad op, 6 no valid EEPROM block.
+- Parameters (`mcu_protocol.PARAM_NAMES`, same order as the firmware): 0 kp, 1 ki, 2 i_limit, 3 accel_limit,
+  4-13 ff_speed0..9, 14-23 ff_pwm0..9.
+- Every op except get only while the robot is stopped. One request at a time.
+- The saved parameters are in the **MCU EEPROM** (user decision 2026-10-15), not in `config/`. A reflash keeps them.
+  `tune_motors.py show` prints what the MCU uses.
+- `split_frames` returns both frame types: `(states, replies, rest, bad)`. `base_node` ignores the replies.
 
 ## How the Pi talks to the MCU (`base_node`)
 
@@ -113,6 +130,6 @@ w  = R/(4*k) * (-M1 - M2 + M3 + M4)
 4. `J` (Shift+j, strafe left), `j` (turn counter-clockwise): the wheels turn as in the formulas above.
 5. Release the key: the wheels stop after about 0.6 s (Pi `/cmd_vel` timeout). No MCU timeout warning,
    because the Pi keeps sending (zero) commands. The wheels coast to a stop (no braking).
-6. Speed control: v1.1.1 feed-forward table, step tests 0.05-0.45 m/s (see `firmware/README.md`).
+6. Speed control: tune with `scripts/tune_motors.py` (firmware v2.2.0 setting mode): `ff` and `sweep` in the air, then `sweep --floor`.
 7. Top speed: 100 % PWM gives only 12.6-13.1 rad/s (0.50-0.52 m/s, measured 2026-10-07). The firmware clips each
    wheel at 100 % on its own, so the Pi keeps every wheel below `max_wheel_speed` (`config/base.yaml`).

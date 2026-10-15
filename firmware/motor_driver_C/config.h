@@ -3,8 +3,8 @@
  *
  * Project : NALA motor driver (ATmega328PB, 4x mecanum wheels, 4x quadrature encoders)
  * Author  : HY (NALA v1 revision)
- * Version : v2.1.0
- * Date    : 2026-10-12
+ * Version : v2.2.0
+ * Date    : 2026-10-15
  *
  * v1 changes vs v0: 20 Hz control/feedback (50 ms period), speed controller
  * redesigned (positional PI + feed-forward + anti-windup, replaces the old
@@ -17,6 +17,10 @@
  * v2.0.0: Pi link over I2C (TWI0 slave). Never worked: the level shifter on the board is
  * a TXB type, which cannot do I2C. Commands in int16 mm/s and mrad/s, state frame, CRC-8.
  * v2.1.0: back to UART (PD0/PD1) with the v2.0.0 frame contents as binary frames.
+ * v2.2.0: setting mode: the controller parameters below are only the DEFAULTS. At run time
+ * they live in RAM (param[] in main.c), can be read and changed over the UART (parameter
+ * frames, only while stopped) and saved in the EEPROM. A valid EEPROM block wins at boot.
+ * New: target ramp (ACCEL_LIMIT). No D term (the speed estimate is quantised).
  *
  * Everything that is "a number you may want to change" or "a wire you may want to
  * re-assign" lives in this file. The .c files contain no magic numbers for these.
@@ -112,6 +116,11 @@
 #define PI_KI               8.0f      /* [% pwm per rad/s per s] */
 #define PI_I_LIMIT          25.0f     /* [% pwm] anti-windup clamp of the integral */
 
+/* Target ramp (v2.2.0): each control period the target used by the controller moves toward
+ * the commanded wheel speed by at most ACCEL_LIMIT * period. 0 = off (the target jumps, as before).
+ * A zero command always stops at once (coast), ramp or not. */
+#define ACCEL_LIMIT         0.0f      /* [rad/s^2] wheel acceleration limit, 0 = off */
+
 /* Feed-forward FF(target): PWM [%] that makes a wheel turn at |target| rad/s, from a table
  * (linear interpolation between the points, same sign as the target).
  * The motor curve is NOT linear (measured 2026-10-07, wheels in the air, step tests;
@@ -127,6 +136,30 @@
 
 /* A wheel target below this is treated as "stopped" [rad/s]. */
 #define W_ZERO_EPS          0.01f
+
+/* ------------------------------------------------------------------------- */
+/* Setting mode (v2.2.0): run-time parameters, EEPROM                         */
+/* ------------------------------------------------------------------------- */
+/*
+ * Parameter index (the Pi uses the same order, mcu_protocol.PARAM_NAMES):
+ *   0 kp, 1 ki, 2 i_limit, 3 accel_limit, 4..13 ff_speed0..9, 14..23 ff_pwm0..9
+ * The defaults are the values above. A set is accepted only while the robot is stopped
+ * (all wheel targets 0), only for a finite value within 0 .. the maximum below.
+ */
+#define PARAM_KP_MAX            50.0f     /* [% pwm per rad/s] */
+#define PARAM_KI_MAX            200.0f    /* [% pwm per rad/s per s] */
+#define PARAM_I_LIMIT_MAX       100.0f    /* [% pwm] */
+#define PARAM_ACCEL_MAX         200.0f    /* [rad/s^2] */
+#define PARAM_FF_SPEED_MAX      20.0f     /* [rad/s] */
+#define PARAM_FF_PWM_MAX        100.0f    /* [% pwm] */
+
+/*
+ * EEPROM block: layout version, all parameters (float), CRC-16 (XMODEM: poly 0x1021, init 0)
+ * of the version and the parameters. Change the version whenever the parameter list changes:
+ * an old block is then ignored and the defaults are used.
+ * The fuse hfuse 0xD1 has EESAVE set: a reflash keeps the EEPROM (and the saved parameters).
+ */
+#define EEPROM_LAYOUT_VERSION   1
 
 /* ------------------------------------------------------------------------- */
 /* Pi link: UART0 with binary frames (v2.1.0)                                 */
@@ -150,21 +183,38 @@
  *  seq   : control period counter (uint8, wraps). The difference of two frames is the
  *          number of control periods between them (exact time base for the speeds).
  *  flags : bit0 = no valid command since power-up (the counters started at 0),
- *          bit1 = stopped by the command timeout (until the next valid command).
+ *          bit1 = stopped by the command timeout (until the next valid command),
+ *          bit2 = the parameters in RAM are the EEPROM block (loaded or saved, unchanged since),
+ *          bit3 = the feed-forward table is invalid: non-zero drive commands are ignored.
  *  Mn    : cumulative encoder counts since power-up, int32 little endian,
  *          MOTORn_ENC_SIGN applied (+ = the wheel drove the robot forward).
  *          They overflow only after about a week of driving in one direction.
  *  crc   : CRC-8 of the 19 bytes after the sync byte.
  *  21 bytes take 5.5 ms at 38400 baud: 11 % of the line at 20 Hz. A frame that does
  *  not fit into the TX ring buffer (USART.c) is dropped, never waited for.
+ *
+ * Setting mode (v2.2.0). Pi -> MCU, parameter request, 9 bytes (same length as a command):
+ *      0xA5  0x03  op  idx  value[4]  crc
+ *  op    : 0 get, 1 set (RAM), 2 save all to EEPROM, 3 load the defaults (RAM), 4 reload from EEPROM (RAM)
+ *  idx   : parameter index (see "Setting mode" above); ignored by ops 2-4
+ *  value : float32 little endian (only used by set)
+ * MCU -> Pi, parameter reply, 10 bytes:
+ *      0xA5  0x04  op  idx  status  value[4]  crc
+ *  status: 0 ok, 1 bad index, 2 out of range (or not finite), 3 busy (not stopped),
+ *          4 bad feed-forward table, 5 bad op, 6 no valid EEPROM block
+ *  value : the parameter idx after the op (0 if idx is bad)
+ *  crc   : CRC-8 of the bytes after the sync byte. The Pi sends one request at a time.
  */
 #define UART_BAUD           38400   /* Normal mode: UBRR = 25, error +0.16 % at 16 MHz.
                                      * 57600 would give UBRR = 16 and +2.1 % error: do not use it. */
 #define FRAME_SYNC          0xA5
 #define FRAME_ID_CMD        0x01
 #define FRAME_ID_STATE      0x02
-#define FRAME_CMD_PAYLOAD   7       /* bytes after sync + id in a command: 6 data + crc */
+#define FRAME_ID_PARAM      0x03    /* v2.2.0: Pi -> MCU parameter request (same length as a command) */
+#define FRAME_ID_PARAM_REPLY 0x04   /* v2.2.0: MCU -> Pi parameter reply */
+#define FRAME_CMD_PAYLOAD   7       /* bytes after sync + id in a command or parameter request: 6 data + crc */
 #define FRAME_STATE_LEN     21      /* whole state frame */
+#define FRAME_REPLY_LEN     10      /* whole parameter reply frame */
 #define CMD_SCALE           1000.0f /* command units per m/s (or rad/s): mm/s, mrad/s */
 
 /*
