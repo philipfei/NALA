@@ -1,4 +1,4 @@
-"""Pi <-> MCU UART protocol, firmware v2.2.0: binary frames (no ROS). See docs/mcu_protocol.md.
+"""Pi <-> MCU UART protocol, firmware v2.3.0: binary frames (no ROS). See docs/mcu_protocol.md.
 
 Axes are the ROS axes: vx forward, vy left (m/s), wz counter-clockwise (rad/s).
 Every frame: 0xA5 (sync), id, data, CRC-8 of id + data.
@@ -28,10 +28,11 @@ STATUS_TEXT = {0: 'ok', 1: 'bad index', 2: 'out of range or not finite', 3: 'bus
                4: 'bad feed-forward table', 5: 'bad op', 6: 'no valid EEPROM block'}
 
 # Parameter index -> name. Same order as param[] in the firmware (main.c, config.h "Setting mode").
+# v2.3.0: one feed-forward PWM row per motor (ff_m1_pwm0..9 .. ff_m4_pwm0..9), shared speed points.
 FF_TABLE_N = 10
 PARAM_NAMES = (['kp', 'ki', 'i_limit', 'accel_limit']
                + [f'ff_speed{i}' for i in range(FF_TABLE_N)]
-               + [f'ff_pwm{i}' for i in range(FF_TABLE_N)])
+               + [f'ff_m{m}_pwm{i}' for m in range(1, 5) for i in range(FF_TABLE_N)])
 
 
 def crc8(data):

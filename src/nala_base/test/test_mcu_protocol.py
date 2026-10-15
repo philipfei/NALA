@@ -81,9 +81,11 @@ def test_param_request_has_the_command_length():
 
 
 def test_param_names_match_the_firmware_order():
-    assert len(PARAM_NAMES) == 24
+    assert len(PARAM_NAMES) == 54
     assert PARAM_NAMES[:4] == ['kp', 'ki', 'i_limit', 'accel_limit']
-    assert PARAM_NAMES[4] == 'ff_speed0' and PARAM_NAMES[14] == 'ff_pwm0' and PARAM_NAMES[23] == 'ff_pwm9'
+    assert PARAM_NAMES[4] == 'ff_speed0' and PARAM_NAMES[13] == 'ff_speed9'
+    assert PARAM_NAMES[14] == 'ff_m1_pwm0' and PARAM_NAMES[24] == 'ff_m2_pwm0'
+    assert PARAM_NAMES[44] == 'ff_m4_pwm0' and PARAM_NAMES[53] == 'ff_m4_pwm9'
 
 
 def test_replies_and_states_mixed():

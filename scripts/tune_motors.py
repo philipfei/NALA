@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tune the MCU wheel speed controller over the UART (firmware v2.2.0 setting mode). Run on the Pi.
+"""Tune the MCU wheel speed controller over the UART (firmware v2.3.0 setting mode). Run on the Pi.
 
 Stop app 1 / app 2 first: base_node uses the same UART.
 
@@ -10,7 +10,7 @@ Stop app 1 / app 2 first: base_node uses the same UART.
     python3 ~/NALA/scripts/tune_motors.py defaults             # the firmware defaults (config.h), in RAM
     python3 ~/NALA/scripts/tune_motors.py step --vx 0.15       # one speed step, metrics per wheel
     python3 ~/NALA/scripts/tune_motors.py sweep [--floor]      # steps in 6 directions at several speeds
-    python3 ~/NALA/scripts/tune_motors.py ff                   # measure the feed-forward table (wheels in the air)
+    python3 ~/NALA/scripts/tune_motors.py ff [--apply]         # measure the feed-forward rows (wheels in the air)
 
 The MCU accepts a change only while the robot stands still (else it answers "busy").
 Every motion asks for a confirmation first; --yes skips it (for SSH runs after a check by a person).
@@ -38,7 +38,7 @@ OP_NAMES = {mp.OP_GET: 'get', mp.OP_SET: 'set', mp.OP_SAVE: 'save', mp.OP_DEFAUL
             mp.OP_RELOAD: 'reload'}
 IDX = {name: i for i, name in enumerate(mp.PARAM_NAMES)}
 N = mp.FF_TABLE_N
-FF_SPEED, FF_PWM = IDX['ff_speed0'], IDX['ff_pwm0']
+FF_SPEED, FF_PWM = IDX['ff_speed0'], IDX['ff_m1_pwm0']   # speed points; PWM row of motor m at FF_PWM + m * N
 
 
 class LinkError(Exception):
@@ -190,7 +190,9 @@ def cmd_show(link, robot, cfg, args):
     print(f'i_limit     {fmt(v[IDX["i_limit"]], 4):>8}   % pwm')
     print(f'accel_limit {fmt(v[IDX["accel_limit"]], 4):>8}   rad/s^2 (0 = off)')
     print('ff_speed    ' + ' '.join(f'{x:6.2f}' for x in v[FF_SPEED:FF_SPEED + N]) + '   rad/s')
-    print('ff_pwm      ' + ' '.join(f'{x:6.2f}' for x in v[FF_PWM:FF_PWM + N]) + '   % pwm')
+    for m in range(4):
+        row = v[FF_PWM + m * N:FF_PWM + (m + 1) * N]
+        print(f'ff_m{m + 1}_pwm   ' + ' '.join(f'{x:6.2f}' for x in row) + '   % pwm')
     if not table_valid(v):
         print('The FF table is not valid (ff_speed0 must be 0, the speeds must increase).')
     print_flags(link)
@@ -335,37 +337,55 @@ def suggest_ff(table_speed, table_pwm, measured):
     return out
 
 
+def steady_speeds(link, robot, seconds):
+    """Mean speed of each wheel over the next `seconds`: total count change / exact MCU time."""
+    start = len(link.frames)
+    time.sleep(seconds)
+    frames = link.frames[start:]
+    periods = sum((b[1] - a[1]) % 256 for a, b in zip(frames, frames[1:]))
+    if periods == 0:
+        raise LinkError('no state frames while measuring')
+    dt = periods * robot['period']
+    return [mp.count_delta(frames[-1][3][m], frames[0][3][m]) * robot['rad_per_count'] / dt for m in range(4)]
+
+
 def cmd_ff(link, robot, cfg, args):
     values = get_all(link, cfg)
-    speeds, pwms = values[FF_SPEED:FF_SPEED + N], values[FF_PWM:FF_PWM + N]
-    hold = cfg['ff_hold_time']
-    confirm(f'FF test: kp and ki set to 0 (feed-forward only), each table speed for {hold:.1f} s, up to '
-            f'{speeds[-1]:.1f} rad/s = {speeds[-1] * robot["radius"]:.2f} m/s. '
+    speeds = values[FF_SPEED:FF_SPEED + N]
+    rows = [values[FF_PWM + m * N:FF_PWM + (m + 1) * N] for m in range(4)]
+    settle, measure, rest = cfg['ff_settle_time'], cfg['ff_measure_time'], cfg['post_time']
+    confirm(f'FF test: kp and ki set to 0 (feed-forward only). Each table speed from rest: {settle:.0f} s to '
+            f'settle, then {measure:.0f} s measured; up to {speeds[-1]:.1f} rad/s = '
+            f'{speeds[-1] * robot["radius"]:.2f} m/s, about {(N - 1) * (rest + settle + measure):.0f} s. '
             'ARE THE WHEELS LIFTED OFF THE GROUND?', args)
     original = {name: values[IDX[name]] for name in ('kp', 'ki')}
-    measured = []
+    measured = [[0.0] for _ in range(4)]          # speed 0 at the dead-zone point (not measured)
     try:
         for name in original:
             set_param(link, cfg, name, 0.0)
-        print('point  speed   pwm     measured M1..M4 [rad/s]          mean')
+        print('point  speed   measured M1..M4 [rad/s] (each at its own PWM row value)')
         for i in range(1, N):
-            start = len(link.frames)
-            t_on = time.monotonic()
+            link.stop()
+            time.sleep(rest)
             link.drive(speeds[i] * robot['radius'], 0.0, 0.0)
-            time.sleep(hold)
-            samples = wheel_speeds(link.frames[start:], robot['rad_per_count'], robot['period'])
-            late = [s for t, s in samples if t >= t_on + hold / 2]
-            mean = [sum(s[m] for s in late) / len(late) for m in range(4)] if late else [0.0] * 4
-            measured.append(sum(mean) / 4)
-            print(f'{i:5}  {speeds[i]:5.2f}  {pwms[i]:6.2f}  ' + ' '.join(f'{x:6.2f}' for x in mean)
-                  + f'   {measured[-1]:6.2f}')
+            time.sleep(settle)
+            mean = steady_speeds(link, robot, measure)
+            for m in range(4):
+                measured[m].append(mean[m])
+            print(f'{i:5}  {speeds[i]:5.2f}   ' + '  '.join(f'{mean[m]:6.2f} @ {rows[m][i]:5.1f} %' for m in range(4)))
     finally:
         restore(link, cfg, original)
-    new = suggest_ff(speeds, pwms, [0.0] + measured)
-    print('\nSuggested ff_pwm (same speeds; the dead-zone point ff_pwm0 is kept):')
-    print('ff_pwm  ' + ' '.join(f'{x:6.2f}' for x in new))
-    print('Apply with:  python3 ~/NALA/scripts/tune_motors.py set '
-          + ' '.join(f'ff_pwm{i} {new[i]:.2f}' for i in range(1, N)))
+    new = [suggest_ff(speeds, rows[m], measured[m]) for m in range(4)]
+    print('\nSuggested PWM rows (same speed points; the dead-zone point ffN_pwm0 is kept):')
+    for m in range(4):
+        print(f'ff_m{m + 1}_pwm  ' + ' '.join(f'{x:6.2f}' for x in new[m]))
+    pairs = [(f'ff_m{m + 1}_pwm{i}', new[m][i]) for m in range(4) for i in range(1, N)]
+    if args.apply:
+        for name, value in pairs:
+            set_param(link, cfg, name, value)
+        print('Applied in RAM. Run ff again to check (measured = table speed), then "save".')
+    else:
+        print('Apply with:  python3 ~/NALA/scripts/tune_motors.py ff --apply   (or set NAME VALUE ...)')
 
 
 def restore(link, cfg, original):
@@ -423,7 +443,9 @@ def main():
     p = sub.add_parser('sweep', help='steps in 6 directions at several speeds')
     p.add_argument('--floor', action='store_true', help='short steps (floor_max_dist) for driving on the floor')
     p.set_defaults(func=cmd_sweep)
-    sub.add_parser('ff', help='measure the feed-forward table (wheels in the air)').set_defaults(func=cmd_ff)
+    p = sub.add_parser('ff', help='measure the feed-forward rows of the 4 motors (wheels in the air)')
+    p.add_argument('--apply', action='store_true', help='write the suggested rows into the MCU RAM')
+    p.set_defaults(func=cmd_ff)
     args = parser.parse_args()
 
     if base_node_running():

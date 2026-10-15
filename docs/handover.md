@@ -126,7 +126,7 @@ Status 2026-10-14 (network back on 10.42.0.0/24, the Pi is 10.42.0.154):
   0.7 s late start and 73 % overshoot. Waiting for a mechanical check of M3.
 - Without wheels (all 4 removed): M3 is normal (its wheel was the problem). The motors differ in gain up to 2x at
   low PWM (M4 weakest, M3 strongest), so one shared FF table overshoots on M2/M3 (40-83 % at 0.05 m/s). Next:
-  user decision on firmware v2.3.0 (one ff_pwm row per motor), then tune again with the wheels on.
+  firmware v2.3.0 (one ff_pwm row per motor) is built (2026-10-15), waiting for the flash; then tune again with the wheels on.
   Steady-state check (3 s settle, 2 s measured per PWM): same differences, so they are not a transient.
   For 5 rad/s: M1 17.3 %, M2 14.5 %, M3 13.6 %, M4 19.9 % PWM.
   The MCU runs the defaults (nothing saved in the EEPROM).
@@ -134,11 +134,13 @@ Status 2026-10-14 (network back on 10.42.0.0/24, the Pi is 10.42.0.154):
 
 ### Next steps (in this order)
 
-1. (Done 2026-10-15) The teammate flashes v2.2.0. Now: the mechanics of M3, then `ff` again.
+1. The teammate flashes **v2.3.0** (wheels in the air or off). The EEPROM block of v2.2.0 is ignored (new layout),
+   the MCU starts with the defaults. Check: `tune_motors.py show` prints four rows `ff_m1_pwm` .. `ff_m4_pwm`.
+   With v2.2.0 still on the MCU, the new tune_motors.py gets "bad index" for the parameters above 23.
 2. `python3 ~/NALA/scripts/tune_motors.py show`: the defaults, flag "RAM differs from the EEPROM".
    Then app 1 runs as before (`/odom` 20 Hz, no warnings).
-3. Wheels in the air: `tune_motors.py --yes ff` -> apply the suggested `ff_pwm` row (`set ...`), run `ff` again
-   until measured = table speed (+-5 %). Look at the low end (dead zone, ff_pwm0/ff_pwm1) for the 0.05 m/s problem.
+3. Wheels on and in the air: `tune_motors.py --yes ff --apply`, then `ff` again until measured = table speed
+   (+-5 %) for every motor. Look at the low end (`ff_mN_pwm0` is the dead-zone point, `ff` does not measure it) for the 0.05 m/s problem.
 4. `tune_motors.py --yes sweep`: then adjust kp / ki / i_limit / accel_limit (for example accel_limit 20-40 rad/s^2
    against step overshoot). Goal: overshoot < 10 %, settled < 0.5 s, also at 0.05 m/s. `save` when good.
 5. **Only with the user's explicit permission:** on the floor, `tune_motors.py sweep --floor` (each step <= 0.5 m,

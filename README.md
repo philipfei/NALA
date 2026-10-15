@@ -107,7 +107,7 @@ NALA/
 │   └── imu_ekf.md                         [2] IMU wiring and setup, EKF design: why only the gyro turn rate
 │
 ├── firmware/                              MCU motor driver (ATmega328PB), Microchip Studio project.
-│   │                                      Owned by a teammate, who builds and flashes it. v2.2.0 (by Claude).
+│   │                                      Owned by a teammate, who builds and flashes it. v2.3.0 (by Claude).
 │   ├── README.md                          Protocol (source of truth), parameters, build/flash, changes per version
 │   ├── prayer.jpeg                        The team's prayer picture (JPEG, 1672x941). Also the Pi boot splash (scripts/setup_splash.sh)
 │   ├── docs/
@@ -360,14 +360,16 @@ Both:
   (`max_wheel_speed` in `config/base.yaml`), the Pi slows the whole command down by the same factor.
 - Stop: Ctrl+C in either terminal. The Pi sends a stop frame when it exits.
 
-### Tune the wheel speed controller (MCU firmware v2.2.0)
+### Tune the wheel speed controller (MCU firmware v2.3.0)
 
-The PI gains, the target ramp and the feed-forward table live in the MCU (RAM, saved in its EEPROM).
+The PI gains, the target ramp and the feed-forward table (one PWM row per motor) live in the MCU (RAM, saved in its EEPROM).
 Stop app 1 / app 2 first (same UART). **Pi terminal** (`ssh nala@nala.local`):
 
 ```bash
 python3 ~/NALA/scripts/tune_motors.py show                  # what the MCU uses now
-python3 ~/NALA/scripts/tune_motors.py ff                    # wheels in the air: measure the feed-forward table
+python3 ~/NALA/scripts/tune_motors.py ff --apply            # wheels in the air: measure each motor (3 s settle, 2 s
+                                                            # measured per point), write the new PWM rows into RAM
+python3 ~/NALA/scripts/tune_motors.py ff                    # check: measured = table speed (about 60 s)
 python3 ~/NALA/scripts/tune_motors.py sweep                 # wheels in the air: steps in 6 directions, 4 speeds
 python3 ~/NALA/scripts/tune_motors.py step --vx 0.15        # one step, metrics per wheel (--csv FILE for the data)
 python3 ~/NALA/scripts/tune_motors.py set kp 2 accel_limit 20   # change in RAM (only while stopped)
@@ -378,7 +380,8 @@ python3 ~/NALA/scripts/tune_motors.py sweep --floor         # on the floor: shor
 ```
 
 Every motion asks first ("Wheels lifted or floor clear?"). Ctrl+C stops at once; `ff` puts the original gains back.
-Parameter names: `kp`, `ki`, `i_limit`, `accel_limit`, `ff_speed0`..`ff_speed9`, `ff_pwm0`..`ff_pwm9`.
+Parameter names: `kp`, `ki`, `i_limit`, `accel_limit`, `ff_speed0`..`ff_speed9` (shared),
+`ff_m1_pwm0`..`ff_m1_pwm9` .. `ff_m4_pwm0`..`ff_m4_pwm9` (one row per motor).
 
 ### App 2: mapping
 

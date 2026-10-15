@@ -3,7 +3,7 @@
  *
  * Project  : NALA (ATmega328PB, 4 mecanum wheels, 4 quadrature encoders)
  * Author   : HY / Claude (NALA v1 revision)
- * Version  : v2.2.0
+ * Version  : v2.3.0
  * Date     : 2026-10-15
  *
  * v1 vs v0: 20 Hz control loop; speed controller replaced by a positional PI with
@@ -20,6 +20,7 @@
  *         feed-forward table) are read and written over the UART while stopped and saved
  *         in the EEPROM. Target ramp (accel_limit). A non-zero command is applied at the
  *         next control step (no P-less output between steps).
+ * v2.3.0: one feed-forward PWM row per motor (shared speed points): the motors differ.
  *
  * Original : motor_driver_C by Floris van Mourik (created 9/18/2021), with pwm/timer
  *            code by Mathan and UART code by sojim. The untouched original sources
@@ -128,9 +129,9 @@ static uint8_t boot = 1;         /* 1 = no valid command since power-up (state f
 /* Index of each parameter in param[] (same order as mcu_protocol.PARAM_NAMES on the Pi). */
 enum {
 	P_KP, P_KI, P_I_LIMIT, P_ACCEL,
-	P_FF_SPEED,                               /* ff_speed0..9 [rad/s] */
-	P_FF_PWM = P_FF_SPEED + FF_TABLE_N,       /* ff_pwm0..9   [% duty] */
-	NUM_PARAMS = P_FF_PWM + FF_TABLE_N
+	P_FF_SPEED,                               /* ff_speed0..9 [rad/s], shared by the motors */
+	P_FF_PWM = P_FF_SPEED + FF_TABLE_N,       /* ff_m1_pwm0..9, then m2, m3, m4 [% duty] */
+	NUM_PARAMS = P_FF_PWM + NUM_MOTORS * FF_TABLE_N
 };
 
 /* Parameter request ops and reply status (protocol block in config.h). */
@@ -145,7 +146,9 @@ static uint8_t ff_state = FF_OK;
 static uint8_t params_in_eeprom;         /* 1 = param[] equals the EEPROM block (state flags bit2) */
 
 static const float ff_speed_default[FF_TABLE_N] = FF_SPEED_RAD_S;   /* rad/s, increasing */
-static const float ff_pwm_default[FF_TABLE_N]   = FF_PWM_PCT;       /* % duty */
+static const float ff_pwm_default[NUM_MOTORS][FF_TABLE_N] = {       /* % duty, one row per motor */
+	FF_M1_PWM_PCT, FF_M2_PWM_PCT, FF_M3_PWM_PCT, FF_M4_PWM_PCT
+};
 
 /* EEPROM block (CRC-16 over version and data, see config.h). */
 typedef struct {
@@ -164,7 +167,9 @@ static void load_defaults(void)
 	param[P_ACCEL]   = ACCEL_LIMIT;
 	for (uint8_t i = 0; i < FF_TABLE_N; i++) {
 		param[P_FF_SPEED + i] = ff_speed_default[i];
-		param[P_FF_PWM + i]   = ff_pwm_default[i];
+		for (uint8_t m = 0; m < NUM_MOTORS; m++) {
+			param[P_FF_PWM + m * FF_TABLE_N + i] = ff_pwm_default[m][i];
+		}
 	}
 	ff_state = FF_OK;
 }
@@ -367,13 +372,14 @@ static void send_state_frame(void)
 /* ------------------------------------------------------------------------- */
 /* Feed-forward: measured motor curve (param[] ff_speed / ff_pwm)             */
 /* ------------------------------------------------------------------------- */
-/* PWM [%] for a wheel target speed [rad/s]: linear interpolation in the table, same sign.
+/* PWM [%] for motor m at a wheel target speed [rad/s]: linear interpolation in the shared speed
+ * points and the PWM row of that motor, same sign as the target.
  * Segments whose speeds do not increase are skipped (never a division by zero, even while
  * the table is being edited; driving with an invalid table is blocked in handle_command). */
-static float feed_forward(float target)
+static float feed_forward(uint8_t m, float target)
 {
 	const float *ff_speed = &param[P_FF_SPEED];
-	const float *ff_pwm   = &param[P_FF_PWM];
+	const float *ff_pwm   = &param[P_FF_PWM + m * FF_TABLE_N];
 	const float s = (target < 0.0f) ? -target : target;
 	float pwm = ff_pwm[FF_TABLE_N - 1];                     /* faster than the table: last point */
 	for (uint8_t i = 1; i < FF_TABLE_N; i++) {
@@ -492,7 +498,7 @@ static void speed_control(uint8_t m, float dt)
 	const float kp = param[P_KP];
 	const float i_limit = param[P_I_LIMIT];
 	const float e  = M_w[m] - M_w_measured[m];
-	const float ff = feed_forward(M_w[m]);
+	const float ff = feed_forward(m, M_w[m]);
 	const float u  = ff + kp * e + M_i[m];
 
 	/* Anti-windup: integrate unless the output is saturated AND the error would push it further. */

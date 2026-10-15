@@ -184,14 +184,17 @@ Everything below is project-specific and must be kept up to date.
 
 - A teammate owns the firmware (`firmware/`) and builds and flashes it. **Claude may edit `firmware/`** (user, 2026-10-07).
   The PC has no avr-gcc (the user chose not to install it); Claude compile-checks on the Pi (avr-gcc 7.3).
-- Version in the repo: **v2.2.0** (2026-10-15, by Claude): v2.1.0 + setting mode. Compile-checked on the Pi
-  (0 errors, 0 warnings, 9.3 KB flash, 610 B RAM, 99 B EEPROM). **Not flashed yet** (the MCU runs v2.1.0). Firmware and Pi code must match.
+- Version in the repo: **v2.3.0** (2026-10-15, by Claude): v2.2.0 + one feed-forward PWM row per motor
+  (`ff_m1_pwm0..9` .. `ff_m4_pwm0..9`, shared `ff_speed0..9`; 54 parameters, EEPROM layout 2). Compile-checked on the
+  Pi (0 errors, 0 warnings, 9.7 KB flash, 970 B RAM, 219 B EEPROM). **Not flashed yet** (the MCU runs v2.2.0, flashed
+  2026-10-15). Firmware and Pi code must match: the Pi code in the repo needs v2.3.0.
 - v2.2.0 setting mode: parameter request `0xA5 0x03 op idx float32 crc` (9 bytes, like a command), reply
   `0xA5 0x04 op idx status float32 crc`. ops get / set / save (EEPROM, CRC-16 block) / defaults / reload. Every op
   except get only while stopped ("busy"). Target ramp `accel_limit` (default 0 = off). No D term (user decision).
   State flags bit2 = parameters are the EEPROM block, bit3 = FF table invalid (drive commands ignored).
   EEPROM survives a reflash (EESAVE fuse). Pi tool: `scripts/tune_motors.py` (show, set, save, reload, defaults,
-  step, sweep [--floor], ff); it needs base_node stopped.
+  step, sweep [--floor], ff [--apply]); it needs base_node stopped. `ff` measures each motor in steady state
+  (from rest, 3 s settle, 2 s measured) and suggests (or `--apply` writes) one PWM row per motor.
 - v2.1.0 flashed 2026-10-14: UART link checked (20 Hz frames, no CRC errors, `/odom` 20 Hz).
   2026-10-15 (wheels in the air): wheel numbering, encoder signs and kinematics signs correct in forward, back,
   strafe and turn. 0.15 m/s (3.75 rad/s): target in ~0.5 s, 25-30 % overshoot. 0.05 m/s (1.25 rad/s): starts
@@ -308,7 +311,7 @@ SLAM must not jump to a wrong but similar-looking place.
   differences are real, not a transient. PWM needed for the same speed (no wheels):
   5 rad/s: M1 17.3, M2 14.5, M3 13.6, M4 19.9 %; 9 rad/s: 29.1, 24.6, 23.9, 36.8 %. M4 needs ~1.5x the PWM of M3
   between 3.5 and 11 rad/s. Front motors (M1, M4) are weaker than the rear ones (M2, M3).
-  Proposal: firmware v2.3.0 with one ff_pwm row per motor (user decision pending).
+  Firmware v2.3.0 with one ff_pwm row per motor: built 2026-10-15 (user decision), waiting for the flash.
 - [1] Pi boot splash: `scripts/setup_splash.sh` ran 2026-10-15 (Plymouth theme `nala` with `firmware/prayer.jpeg`).
   Shown correctly at the reboot of 2026-10-15 (monitor connected). The headless boot waits ~31 s in `plymouth-quit-wait` for the GNOME
   autologin session: normal, SSH works earlier.

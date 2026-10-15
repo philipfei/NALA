@@ -7,7 +7,8 @@ tune_motors:
   step_time: 2.0           # s, default length of a step (step, sweep)
   sweep_speeds: [0.05, 0.10, 0.20, 0.30]   # m/s wheel rim speed of the sweep steps
   floor_max_dist: 0.5      # m, sweep --floor: a step is shortened to this distance (the reverse step brings it back)
-  ff_hold_time: 2.0        # s per table speed in the ff test; the last half is averaged
+  ff_settle_time: 3.0      # s per table speed in the ff test (from rest) before measuring: no start transient
+  ff_measure_time: 2.0     # s measured after that (total count change / exact MCU time)
   reply_timeout: 0.2       # s to wait for a parameter reply (get, set, defaults, reload)
   save_timeout: 1.0        # s to wait for the reply to save (the EEPROM write takes up to ~0.35 s)
   attempts: 3              # tries per parameter request (the restore after a test tries only once)

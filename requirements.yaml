@@ -25,7 +25,7 @@ system:
   firmware:
     mcu: ATmega328PB, 16 MHz
     ide: Microchip Studio (Windows)   # build
-    device_pack: ATmega_DFP 1.7.374   # from motor_driver_C.cproj (firmware v2.2.0, owned by a teammate)
+    device_pack: ATmega_DFP 1.7.374   # from motor_driver_C.cproj (firmware v2.3.0, owned by a teammate)
     flash_tool: avrdude 8.0 (from the Arduino IDE), ArduinoISP   # see firmware/README.md section 5
     linker_flags: -lprintf_flt        # in the .cproj; not needed since v2.0.0 (no printf), harmless
     compile_check: gcc-avr + avr-libc on the Pi (apt)   # Claude checks that it compiles; no flashing from the Pi

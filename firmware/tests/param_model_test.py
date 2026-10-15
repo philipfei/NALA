@@ -1,4 +1,4 @@
-"""Model test of the v2.2.0 setting mode (Python copy of the logic in main.c).
+"""Model test of the v2.3.0 setting mode (Python copy of the logic in main.c).
 
 Checks handle_param() (ops, index, range, NaN/Inf, busy rule), the feed-forward table states
 (unchecked after an edit, checked at the next drive command and at save), the EEPROM block
@@ -9,15 +9,16 @@ import math
 import struct
 
 N_FF = 10
-NAMES = ['kp', 'ki', 'i_limit', 'accel_limit'] + [f'ff_speed{i}' for i in range(N_FF)] + [f'ff_pwm{i}' for i in range(N_FF)]
-P_ACCEL, P_FF_SPEED, P_FF_PWM, NUM = 3, 4, 14, 24
+NAMES = (['kp', 'ki', 'i_limit', 'accel_limit'] + [f'ff_speed{i}' for i in range(N_FF)]
+         + [f'ff_m{m}_pwm{i}' for m in range(1, 5) for i in range(N_FF)])
+P_ACCEL, P_FF_SPEED, P_FF_PWM, NUM = 3, 4, 14, 54
 OP_GET, OP_SET, OP_SAVE, OP_DEFAULTS, OP_RELOAD = range(5)
 OK, BAD_INDEX, OUT_OF_RANGE, BUSY, BAD_TABLE, BAD_OP, NO_EEPROM = range(7)
 FF_OK, FF_UNCHECKED, FF_INVALID = range(3)
-LAYOUT_VERSION = 1
+LAYOUT_VERSION = 2
 PERIOD = 0.05
 DEFAULTS = ([1.0, 8.0, 25.0, 0.0] + [0.0, 3.5, 6.6, 8.1, 9.4, 10.7, 11.5, 11.85, 12.2, 13.0]
-            + [9.0, 15.0, 21.5, 29.5, 37.5, 45.5, 54.0, 63.0, 72.0, 100.0])           # config.h
+            + [9.0, 15.0, 21.5, 29.5, 37.5, 45.5, 54.0, 63.0, 72.0, 100.0] * 4)       # config.h, rows M1..M4
 
 
 def f32(x):                                   # AVR float = IEEE 754 single
@@ -39,6 +40,18 @@ def in_range(idx, v):                         # param_in_range(): NaN and +-Inf 
 def table_valid(p):                           # ff_table_valid()
     s = p[P_FF_SPEED:P_FF_SPEED + N_FF]
     return s[0] == 0.0 and all(s[i] > s[i - 1] for i in range(1, N_FF))
+
+
+def feed_forward(p, m, target):               # feed_forward(m, target) in main.c
+    sp, pw = p[P_FF_SPEED:P_FF_SPEED + N_FF], p[P_FF_PWM + m * N_FF:P_FF_PWM + (m + 1) * N_FF]
+    s, out = abs(target), pw[-1]
+    for i in range(1, N_FF):
+        if not sp[i] > sp[i - 1]:
+            continue
+        if s <= sp[i]:
+            out = pw[i - 1] + (pw[i] - pw[i - 1]) * (s - sp[i - 1]) / (sp[i] - sp[i - 1])
+            break
+    return math.copysign(out, target)
 
 
 def crc16_xmodem(data):                       # _crc_xmodem_update() of avr-libc, init 0
@@ -145,9 +158,12 @@ def check(name, ok, info=''):
 
 def main():
     # Names and CRC
-    check('24 parameters, Pi order', len(NAMES) == NUM and NAMES[P_FF_SPEED] == 'ff_speed0' and NAMES[P_FF_PWM] == 'ff_pwm0')
+    check('54 parameters, Pi order', len(NAMES) == NUM and NAMES[P_FF_SPEED] == 'ff_speed0'
+          and NAMES[P_FF_PWM] == 'ff_m1_pwm0' and NAMES[P_FF_PWM + 3 * N_FF] == 'ff_m4_pwm0' and NAMES[-1] == 'ff_m4_pwm9')
     check('crc16 xmodem("123456789") = 0x31C3', crc16_xmodem(b'123456789') == 0x31C3)
-    check('EEPROM block size 99 bytes', len(block(DEFAULTS)) == 99)
+    check('EEPROM block size 219 bytes', len(block(DEFAULTS)) == 219)
+    v22 = bytes([1]) + struct.pack('<24f', *DEFAULTS[:24])
+    check('a v2.2.0 block (layout 1, 24 values) is ignored', Mcu(v22 + struct.pack('<H', crc16_xmodem(v22))).flags() == 0)
     check('defaults are a valid table', table_valid(DEFAULTS))
 
     # Boot
@@ -158,7 +174,7 @@ def main():
     broken = bytearray(block(good))
     broken[10] ^= 0x01
     check('one flipped bit -> CRC fails -> defaults', Mcu(bytes(broken)).p[0] == 1.0)
-    check('other layout version -> defaults', Mcu(block(good, version=2)).p[0] == 1.0)
+    check('other layout version -> defaults', Mcu(block(good, version=3)).p[0] == 1.0)
     nan_block = list(good)
     nan_block[1] = float('nan')
     check('NaN in the block -> defaults', Mcu(block(nan_block)).p[1] == 8.0)
@@ -175,7 +191,12 @@ def main():
     check('set -Inf -> out of range', m.param(OP_SET, 0, float('-inf'))[0] == OUT_OF_RANGE)
     check('set negative -> out of range', m.param(OP_SET, 0, -0.1)[0] == OUT_OF_RANGE)
     check('set above max -> out of range', m.param(OP_SET, 0, 50.01)[0] == OUT_OF_RANGE)
-    check('index 24 -> bad index', m.param(OP_GET, 24)[0] == BAD_INDEX)
+    check('index 53 (ff_m4_pwm9) is valid', m.param(OP_GET, 53) == (OK, 100.0))
+    check('index 54 -> bad index', m.param(OP_GET, 54)[0] == BAD_INDEX)
+    m.param(OP_SET, P_FF_PWM + 3 * N_FF + 1, 20.0)     # ff_m4_pwm1 (3.5 rad/s point of M4)
+    check('per-motor rows: only M4 changes', [round(feed_forward(m.p, k, 3.5), 3) for k in range(4)] == [15.0, 15.0, 15.0, 20.0])
+    check('per-motor rows: sign follows the target', feed_forward(m.p, 3, -3.5) == -20.0)
+    m.param(OP_SET, P_FF_PWM + 3 * N_FF + 1, 15.0)
     check('op 5 -> bad op', m.param(5, 0)[0] == BAD_OP)
     check('reload without EEPROM -> no EEPROM', m.param(OP_RELOAD, 0)[0] == NO_EEPROM)
     check('save, then bit2 = 1', m.param(OP_SAVE, 0)[0] == OK and m.flags() == 4)

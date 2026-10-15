@@ -3,7 +3,7 @@
  *
  * Project : NALA motor driver (ATmega328PB, 4x mecanum wheels, 4x quadrature encoders)
  * Author  : HY (NALA v1 revision)
- * Version : v2.2.0
+ * Version : v2.3.0
  * Date    : 2026-10-15
  *
  * v1 changes vs v0: 20 Hz control/feedback (50 ms period), speed controller
@@ -21,6 +21,8 @@
  * they live in RAM (param[] in main.c), can be read and changed over the UART (parameter
  * frames, only while stopped) and saved in the EEPROM. A valid EEPROM block wins at boot.
  * New: target ramp (ACCEL_LIMIT). No D term (the speed estimate is quantised).
+ * v2.3.0: one feed-forward PWM row per motor (FF_M1_PWM_PCT .. FF_M4_PWM_PCT), the speed points
+ * stay shared. The motors differ: for the same speed M4 needs ~1.5x the PWM of M3.
  *
  * Everything that is "a number you may want to change" or "a wire you may want to
  * re-assign" lives in this file. The .c files contain no magic numbers for these.
@@ -128,10 +130,16 @@
  * turn, 15 % -> 3.5 rad/s, 30 % -> 8 rad/s, but 100 % gives only 13 rad/s. So no single
  * factor fits (4.0 was too low at high speed, 6.5 overshot by 30-90 % at low speed).
  * The first point is the dead zone: any non-zero target gets at least 9 %.
- * If the wheels overshoot at start-up lower the PWM of that speed, if they lag raise it. */
+ * If the wheels overshoot at start-up lower the PWM of that speed, if they lag raise it.
+ * v2.3.0: one PWM row per motor, because the motors differ (steady-state test 2026-10-15, no
+ * wheels: for 5 rad/s M1 17.3 %, M2 14.5 %, M3 13.6 %, M4 19.9 %). The speed points are shared.
+ * Defaults: the v2.2.0 shared row for all four (measure and set them with tune_motors.py ff). */
 #define FF_TABLE_N          10
 #define FF_SPEED_RAD_S      { 0.0f, 3.5f, 6.6f, 8.1f, 9.4f, 10.7f, 11.5f, 11.85f, 12.2f, 13.0f }
-#define FF_PWM_PCT          { 9.0f, 15.0f, 21.5f, 29.5f, 37.5f, 45.5f, 54.0f, 63.0f, 72.0f, 100.0f }
+#define FF_M1_PWM_PCT       { 9.0f, 15.0f, 21.5f, 29.5f, 37.5f, 45.5f, 54.0f, 63.0f, 72.0f, 100.0f }
+#define FF_M2_PWM_PCT       { 9.0f, 15.0f, 21.5f, 29.5f, 37.5f, 45.5f, 54.0f, 63.0f, 72.0f, 100.0f }
+#define FF_M3_PWM_PCT       { 9.0f, 15.0f, 21.5f, 29.5f, 37.5f, 45.5f, 54.0f, 63.0f, 72.0f, 100.0f }
+#define FF_M4_PWM_PCT       { 9.0f, 15.0f, 21.5f, 29.5f, 37.5f, 45.5f, 54.0f, 63.0f, 72.0f, 100.0f }
 #define PWM_LIMIT           100.0f
 
 /* A wheel target below this is treated as "stopped" [rad/s]. */
@@ -142,7 +150,8 @@
 /* ------------------------------------------------------------------------- */
 /*
  * Parameter index (the Pi uses the same order, mcu_protocol.PARAM_NAMES):
- *   0 kp, 1 ki, 2 i_limit, 3 accel_limit, 4..13 ff_speed0..9, 14..23 ff_pwm0..9
+ *   0 kp, 1 ki, 2 i_limit, 3 accel_limit, 4..13 ff_speed0..9,
+ *   14..23 ff_m1_pwm0..9, 24..33 ff_m2_pwm0..9, 34..43 ff_m3_pwm0..9, 44..53 ff_m4_pwm0..9 (v2.3.0)
  * The defaults are the values above. A set is accepted only while the robot is stopped
  * (all wheel targets 0), only for a finite value within 0 .. the maximum below.
  */
@@ -159,7 +168,7 @@
  * an old block is then ignored and the defaults are used.
  * The fuse hfuse 0xD1 has EESAVE set: a reflash keeps the EEPROM (and the saved parameters).
  */
-#define EEPROM_LAYOUT_VERSION   1
+#define EEPROM_LAYOUT_VERSION   2       /* v2.3.0: 54 parameters (v2.2.0: 1, 24 parameters) */
 
 /* ------------------------------------------------------------------------- */
 /* Pi link: UART0 with binary frames (v2.1.0)                                 */

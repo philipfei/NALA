@@ -1,6 +1,6 @@
 # NALA firmware (ATmega328PB motor driver)
 
-Firmware for the NALA base. It receives body-velocity commands from the Pi over UART, runs a speed controller on four mecanum wheels and sends the cumulative encoder counts back. Current version: **v2.2.0**. Toolchain: Atmel/Microchip Studio 7 (avr-gcc 5.4.0, ATmega_DFP 1.7.374), 16 MHz external crystal.
+Firmware for the NALA base. It receives body-velocity commands from the Pi over UART, runs a speed controller on four mecanum wheels and sends the cumulative encoder counts back. Current version: **v2.3.0**. Toolchain: Atmel/Microchip Studio 7 (avr-gcc 5.4.0, ATmega_DFP 1.7.374), 16 MHz external crystal.
 
 > ### HARDWARE POLARITY NOTE (read before touching the motor wiring)
 >
@@ -14,7 +14,7 @@ Firmware for the NALA base. It receives body-velocity commands from the Pi over 
 
 Pi side: [`../src/nala_base/nala_base/mcu_protocol.py`](../src/nala_base/nala_base/mcu_protocol.py), [`../docs/mcu_protocol.md`](../docs/mcu_protocol.md).
 
-## 1. Protocol (v2.2.0: UART, binary frames, setting mode)
+## 1. Protocol (v2.3.0: UART, binary frames, setting mode)
 
 UART0, **38400 8N1**, no flow control. MCU **PD0 = RXD0, PD1 = TXD0** (5 V). The Pi (GPIO14 TX / GPIO15 RX, 3.3 V,
 `/dev/ttyAMA0`) is connected through the level shifter on the board.
@@ -59,7 +59,7 @@ Same code in `main.c` (`crc8`) and on the Pi (`mcu_protocol.crc8`).
 
 > **Link budget** (38400 baud = 3840 byte/s): commands 9 bytes x 20 Hz = 5 % of the Pi -> MCU wire, state frames 21 bytes x 20 Hz = 11 % of the MCU -> Pi wire. A frame that does not fit into the TX ring buffer (128 bytes, checked at compile time to be >= 32) is dropped, never waited for.
 
-### Setting mode (v2.2.0): parameter request and reply
+### Setting mode (v2.2.0, per-motor FF rows since v2.3.0): parameter request and reply
 
 The controller parameters live in RAM (`param[]` in `main.c`). They can be read and changed over the UART and
 saved in the EEPROM. Tool on the Pi: `scripts/tune_motors.py` (see the main README).
@@ -90,10 +90,13 @@ MCU -> Pi, **parameter reply, 10 bytes**:
 | 2 | i_limit | `PI_I_LIMIT` 25 % | 0..100 |
 | 3 | accel_limit | `ACCEL_LIMIT` 0 rad/s^2 (0 = off) | 0..200 |
 | 4-13 | ff_speed0..9 | `FF_SPEED_RAD_S` | 0..20 rad/s |
-| 14-23 | ff_pwm0..9 | `FF_PWM_PCT` | 0..100 % |
+| 14-23 | ff_m1_pwm0..9 | `FF_M1_PWM_PCT` (PWM row of M1, at the ff_speed points) | 0..100 % |
+| 24-33 | ff_m2_pwm0..9 | `FF_M2_PWM_PCT` | 0..100 % |
+| 34-43 | ff_m3_pwm0..9 | `FF_M3_PWM_PCT` | 0..100 % |
+| 44-53 | ff_m4_pwm0..9 | `FF_M4_PWM_PCT` | 0..100 % |
 
 - **Feed-forward table edits:** a set of one point only checks that value's range. The whole table (ff_speed0 = 0, speeds strictly increasing) is checked at the next non-zero drive command and at save. Invalid: drive commands are ignored and flag bit3 is set (until an edit makes it valid again); save is refused (status 4).
-- **EEPROM:** one block = layout version (`EEPROM_LAYOUT_VERSION`) + the 24 floats + **CRC-16** (XMODEM: poly 0x1021, init 0) over version and data, 99 bytes. At power-up a block with the right version and CRC, finite values within range and a valid table replaces the defaults; otherwise the defaults are used. The fuse `hfuse 0xD1` has EESAVE set, so **a reflash keeps the saved parameters** (use op 3 + save, or `tune_motors.py defaults` + `save`, to go back to `config.h`). Change `EEPROM_LAYOUT_VERSION` when the parameter list changes.
+- **EEPROM:** one block = layout version (`EEPROM_LAYOUT_VERSION`) + the 54 floats + **CRC-16** (XMODEM: poly 0x1021, init 0) over version and data, 219 bytes (layout version 2 since v2.3.0; a v2.2.0 block, layout 1, is ignored). At power-up a block with the right version and CRC, finite values within range and a valid table replaces the defaults; otherwise the defaults are used. The fuse `hfuse 0xD1` has EESAVE set, so **a reflash keeps the saved parameters** (use op 3 + save, or `tune_motors.py defaults` + `save`, to go back to `config.h`). Change `EEPROM_LAYOUT_VERSION` when the parameter list changes.
 - **Save** blocks the main loop for up to ~0.35 s (3.4 ms per changed byte). Interrupts keep running (encoders, Timer3, UART RX into its slots, UART TX). The next control step uses the real elapsed time for the speeds and `seq`, but at most one period for the integral and the ramp; a command that waited during the save does not time out at once.
 - Concurrency: `param[]` and the controller state are only used in the main loop, never in an interrupt, so a float is never read half-written.
 
@@ -168,7 +171,7 @@ Main loop: check (CRC) and apply a new command; check (CRC) and answer a paramet
   so take it from the same device pack Studio uses (unzip `gcc/dev/atmega328pb/` and `include/` to `/tmp/dfp/pack`):
   `curl -fsSL -o /tmp/dfp/dfp.zip http://packs.download.atmel.com/Atmel.ATmega_DFP.1.7.374.atpack`, then
   `avr-gcc -B /tmp/dfp/pack/gcc/dev/atmega328pb/ -I /tmp/dfp/pack/include -mmcu=atmega328pb -DF_CPU=16000000UL -Os -Wall -Wextra -o /tmp/fw.elf motor_driver_C/*.c`.
-  v2.0.0 (2026-10-09): 0 errors, 0 warnings, 7.3 KB flash, 428 B RAM. v2.1.0 (2026-10-12): 0 errors, 0 warnings, 7.0 KB flash, 374 B RAM. v2.2.0 (2026-10-15): 0 errors, 0 warnings, 9.3 KB flash (9547 B), 610 B RAM, 99 B EEPROM.
+  v2.0.0 (2026-10-09): 0 errors, 0 warnings, 7.3 KB flash, 428 B RAM. v2.1.0 (2026-10-12): 0 errors, 0 warnings, 7.0 KB flash, 374 B RAM. v2.2.0 (2026-10-15): 0 errors, 0 warnings, 9.3 KB flash (9547 B), 610 B RAM, 99 B EEPROM. v2.3.0 (2026-10-15): 0 errors, 0 warnings, 9.7 KB flash (9899 B), 970 B RAM, 219 B EEPROM.
 - **Tests** (models and simulation, not hardware): `python tests/uart_frame_model_test.py`, `timeout_model_test.py`, `param_model_test.py`, `motor_polarity_model_test.py`, `pid_sim.py`.
 
 ## 6. Changes per version
@@ -224,14 +227,20 @@ Main loop: check (CRC) and apply a new command; check (CRC) and answer a paramet
 - State flags bit2 (parameters = EEPROM block) and bit3 (feed-forward table invalid).
 - The defaults (`config.h`) are the v2.1.0 values. With them the only change in behaviour is the start of a command: up to 50 ms later, through the full controller.
 
+**v2.3.0 (2026-10-15)** - one feed-forward PWM row per motor. **Needs the matching Pi code** (same commit).
+- Why: steady-state test (2026-10-15, no wheels, open loop, 3 s settle then 2 s measured): the motors differ. For 5 rad/s M1 needs 17.3 %, M2 14.5 %, M3 13.6 %, M4 19.9 % PWM; M4 needs ~1.5x the PWM of M3 between 3.5 and 11 rad/s. With one shared row M2/M3 overshot by 40-83 % at 0.05 m/s.
+- `ff_m1_pwm0..9` .. `ff_m4_pwm0..9` (parameters 14-53) replace `ff_pwm0..9`; the speed points `ff_speed0..9` stay shared. 54 parameters, EEPROM layout version 2.
+- Defaults: the v2.2.0 row for all four motors (behaviour unchanged until `tune_motors.py ff --apply` + `save`).
+
 ## 7. Known limitations
 
 - The PI gains come from simulation of an *assumed* motor model. The feed-forward table is measured (wheels in the air); check it with step tests after flashing v1.1.1.
 - **v2.1.0**: on the MCU 2026-10-14/15: state frames at 20 Hz without CRC errors; motors, encoders and kinematics signs correct (wheels in the air).
-- **v2.2.0**: compile-checked 2026-10-15 (0 warnings), tested only with Python models and a fake MCU. Not flashed yet.
-- The speed controller is not tuned on the robot yet: use `scripts/tune_motors.py` (in the air: `ff`, `sweep`; then `sweep --floor`).
+- **v2.2.0**: flashed 2026-10-15, setting mode works on the robot.
+- **v2.3.0**: compile-checked 2026-10-15 (0 warnings), tested only with Python models and a fake MCU. Not flashed yet.
+- The speed controller is not tuned on the robot yet: use `scripts/tune_motors.py` (in the air: `ff --apply` until measured = table, then `sweep`; then `sweep --floor`).
 - The motors reach only ~13 rad/s (0.50-0.52 m/s). Faster targets saturate at 100 % PWM; the Pi limits every wheel to 0.45 m/s (`max_wheel_speed` in `config/base.yaml`).
 - Stopping is by coasting, so the stopping distance depends on friction.
 
 ---
-Last updated: 2026-10-15 (v2.2.0) · Stiffeel :octocat: · Claude
+Last updated: 2026-10-15 (v2.3.0) · Stiffeel :octocat: · Claude
