@@ -116,9 +116,19 @@ Status 2026-10-14 (network back on 10.42.0.0/24, the Pi is 10.42.0.154):
 - Defaults = the v2.1.0 values, so the behaviour is the same until parameters are set (only: a command starts
   at the next control step, <= 50 ms later).
 
+### Status 2026-10-15 afternoon
+
+- v2.2.0 flashed: `tune_motors.py show` works (defaults, EEPROM empty). Nothing saved yet.
+- First measurements (in the air): dead zone 11.6-13.6 % PWM, big differences between the wheels (front M1/M4 need
+  more power at low speed). Best so far with the shared table: kp 4, ki 20, accel_limit 20 (overshoot 6-24 % at
+  0.20 m/s, 30-57 % on the rear wheels at 0.05-0.10 m/s). Higher kp (8) makes the start overshoot worse.
+- The user fixed a mechanical problem at M2. After that **M3 sticks**: no motion at 15 and 21.5 % PWM, then
+  0.7 s late start and 73 % overshoot. Waiting for a mechanical check of M3.
+- SD card full from vc4 kernel warnings (core_freq=250): fixed with core_freq=500 (CLAUDE.md open questions).
+
 ### Next steps (in this order)
 
-1. The teammate flashes v2.2.0 (wheels in the air). The EEPROM is empty, so the MCU uses the defaults.
+1. (Done 2026-10-15) The teammate flashes v2.2.0. Now: the mechanics of M3, then `ff` again.
 2. `python3 ~/NALA/scripts/tune_motors.py show`: the defaults, flag "RAM differs from the EEPROM".
    Then app 1 runs as before (`/odom` 20 Hz, no warnings).
 3. Wheels in the air: `tune_motors.py --yes ff` -> apply the suggested `ff_pwm` row (`set ...`), run `ff` again

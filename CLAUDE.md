@@ -166,7 +166,8 @@ Everything below is project-specific and must be kept up to date.
 | Motor driver MCU | ATmega328PB, 16 MHz, 5 V. **UART** (user, 2026-10-12): MCU PD0 RX / PD1 TX <-> level shifter <-> Pi GPIO14 TX / GPIO15 RX = PL011 `/dev/ttyAMA0`, 38400 baud. (2026-10-09 to 12: I2C on PC4/PC5, never worked) |
 | Level shifter | The schematic says TXS0104E, but the part on the board is a **TXB** type (found 2026-10-12). A TXB works for UART but **cannot do I2C** (it oscillates against pull-ups; seen as random ACKs and a ~60 kHz square wave on SCL/SDA). No pull-ups on lines through it |
 | IMU | WitMotion WT901C-TTL, 3.3 V, flat with the chip side up, on a **CH340G USB-to-TTL adapter** (USB id 1a86:7523) = `/dev/ttyIMU` (udev rule from `setup_pi.sh`). Already set to 115200 baud / 50 Hz / acc + gyro (2026-10-09). Position on the robot not measured (placeholder in `config/robot.yaml`). Example code (Arduino) in `JY901 uno r3/` (local, ignored by git) |
-| Battery | 4S2P Li-ion 18650, 3300 mAh per cell: 16.8 V full (4.2 V/cell), 6.6 Ah. Low-voltage alarm at 14.0 V (3.5 V/cell, user), 0 % at 12.0 V (3.0 V/cell) |
+| Battery | 4S2P Li-ion 18650, 3300 mAh per cell: 16.8 V full (4.2 V/cell), 6.6 Ah. Low-voltage alarm at 14.0 V (3.5 V/cell, user), 0 % at 12.0 V (3.0 V/cell). 16.1 V measured 2026-10-15 |
+| Motor supply | Always 12 V from a DC-DC converter (user, 2026-10-15): the motor speed for a PWM does not depend on the battery voltage |
 | Battery monitor | TI INA260 on the Pi I2C bus 1 (GPIO2 SDA / GPIO3 SCL, directly, not through the level shifter). A0 and A1 to SCL = address 0x4F (user, 2026-10-14). **No answer on the bus** (2026-10-14, VCC connected, Pi pins OK): the IC may be broken. Battery work is on hold (user) |
 | Pi pins | GPIO14/15 = UART to the MCU, GPIO2/3 = I2C to the INA260, USB = LiDAR (CP2102) and IMU (CH340G). Two devices must never share a UART (two TX outputs would drive one RX pin) |
 
@@ -284,13 +285,20 @@ SLAM must not jump to a wrong but similar-looking place.
 - [3] Base station: only a pose, or a physical dock or charger? How exact must the return be?
 - [3] Coverage width (tool width) and any coverage pattern requirements.
 - [2] Checked 2026-10-09 (old Pi installation): miniuart-bt + core_freq=250 -> `/dev/ttyAMA0`, core clock fixed
-  250 MHz, Bluetooth and the Xbox controller work on the mini UART; `setup_imu.py` -> 115200 baud, 50 Hz, only
+  250 MHz (since 2026-10-15: 500 MHz, see the SD card note), Bluetooth and the Xbox controller work on the mini UART; `setup_imu.py` -> 115200 baud, 50 Hz, only
   0x51/0x52; `/imu` 50 Hz; gyro sign correct (counter-clockwise = positive); EKF 30 Hz without TF warnings,
   360 deg turns by hand tracked.
 - [1] **After the Pi reinstall (Ubuntu Desktop 24.04): follow `docs/handover.md`.** Phase A done (2026-10-12).
   Phase B: IMU, LiDAR, MCU link, motors + encoders in the air done (2026-10-14/15). INA260 on hold.
   Open: speed control tuning (firmware v2.2.0, after the teammate flashes it), Xbox pairing (the user does it later),
   chassis on the floor (only with the user's permission), app 2.
+- [1] Pi SD card was 99 % full (2026-10-15): `core_freq=250` (from `setup_pi.sh`) is below the 500 MHz the Pi 4
+  display driver (vc4 KMS) needs, so the kernel logged 4 warnings with stack traces per screen update (~3 GB/day
+  in syslog + kern.log). Fixed: `core_freq=500` + `core_freq_min=500` (still a fixed clock for the mini UART);
+  0 warnings after the reboot, Bluetooth and `/dev/ttyAMA0` OK. Logs emptied, journal 200 MB, apt cache cleaned (4.3 GB free).
+- [1] Motor test 2026-10-15 (v2.2.0, in the air): wheel directions confirmed by the user. Dead zone 11.6-13.6 % PWM
+  (not 8 % as in v1.1.1), the wheels differ a lot at low PWM. After the user fixed M2 mechanically, **M3 does not
+  turn below ~25 % PWM** and starts 0.7 s late with 73 % overshoot: check M3 mechanically before tuning.
 - [1] Pi boot splash: `scripts/setup_splash.sh` ran 2026-10-15 (Plymouth theme `nala` with `firmware/prayer.jpg`).
   Not seen yet (no display connected). The headless boot waits ~31 s in `plymouth-quit-wait` for the GNOME
   autologin session: normal, SSH works earlier.

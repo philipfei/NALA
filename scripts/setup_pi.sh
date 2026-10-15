@@ -69,10 +69,13 @@ sudo usermod -aG dialout "$USER"
 sudo sed -i 's/console=serial0,115200 //' /boot/firmware/cmdline.txt
 sudo systemctl mask serial-getty@ttyS0.service serial-getty@ttyAMA0.service
 # The stable PL011 UART goes to GPIO14/15 (MCU), Bluetooth (Xbox controller) moves to the
-# mini UART. core_freq fixes the VPU clock, so the mini UART baud rate does not change
-# with the CPU load. I2C bus 1 on GPIO2/3 is for the INA260 battery monitor.
+# mini UART. core_freq + core_freq_min fix the VPU clock, so the mini UART baud rate does not
+# change with the CPU load. Fixed at 500 MHz, not 250: on the Pi 4 the display driver (vc4 KMS)
+# needs a core clock of at least 500 MHz; with 250 it logged kernel warnings ~9 times per second
+# and filled the SD card (2026-10-15). I2C bus 1 on GPIO2/3 is for the INA260 battery monitor.
 config=/boot/firmware/config.txt
-for setting in enable_uart=1 dtoverlay=miniuart-bt core_freq=250 dtparam=i2c_arm=on; do
+sudo sed -i '/^core_freq=250$/d' "$config"
+for setting in enable_uart=1 dtoverlay=miniuart-bt core_freq=500 core_freq_min=500 dtparam=i2c_arm=on; do
   grep -qxF "$setting" "$config" || echo "$setting" | sudo tee -a "$config" >/dev/null
 done
 

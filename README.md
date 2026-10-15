@@ -276,7 +276,7 @@ sudo reboot
 
 `setup_pi.sh` installs ROS 2 and the tools from [requirements.yaml](requirements.yaml), gives `nala` access to
 the UART, I2C and the game controller, removes the Linux serial console from the GPIO UART, puts the PL011 UART
-on GPIO14/15 for the MCU (`dtoverlay=miniuart-bt`, `core_freq=250`, Bluetooth moves to the mini UART),
+on GPIO14/15 for the MCU (`dtoverlay=miniuart-bt`, `core_freq=500` + `core_freq_min=500`, Bluetooth moves to the mini UART),
 makes the fixed name `/dev/ttyIMU` for the IMU's CH340G adapter (udev rule), removes `brltty` and stops
 ModemManager (on Ubuntu Desktop they disturb USB serial adapters), and adds `source ~/NALA/config/ros_env.sh` to `~/.bashrc`.
 
