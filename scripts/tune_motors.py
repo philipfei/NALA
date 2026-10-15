@@ -39,6 +39,8 @@ OP_NAMES = {mp.OP_GET: 'get', mp.OP_SET: 'set', mp.OP_SAVE: 'save', mp.OP_DEFAUL
 IDX = {name: i for i, name in enumerate(mp.PARAM_NAMES)}
 N = mp.FF_TABLE_N
 FF_SPEED, FF_PWM = IDX['ff_speed0'], IDX['ff_m1_pwm0']   # speed points; PWM row of motor m at FF_PWM + m * N
+MIN_TURNING = 0.3        # rad/s: below this a motor counts as standing (not used to fit the dead zone)
+MAX_FIT_SPEED = 2.5      # rad/s: the dead zone is extrapolated only from measured points this slow
 
 
 class LinkError(Exception):
@@ -323,16 +325,27 @@ def cmd_sweep(link, robot, cfg, args):
 
 
 def suggest_ff(table_speed, table_pwm, measured):
-    """PWM that gives each table speed, from the measured curve (pwm_i -> measured_i), linear."""
-    curve = sorted(zip(measured, table_pwm))
-    out = [table_pwm[0]]                                  # the dead-zone point is not measured here
+    """PWM for each table speed, from the measured curve (table_pwm[i] -> measured[i], i >= 1), linear.
+
+    The dead-zone point (speed 0) is extrapolated from the two lowest measured points that turn
+    (>= MIN_TURNING rad/s), but only if the lowest one is slow (<= MAX_FIT_SPEED): the curve is
+    steep near the dead zone, so a line from faster points would be wrong. Otherwise it is kept.
+    """
+    curve = sorted((s, p) for s, p in zip(measured[1:], table_pwm[1:]) if s >= MIN_TURNING)
+    zero = table_pwm[0]
+    if len(curve) >= 2 and curve[0][0] <= MAX_FIT_SPEED:
+        (sa, pa), (sb, pb) = curve[0], curve[1]
+        zero = min(pa, max(0.0, pa - (pb - pa) * sa / (sb - sa)))
+    curve = [(0.0, zero)] + curve
+    if len(curve) < 2:
+        return list(table_pwm)
+    out = [zero]
     for s in table_speed[1:]:
-        lower = [c for c in curve if c[0] <= s]
         upper = [c for c in curve if c[0] > s]
-        if not upper:
-            out.append(100.0)
-            continue
-        (s0, p0), (s1, p1) = (lower[-1] if lower else (0.0, table_pwm[0])), upper[0]
+        if upper:
+            (s0, p0), (s1, p1) = [c for c in curve if c[0] <= s][-1], upper[0]
+        else:                                             # faster than measured: extend the last segment
+            (s0, p0), (s1, p1) = curve[-2], curve[-1]
         out.append(min(100.0, max(0.0, p0 + (p1 - p0) * (s - s0) / (s1 - s0))))
     return out
 
@@ -376,10 +389,10 @@ def cmd_ff(link, robot, cfg, args):
     finally:
         restore(link, cfg, original)
     new = [suggest_ff(speeds, rows[m], measured[m]) for m in range(4)]
-    print('\nSuggested PWM rows (same speed points; the dead-zone point ffN_pwm0 is kept):')
+    print('\nSuggested PWM rows (same speed points; ff_mN_pwm0 = dead zone, extrapolated to 0 rad/s):')
     for m in range(4):
         print(f'ff_m{m + 1}_pwm  ' + ' '.join(f'{x:6.2f}' for x in new[m]))
-    pairs = [(f'ff_m{m + 1}_pwm{i}', new[m][i]) for m in range(4) for i in range(1, N)]
+    pairs = [(f'ff_m{m + 1}_pwm{i}', new[m][i]) for m in range(4) for i in range(N)]
     if args.apply:
         for name, value in pairs:
             set_param(link, cfg, name, value)
