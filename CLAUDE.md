@@ -299,8 +299,8 @@ SLAM must not jump to a wrong but similar-looking place.
 - [1] Motor test 2026-10-15 (v2.2.0, in the air): wheel directions confirmed by the user. Dead zone 11.6-13.6 % PWM
   (not 8 % as in v1.1.1), the wheels differ a lot at low PWM. After the user fixed M2 mechanically, **M3 does not
   turn below ~25 % PWM** and starts 0.7 s late with 73 % overshoot: check M3 mechanically before tuning.
-- [1] Pi boot splash: `scripts/setup_splash.sh` ran 2026-10-15 (Plymouth theme `nala` with `firmware/prayer.jpg`).
-  Not seen yet (no display connected). The headless boot waits ~31 s in `plymouth-quit-wait` for the GNOME
+- [1] Pi boot splash: `scripts/setup_splash.sh` ran 2026-10-15 (Plymouth theme `nala` with `firmware/prayer.jpeg`).
+  Shown correctly at the reboot of 2026-10-15 (monitor connected). The headless boot waits ~31 s in `plymouth-quit-wait` for the GNOME
   autologin session: normal, SSH works earlier.
 - [2] IMU gyro bias at rest: about -0.0015 rad/s = -5 deg/min of yaw drift while standing (2026-10-09).
   Not compensated yet (idea: average the gyro while standing still at start, or while the wheels do not move).

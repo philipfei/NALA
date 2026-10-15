@@ -74,7 +74,7 @@ apt:
     splash:                                 # installed by scripts/setup_splash.sh (optional boot splash)
       - plymouth                            # boot splash; contains the script plugin (script.so) on Ubuntu
       - plymouth-label                      # text rendering for Plymouth themes
-      - python3-pil                         # Pillow: converts firmware/prayer.jpg to PNG for Plymouth
+      - python3-pil                         # Pillow: converts firmware/prayer.jpeg to PNG for Plymouth
     removed:                                # by scripts/setup_pi.sh (Ubuntu Desktop has them)
       - brltty                              # takes CH340 USB serial adapters away (the IMU adapter)
       - ModemManager (service disabled)     # sends modem commands to new serial ports

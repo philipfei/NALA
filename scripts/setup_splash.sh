@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Boot splash of the Pi: the prayer picture (firmware/prayer.jpg) as a Plymouth theme. Safe to run again.
+# Boot splash of the Pi: the prayer picture (firmware/prayer.jpeg) as a Plymouth theme. Safe to run again.
 # Run in the Pi SSH terminal:  bash ~/NALA/scripts/setup_splash.sh
 # It shows at the next boot, on a connected display (the Pi firmware's rainbow screen comes first).
 # Package list: requirements.yaml (apt.pi). Keep both in sync.
@@ -25,7 +25,7 @@ fi
 echo "== Theme files"
 sudo mkdir -p "$THEME_DIR"
 # Plymouth reads only PNG. The picture is a JPEG: convert it, at most 1080 pixels high (smaller initramfs).
-python3 - "$NALA_DIR/firmware/prayer.jpg" /tmp/nala_prayer.png <<'PY'
+python3 - "$NALA_DIR/firmware/prayer.jpeg" /tmp/nala_prayer.png <<'PY'
 import sys
 from PIL import Image
 img = Image.open(sys.argv[1]).convert('RGB')
