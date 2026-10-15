@@ -376,6 +376,7 @@ python3 ~/NALA/scripts/tune_motors.py set kp 2 accel_limit 20   # change in RAM 
 python3 ~/NALA/scripts/tune_motors.py save                  # keep it after power-off (EEPROM)
 python3 ~/NALA/scripts/tune_motors.py reload                # undo unsaved changes
 python3 ~/NALA/scripts/tune_motors.py defaults              # the firmware defaults (config.h); then save
+python3 ~/NALA/scripts/tune_motors.py ff --floor --apply    # on the floor: each speed forward + back (legs <= 1.5 m)
 python3 ~/NALA/scripts/tune_motors.py sweep --floor         # on the floor: short steps, each pair comes back
 ```
 

@@ -10,7 +10,8 @@ Stop app 1 / app 2 first: base_node uses the same UART.
     python3 ~/NALA/scripts/tune_motors.py defaults             # the firmware defaults (config.h), in RAM
     python3 ~/NALA/scripts/tune_motors.py step --vx 0.15       # one speed step, metrics per wheel
     python3 ~/NALA/scripts/tune_motors.py sweep [--floor]      # steps in 6 directions at several speeds
-    python3 ~/NALA/scripts/tune_motors.py ff [--apply]         # measure the feed-forward rows (wheels in the air)
+    python3 ~/NALA/scripts/tune_motors.py ff [--apply] [--floor]   # measure the feed-forward rows (in the air,
+                                                                # or on the floor: forward + back per speed)
 
 The MCU accepts a change only while the robot stands still (else it answers "busy").
 Every motion asks for a confirmation first; --yes skips it (for SSH runs after a check by a person).
@@ -367,10 +368,27 @@ def cmd_ff(link, robot, cfg, args):
     speeds = values[FF_SPEED:FF_SPEED + N]
     rows = [values[FF_PWM + m * N:FF_PWM + (m + 1) * N] for m in range(4)]
     settle, measure, rest = cfg['ff_settle_time'], cfg['ff_measure_time'], cfg['post_time']
-    confirm(f'FF test: kp and ki set to 0 (feed-forward only). Each table speed from rest: {settle:.0f} s to '
-            f'settle, then {measure:.0f} s measured; up to {speeds[-1]:.1f} rad/s = '
-            f'{speeds[-1] * robot["radius"]:.2f} m/s, about {(N - 1) * (rest + settle + measure):.0f} s. '
-            'ARE THE WHEELS LIFTED OFF THE GROUND?', args)
+
+    def times(speed):
+        """(settle, measure) for one leg; on the floor a leg is at most ff_floor_max_dist long."""
+        if not args.floor:
+            return settle, measure
+        total = min(settle + measure, cfg['ff_floor_max_dist'] / (speed * robot['radius']))
+        m = min(measure, max(1.0, total / 2))
+        return max(0.0, total - m), m
+
+    legs = [1.0, -1.0] if args.floor else [1.0]   # floor: forward, then back to the start
+    duration = sum(len(legs) * (rest + sum(times(s))) for s in speeds[1:])
+    if args.floor:
+        confirm(f'FF test ON THE FLOOR: kp and ki set to 0 (feed-forward only). Each table speed forward, then '
+                f'back (legs <= {cfg["ff_floor_max_dist"]:.1f} m, the robot comes back), up to '
+                f'{speeds[-1] * robot["radius"]:.2f} m/s, about {duration:.0f} s. Is the floor clear in front and behind?',
+                args)
+    else:
+        confirm(f'FF test: kp and ki set to 0 (feed-forward only). Each table speed from rest: {settle:.0f} s to '
+                f'settle, then {measure:.0f} s measured; up to {speeds[-1]:.1f} rad/s = '
+                f'{speeds[-1] * robot["radius"]:.2f} m/s, about {duration:.0f} s. '
+                'ARE THE WHEELS LIFTED OFF THE GROUND?', args)
     original = {name: values[IDX[name]] for name in ('kp', 'ki')}
     measured = [[0.0] for _ in range(4)]          # speed 0 at the dead-zone point (not measured)
     try:
@@ -378,11 +396,15 @@ def cmd_ff(link, robot, cfg, args):
             set_param(link, cfg, name, 0.0)
         print('point  speed   measured M1..M4 [rad/s] (each at its own PWM row value)')
         for i in range(1, N):
-            link.stop()
-            time.sleep(rest)
-            link.drive(speeds[i] * robot['radius'], 0.0, 0.0)
-            time.sleep(settle)
-            mean = steady_speeds(link, robot, measure)
+            leg_settle, leg_measure = times(speeds[i])
+            mean = [0.0] * 4
+            for sign in legs:                     # floor: the mean of forward and back (as positive speeds)
+                link.stop()
+                time.sleep(rest)
+                link.drive(sign * speeds[i] * robot['radius'], 0.0, 0.0)
+                time.sleep(leg_settle)
+                leg = steady_speeds(link, robot, leg_measure)
+                mean = [x + sign * v / len(legs) for x, v in zip(mean, leg)]
             for m in range(4):
                 measured[m].append(mean[m])
             print(f'{i:5}  {speeds[i]:5.2f}   ' + '  '.join(f'{mean[m]:6.2f} @ {rows[m][i]:5.1f} %' for m in range(4)))
@@ -458,6 +480,7 @@ def main():
     p.set_defaults(func=cmd_sweep)
     p = sub.add_parser('ff', help='measure the feed-forward rows of the 4 motors (wheels in the air)')
     p.add_argument('--apply', action='store_true', help='write the suggested rows into the MCU RAM')
+    p.add_argument('--floor', action='store_true', help='on the floor: each speed forward and back, short legs')
     p.set_defaults(func=cmd_ff)
     args = parser.parse_args()
 
