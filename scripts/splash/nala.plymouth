@@ -1,0 +1,8 @@
+[Plymouth Theme]
+Name=NALA
+Description=NALA boot splash: the prayer picture on black (installed by scripts/setup_splash.sh)
+ModuleName=script
+
+[script]
+ImageDir=/usr/share/plymouth/themes/nala
+ScriptFile=/usr/share/plymouth/themes/nala/nala.script

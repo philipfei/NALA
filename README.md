@@ -107,6 +107,7 @@ NALA/
 ├── firmware/                              MCU motor driver (ATmega328PB), Microchip Studio project.
 │   │                                      Owned by a teammate, who builds and flashes it. v1.1.1 (by Claude).
 │   ├── README.md                          Protocol (source of truth), parameters, build/flash, changes per version
+│   ├── prayer.jpg                         The team's prayer picture (JPEG). Also the Pi boot splash (scripts/setup_splash.sh)
 │   ├── docs/
 │   │   └── state_machine.svg              Firmware state machine (labels in Chinese)
 │   ├── tests/                             Model tests and simulations (Python, run on a PC)
@@ -143,6 +144,10 @@ NALA/
 ├── scripts/
 │   ├── setup_pi.sh                        [1] One-time Pi setup: ROS, Cyclone DDS, UART, I2C, USB serial rules, permissions, ~/.bashrc
 │   ├── setup_imu.py                       [2] Pi, once: IMU output (acc + gyro), 50 Hz, 115200 baud
+│   ├── setup_splash.sh                    Pi, once: boot splash = firmware/prayer.jpg (Plymouth theme, rebuilds the initramfs)
+│   ├── splash/
+│   │   ├── nala.plymouth                  Plymouth theme description (script plugin)
+│   │   └── nala.script                    Plymouth script: the picture on black, scaled to the screen, centered
 │   └── save_map.sh                        [2] Pi: save the current SLAM map into maps/<name>/
 │
 └── src/                                   ROS 2 packages. The repo root is the colcon workspace
@@ -276,6 +281,12 @@ IMU (only for a new IMU; ours is already set since 2026-10-09 and keeps it): wit
 Battery monitor: `i2cdetect -y 1` must show the INA260 (expected at `40`); if it is at another address,
 change `i2c_address` in `config/battery.yaml`.
 When a pull changes `setup_pi.sh` (new packages), run it again and log in again (new groups need a new login).
+
+Boot splash (one time, optional): `bash ~/NALA/scripts/setup_splash.sh` (asks for the sudo password, about 1 minute).
+It shows `firmware/prayer.jpg` while the Pi boots, on a connected display (after the Pi's rainbow screen).
+To go back to the Ubuntu splash: `sudo update-alternatives --config default.plymouth`, then `sudo update-initramfs -u`.
+Without a display the boot is the same: the desktop is ready about 50 s after power-on (`plymouth-quit-wait` waits
+for the GNOME autologin session, measured 2026-10-15; SSH works earlier).
 
 Xbox controller (one time): pair it with the Pi. In the Pi SSH terminal run `bluetoothctl`, then
 `scan on`, hold the pair button on the controller until the Xbox logo blinks fast, then

@@ -1,0 +1,15 @@
+# NALA boot splash (Plymouth script plugin). Installed by scripts/setup_splash.sh.
+# Shows prayer.png on a black background, as large as the screen allows, centered.
+
+Window.SetBackgroundTopColor(0, 0, 0);
+Window.SetBackgroundBottomColor(0, 0, 0);
+
+image = Image("prayer.png");
+scale = Window.GetHeight() / image.GetHeight();
+if (image.GetWidth() * scale > Window.GetWidth())
+  scale = Window.GetWidth() / image.GetWidth();
+picture = image.Scale(image.GetWidth() * scale, image.GetHeight() * scale);
+
+sprite = Sprite(picture);
+sprite.SetX(Window.GetX() + (Window.GetWidth() - picture.GetWidth()) / 2);
+sprite.SetY(Window.GetY() + (Window.GetHeight() - picture.GetHeight()) / 2);
