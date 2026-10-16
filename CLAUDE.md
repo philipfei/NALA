@@ -314,7 +314,10 @@ SLAM must not jump to a wrong but similar-looking place.
   (Regulated Pure Pursuit) itself. Autodrive is forward only; `linear.y` is always 0.
 - Velocity gate (`nala_coverage/gate_node.py`) is the only `/cmd_vel` publisher in app 3: Nav2 -> `/cmd_vel_nav`,
   manual -> `/cmd_vel_remote` (`coverage_teleop` or the panel's arrows, only while paused). App 3 does not start
-  the Xbox controller; another `/cmd_vel` publisher stops the robot (`VELOCITY_GRAPH_CONFLICT`).
+  `xbox_teleop`; another `/cmd_vel` publisher stops the robot (`VELOCITY_GRAPH_CONFLICT`).
+- Xbox B pauses the task (user decision 2026-10-16): app 3 starts `joy_node` + `xbox_pause` (nala_coverage);
+  on the B rising edge (`pause_button: 1`, `config/teleop.yaml`, not checked on the controller yet) it calls
+  `/coverage/pause` with `call_async` (no waiting in callbacks; no service = warning only; one open request).
 - Robot outline for coverage: from `config/robot.yaml` (body_length x body_width, centred), never copied.
   Collision radius = farthest corner + `planning_padding_m` (0.293 m); plans use 0.33 m.
 - The panel runs `plan_cli.py` as a child process: coverage_tool's package is called `coverage`, the same

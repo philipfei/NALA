@@ -27,3 +27,7 @@ xbox_teleop:                    # Pi: /joy -> /cmd_vel (nala_teleop xbox_teleop;
     scale_angular_yaw: 0.5      # rad/s at full stick (2026-10-16: was 1.0, slower is better for SLAM)
     joy_timeout: 0.2            # s, no /joy for this long while LB is held (controller lost) -> stop.
                                 # joy_node repeats /joy at autorepeat_rate (20 Hz), so this is 4 messages
+
+xbox_pause:                     # Pi, app 3 only: B pauses the coverage task (nala_coverage xbox_pause).
+  ros__parameters:              # App 3 does not drive with the controller (only the velocity gate drives).
+    pause_button: 1             # B in joy (SDL): A = 0, B = 1. Not checked on our controller yet

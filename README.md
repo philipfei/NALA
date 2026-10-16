@@ -254,7 +254,7 @@ NALA/
     │   │   ├── app2_slam_pi.launch.py     [2] Pi: app 1 + robot model + LiDAR + SLAM
     │   │   ├── app2_slam_pc.launch.py     [2] PC: RViz with slam.rviz
     │   │   ├── app3_base_station_pc.launch.py   [3] PC: show a saved map, click the base station in RViz (the robot screen can do this too)
-    │   │   ├── app3_coverage_pi.launch.py [3] Pi: base driver, battery, IMU + EKF, robot model, LiDAR, AMCL, Nav2, coverage mission, velocity gate
+    │   │   ├── app3_coverage_pi.launch.py [3] Pi: base driver, battery, IMU + EKF, robot model, LiDAR, AMCL, Nav2, coverage mission, velocity gate, Xbox B = pause
     │   │   └── app3_coverage_pc.launch.py [3] PC: RViz with coverage.rviz to watch the mission
     │   └── rviz/
     │       ├── slam.rviz                  [2] RViz layout for mapping: map, scan, robot, frames
@@ -280,12 +280,16 @@ NALA/
     │   │   ├── geometry.py                [3] Occupancy grid, reachability, coverable floor (no ROS)
     │   │   ├── params.py                  [3] Load and check config/ (outline from robot.yaml), render the Nav2 params
     │   │   ├── keyboard_teleop.py         [3] coverage_teleop: drive by hand through the gate while a task is paused
+    │   │   ├── buttons.py                 [3] Game controller button press detection (no ROS)
+    │   │   ├── xbox_pause_node.py         [3] xbox_pause: Xbox B -> /coverage/pause (never /cmd_vel)
     │   │   ├── mode_guard.py              [3] Refuse to start app 3 next to SLAM or another /cmd_vel publisher
     │   │   ├── ros_common.py              [3] Shared ROS helpers (QoS, messages, sensor freshness)
     │   │   └── state.py                   [3] Mission bookkeeping (no ROS)
     │   └── test/
     │       ├── test_core.py, test_plan_file.py, test_base_station.py, test_revision.py   [3] Unit tests (no ROS)
     │       ├── test_launch_contract.py    [3] Static checks of the app 3 launch files
+    │       ├── test_buttons.py            [3] Unit tests for buttons.py
+    │       ├── test_xbox_pause.py         [3] Loopback ROS tests of xbox_pause with a fake /coverage/pause service
     │       └── test_ros.py                [3] Loopback ROS tests: gate, supervisor, meter, plan driving, return to base
     │
     └── nala_panel/                        Robot screen for app 3 (PyQt5): maps, base station, planning, driving
@@ -551,12 +555,15 @@ The panel starts by itself after the Pi boots (`scripts/setup_pi_screen.sh`). By
    - **Start** becomes active when the plan is checked. **The robot only moves after Start.**
    - while driving: the robot, the plan and the covered floor on the map, the state and the % covered;
    - **STOP** (red, always there): the robot stops at once and the task pauses. **Resume** continues.
+   - **Xbox controller B** (if the controller is on): pauses the task like **Pause** (Nav2 stops, the rest of
+     the plan is kept). Resume on the screen. The controller cannot drive in app 3.
    - **Pause / Resume / Cancel task.** When paused (for example `BLOCKED_IN_PLACE`), **Drive by hand** and the
      arrow buttons move the robot through the velocity gate (hold to drive). Tap **Hand control off**, then **Resume**.
    - At the end the robot drives back to the base station: *Finished*, `RETURNED_TO_BASE`.
    - **Finish** stops app 3 and shows the task report (also saved in `maps/<name>/runs/<time>/`).
 
-Only one app at a time: stop app 1 and app 2 first. App 3 does not start the Xbox controller.
+Only one app at a time: stop app 1 and app 2 first. App 3 starts `joy_node` only for the B button (pause);
+it does not start `xbox_teleop`, so the controller cannot drive.
 
 #### Pi terminal (without the screen)
 
@@ -578,8 +585,8 @@ ros2 service call /coverage/pause std_srvs/srv/Trigger '{}'    # resume / cancel
 ```
 
 Drive by hand while paused (W/S/A/D, `Q` to leave): `ros2 run nala_coverage coverage_teleop`.
-Do not use `nala_teleop`'s keyboard or the Xbox controller during app 3: they publish `/cmd_vel` directly, the
-gate sees a second publisher and stops the robot (`VELOCITY_GRAPH_CONFLICT`).
+Do not run `nala_teleop`'s keyboard or `xbox_teleop` (app 1) during app 3: they publish `/cmd_vel` directly, the
+gate sees a second publisher and stops the robot (`VELOCITY_GRAPH_CONFLICT`). Xbox B (pause) is fine.
 
 #### PC terminal (optional)
 

@@ -45,8 +45,11 @@ def test_coverage_launch_uses_the_robot_repo_driver_model_and_lidar():
     assert "_node('robot_localization', 'ekf_node', 'ekf_filter_node'" in text and "'ekf.yaml'" in text
     assert "_node('nala_base', 'battery_node'" in text and "'battery.yaml'" in text
     # The velocity gate is the only /cmd_vel publisher: no joystick teleop, no own odom TF or laser TF.
-    for forbidden in ('teleop_twist_joy', 'joy_node', 'odom_tf', 'laser_static_transform', 'slam_toolbox'):
+    for forbidden in ('teleop_twist_joy', 'xbox_teleop', 'odom_tf', 'laser_static_transform', 'slam_toolbox'):
         assert forbidden not in text, forbidden
+    # The Xbox controller only pauses: joy_node + xbox_pause (no /cmd_vel), settings from teleop.yaml.
+    assert "_node('joy', 'joy_node'" in text and "_node('nala_coverage', 'xbox_pause'" in text
+    assert "'teleop.yaml'" in text
     assert text.count("'velocity_gate'") == 1 and "'/cmd_vel_remote'" not in text
 
 

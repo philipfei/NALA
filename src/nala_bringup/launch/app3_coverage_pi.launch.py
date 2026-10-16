@@ -6,10 +6,12 @@ ros2 launch nala_bringup app3_coverage_pi.launch.py map:=$HOME/NALA/maps/house1/
 
 The base station is maps/<name>/base_station.yaml (next to the map; base_station:= to override).
 AMCL starts there (the supervisor sends it as the initial pose). Start the mission from the PC with the /coverage/* services (README).
-The Xbox controller is not started: only the velocity gate may publish /cmd_vel while coverage runs.
+The Xbox controller does not drive in app 3 (only the velocity gate may publish /cmd_vel while coverage runs):
+joy_node runs only for xbox_pause, so that its B button pauses the task (config/teleop.yaml).
 Like app 2, the EKF (wheel vx, vy + IMU turn rate) publishes TF odom -> base_footprint, not base_node:
 the wheel turn rate is 10-14 % too high (mecanum roller slip, floor test 2026-10-16).
-hardware:=false leaves out base_node, battery_node, imu_node, the EKF and the LiDAR driver (simulation, tools/sim).
+hardware:=false leaves out base_node, battery_node, imu_node, the EKF, the LiDAR driver and the Xbox controller
+(simulation, tools/sim).
 """
 from pathlib import Path
 import tempfile
@@ -82,6 +84,9 @@ def _setup(context):
             _node('robot_localization', 'ekf_node', 'ekf_filter_node', parameters=[str(config_dir / 'ekf.yaml')]),
             _node('rplidar_ros', 'rplidar_composition', 'rplidar_node',
                   parameters=[str(config_dir / 'rplidar.yaml')]),
+            # Xbox controller: B = pause (no driving, no /cmd_vel).
+            _node('joy', 'joy_node', 'joy_node', parameters=[str(config_dir / 'teleop.yaml')]),
+            _node('nala_coverage', 'xbox_pause', 'xbox_pause', parameters=[str(config_dir / 'teleop.yaml')]),
         ]
     nodes += [
         _node('nav2_map_server', 'map_server', 'map_server', parameters=[str(nav_file)]),
@@ -113,7 +118,7 @@ def generate_launch_description():
         DeclareLaunchArgument('base_station', default_value='',
                               description='base station file (default: base_station.yaml next to the map)'),
         DeclareLaunchArgument('hardware', default_value='true',
-                              description='false: no base_node, battery, IMU, EKF and LiDAR driver (simulation)'),
+                              description='false: no base_node, battery, IMU, EKF, LiDAR driver, Xbox (simulation)'),
         DeclareLaunchArgument('nav2_stamped_supported', default_value='true'),
         OpaqueFunction(function=preflight),
         OpaqueFunction(function=_setup),

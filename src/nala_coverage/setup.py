@@ -21,5 +21,6 @@ setup(
         'velocity_gate = nala_coverage.gate_node:main',
         'coverage_teleop = nala_coverage.keyboard_teleop:main',
         'base_station_picker = nala_coverage.base_station_picker_node:main',
+        'xbox_pause = nala_coverage.xbox_pause_node:main',
     ]},
 )
