@@ -195,15 +195,15 @@ Tricks that worked before:
 - `app3_coverage_pi.launch.py` starts base_node (`publish_tf: False`), battery_node, imu_node and the EKF like app 2.
 - Acceleration limits from the floor test: 0.1 m/s^2 and 0.35 rad/s^2 (`config/coverage.yaml`, `nav2_params.yaml`).
 - `scripts/setup_pi_screen.sh` keeps GNOME: it only installs the app 3 packages and adds two autostart entries
-  (`start_panel.sh`, `screen_always_on.sh`). Never run on the Pi yet.
+  (`start_panel.sh`, `screen_always_on.sh`).
 
 Next steps on the Pi (in this order; ask before anything moves):
 
-1. `git pull`, `bash ~/NALA/scripts/setup_pi_screen.sh` (sudo), build, then the app 3 tests in the isolated
-   sim environment (README "Tests (PC)", the same on the Pi).
-2. Reboot with the user watching the screen: the panel must come up full-screen on the Waveshare (C), touch must
-   land where tapped, the screen must stay on. If the panel does not come up: `journalctl --user -b | grep -i
-   start_panel` (the script names the failed display check).
+1. (Done 2026-10-16) `setup_pi_screen.sh` ran, build, app 3 tests on the Pi: 111/113 (two timing tests in
+   test_ros.py, the same before the merge; CLAUDE.md open questions). Simulation on the PC: RETURNED_TO_BASE, 99.3 %.
+2. (Done 2026-10-16) Reboot: the panel comes up full-screen on the Waveshare (C), touch and picture OK (user), the
+   screen stays on. If it ever does not come up: `journalctl --user -b | grep -i start_panel` (the script names
+   the failed display check). Xbox checked without base_node (LB + centring, B = button 1; deadzone now 0.15).
 3. App 2: map the real test area, `save_map.sh`. On the screen: base station, a short plan.
 4. Robot on the floor (user present): "First run on the robot" in the README (localization, costmaps, a short
    plan, an obstacle, the return).

@@ -31,4 +31,4 @@ xbox_teleop:                    # Pi: /joy -> /cmd_vel (nala_teleop xbox_teleop;
 
 xbox_pause:                     # Pi, app 3 only: B pauses the coverage task (nala_coverage xbox_pause).
   ros__parameters:              # App 3 does not drive with the controller (only the velocity gate drives).
-    pause_button: 1             # B in joy (SDL): A = 0, B = 1. Not checked on our controller yet
+    pause_button: 1             # B in joy (SDL): A = 0, B = 1 (checked on our controller 2026-10-16)

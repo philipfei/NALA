@@ -165,7 +165,7 @@ Everything below is project-specific and must be kept up to date.
 | Encoder | 1536 counts per wheel revolution (confirmed: 1.17 m driven = 1.17 m odometry, 2026-10-07) |
 | Teleop speeds | 0.45 m/s linear (= motor limit), 0.5 rad/s angular (keys and full stick; `config/teleop.yaml`; 1.0 until 2026-10-16, slower is better for SLAM) |
 | Motor top speed | Measured 2026-10-07 at 100 % PWM: 12.6-13.1 rad/s = 0.50-0.52 m/s rim speed (M4 slowest), the same with wheels in the air and on the floor. Firmware assumed 25 rad/s. `max_wheel_speed: 0.45` in `config/base.yaml` |
-| Game controller | Xbox Wireless Controller `C8:3F:26:93:1B:B2`, paired with the **Pi** over Bluetooth (`/dev/input/js0`; Bluetooth runs on the mini UART since 2026-10-09, `dtoverlay=miniuart-bt`). In `joy` (SDL): LB = button 4, left stick x/y = axes 0/1, right stick x = axis 3, triggers = axes 2/5 (1.0 released). Checked 2026-10-07 |
+| Game controller | Xbox Wireless Controller `C8:3F:26:93:1B:B2`, paired with the **Pi** over Bluetooth (`/dev/input/js0`; Bluetooth runs on the mini UART since 2026-10-09, `dtoverlay=miniuart-bt`). In `joy` (SDL): LB = button 4, B = button 1, left stick x/y = axes 0/1, right stick x = axis 3, triggers = axes 2/5 (1.0 released). Checked 2026-10-07, B 2026-10-16. The left stick rests at up to ~0.12 (raw): joy deadzone 0.15 |
 | LiDAR | RPLIDAR A2M8 (firmware 1.28), USB CP2102 adapter (`/dev/serial/by-id/usb-Silicon_Labs_CP2102_...`), 115200 baud, driver `rplidar_ros` (`rplidar_composition`). Sensitivity mode: 16 m, about 7900 points/s, about 14 scans/s. Mounted at the chassis center (x = y = 0), facing backward (yaw 180 deg, checked 2026-10-07 with objects behind and right of the robot). Height not measured (placeholder 0.20 m in `config/robot.yaml`) |
 | Motor driver MCU | ATmega328PB, 16 MHz, 5 V. **UART** (user, 2026-10-12): MCU PD0 RX / PD1 TX <-> level shifter <-> Pi GPIO14 TX / GPIO15 RX = PL011 `/dev/ttyAMA0`, 38400 baud. (2026-10-09 to 12: I2C on PC4/PC5, never worked) |
 | Level shifter | The schematic says TXS0104E, but the part on the board is a **TXB** type (found 2026-10-12). A TXB works for UART but **cannot do I2C** (it oscillates against pull-ups; seen as random ACKs and a ~60 kHz square wave on SCL/SDA). No pull-ups on lines through it |
@@ -319,7 +319,7 @@ SLAM must not jump to a wrong but similar-looking place.
   manual -> `/cmd_vel_remote` (`coverage_teleop` or the panel's arrows, only while paused). App 3 does not start
   `xbox_teleop`; another `/cmd_vel` publisher stops the robot (`VELOCITY_GRAPH_CONFLICT`).
 - Xbox B pauses the task (user decision 2026-10-16): app 3 starts `joy_node` + `xbox_pause` (nala_coverage);
-  on the B rising edge (`pause_button: 1`, `config/teleop.yaml`, not checked on the controller yet) it calls
+  on the B rising edge (`pause_button: 1`, `config/teleop.yaml`, checked 2026-10-16) it calls
   `/coverage/pause` with `call_async` (no waiting in callbacks; no service = warning only; one open request).
 - Robot outline for coverage: from `config/robot.yaml` (body_length x body_width, centred), never copied.
   Collision radius = farthest corner + `planning_padding_m` (0.293 m); plans use 0.33 m.
@@ -400,8 +400,15 @@ SLAM must not jump to a wrong but similar-looking place.
 - [3] First robot tests of app 3: localization at the base station, costmaps, a short plan, an obstacle, the
   return; coverage speeds (`motion` in `config/coverage.yaml`: 0.12 m/s, 0.4 rad/s are start values; the
   acceleration limits 0.1 m/s^2 / 0.35 rad/s^2 come from the floor test). Battery check stays off
-  (`battery.enabled: false`) until the INA260 answers. Panel on GNOME/XWayland not seen on the Pi yet.
+  (`battery.enabled: false`) until the INA260 answers.
 - [3] Obstacles lower or higher than the LiDAR scan plane are not seen (no bumper).
-- [3] Robot screen: check picture and touch of the Waveshare (C) on the Pi; planning time on the Pi 4.
+- [3] Pi set up for app 3 on 2026-10-16: `setup_pi_screen.sh` ran, after a reboot the panel starts full-screen by
+  itself (GNOME autostart), touch and picture checked by the user, the screen stays on. Xbox on the Pi without
+  base_node: LB with a held stick = 0, after centring 0.45 m/s, B = button 1. Still open: planning time on the Pi 4.
+- [3] Tests on the Pi 4: 111 of 113 app 3 tests pass. `test_supervisor_launch_no_motion_and_continuous_trust` and
+  `test_older_plan_is_split_at_corners_and_followed_exactly` (test_ros.py) always fail there and fail the same way
+  before the merge adaptation: fixed waits (e.g. 3.4 s for localization) are too short for the Pi. On the PC the
+  second one fails now and then, also before the merge. `coverage_tool/tests/regression.py --quick`: `bumpy` misses
+  2 cells, the same on the original branch. Teammate's code, not changed.
 - [3] DDS on the Pi uses only the 10.42.0.0/24 network (`config/cyclonedds.xml`). Check that app 3 and the
   panel also work when the PC network is not there.
