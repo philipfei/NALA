@@ -259,7 +259,7 @@ SLAM must not jump to a wrong but similar-looking place.
 - Xbox teleop is our own node `xbox_teleop` (user decision 2026-10-16, replaced `teleop_twist_joy`): after an LB press
   the command is zero until both sticks were centred once (no jump with a held stick); LB release = one zero;
   no `/joy` for `joy_timeout` 0.2 s while LB is held = one zero, then LB must be pressed again. joy_node deadzone
-  0.05 (user). Same axes and scales as before. Logic in `xbox.py` (no ROS, unit tests).
+  0.15 (user, 2026-10-16; 0.05 failed: the left stick rests at up to ~0.12 raw, so it never read exactly 0 and crept). Same axes and scales as before. Logic in `xbox.py` (no ROS, unit tests).
 - PC and Pi talk over the LAN with ROS 2 DDS (Cyclone, `ROS_DOMAIN_ID=0`). Their clocks must be in sync (both use NTP).
 - `nala_base` sends the current command to the MCU at a fixed rate (20 Hz), not synced to the MCU feedback (20 Hz)
   (reasons in `docs/mcu_protocol.md`).

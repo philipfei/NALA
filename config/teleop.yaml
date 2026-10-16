@@ -12,7 +12,8 @@ keyboard_teleop:                # PC: nala_teleop keyboard_teleop
 joy_node:                       # Pi: reads the Xbox controller (package joy)
   ros__parameters:
     device_id: 0                # first game controller
-    deadzone: 0.05              # stick values below this count as exactly 0 (range 0..1; user, 2026-10-16: was 0.1)
+    deadzone: 0.15              # stick values below this count as exactly 0 (range 0..1). Measured 2026-10-16: the left
+                                # stick rests at up to ~0.12, so 0.05 let the robot creep and xbox_teleop never saw 0
     autorepeat_rate: 20.0       # Hz, repeat /joy while held, so /cmd_vel keeps coming
 
 xbox_teleop:                    # Pi: /joy -> /cmd_vel (nala_teleop xbox_teleop; replaced teleop_twist_joy 2026-10-16)
