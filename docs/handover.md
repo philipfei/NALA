@@ -146,7 +146,9 @@ Status 2026-10-14 (network back on 10.42.0.0/24, the Pi is 10.42.0.154):
    usable on its own: the robot turns. Overshoot at 0.05-0.10 m/s is still 18-50 % (whole-robot stick-slip).
 3. Optional later: firmware change against the windup during the rise (integrate only near the target), if the
    driving (app 1/2, Nav2) needs a smoother start.
-4. 1 m drive against a tape measure with the new values (odometry scale), strafe and 360 deg turn.
+4. (Done 2026-10-16) Driving test on the floor: forward and strafe odometry exact; turn in place: wheel odometry
+   360 deg, real ~315-330 deg (so the turn comes only from the IMU, as designed). Stop accuracy 3 mm with a planned
+   deceleration of 0.1 m/s^2 (details: CLAUDE.md open questions). Next: the IMU yaw in a 360 deg turn (app 2).
 5. (Done) The final values are in `config.h` (v2.3.1) and the docs.
 6. Xbox pairing (README "Setup, Pi"), drive with the controller, then app 2 (SLAM test).
 

@@ -293,8 +293,17 @@ SLAM must not jump to a wrong but similar-looking place.
   v1.1.1 step tests (wheels in the air, 0.05-0.45 m/s): 90 % of the target in 0.2-0.4 s (6.5: overshoot 30-90 %),
   overshoot 1-27 % (most <= 15 %), settled within ~1 s. Xbox strafe + turn on the floor works (2026-10-07).
 - [2] LiDAR mount height above the floor (placeholder 0.20 m in `config/robot.yaml`).
-- [2] Driving test: forward odometry scale checked (1.17 m, 8 deg). Still open: strafe and 360 deg turn, then SLAM tuning
-  in the real house (no jumps between similar rooms).
+- [2] Driving test 2026-10-16 (floor, firmware v2.3.0 tuned values, app 1, /odom):
+  - Forward 1.053 m by odometry = 1.053 m tape (scale exact, ended straight). Strafe left 1.022 m by odometry
+    = ~1.022 m tape (difference below the tape resolution). Wheel odometry is good for vx, vy.
+  - Turn in place 360.3 deg by wheel odometry, real only ~315-330 deg (user, tape line): the wheel turn rate is
+    10-14 % too high (roller slip). Confirms the design: the EKF (app 2) takes only vx, vy from /odom and the turn
+    rate only from the IMU gyro (`config/ekf.yaml`). Not checked yet: the IMU yaw in the same turn.
+  - Stopping (user choice: plan A = slow down before the goal, no MCU brake): a stop command = coasting
+    (~0.38 m/s^2, 5 cm from 0.2 m/s). While the command is above 0 the robot follows only about 0.1-0.14 m/s^2
+    of deceleration (the FF keeps pushing). With a planned deceleration of 0.1 m/s^2 and a 0.03 m/s creep the robot
+    stopped 3 mm from the goal (0.3 deg in a turn with 0.35 rad/s^2). Use these limits for Nav2 (stage 3).
+  - Then: SLAM tuning in the real house (no jumps between similar rooms).
 - [3] Base station: only a pose, or a physical dock or charger? How exact must the return be?
 - [3] Coverage width (tool width) and any coverage pattern requirements.
 - [2] Checked 2026-10-09 (old Pi installation): miniuart-bt + core_freq=250 -> `/dev/ttyAMA0`, core clock fixed
