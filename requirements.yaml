@@ -52,6 +52,7 @@ apt:
       - python3-matplotlib                  # coverage_tool images
       - python3-tk                          # coverage_tool/app.py (interactive planner)
       - python3-pyqt5                       # nala_panel tests (offscreen) and the panel on the PC
+      - ros-jazzy-nav2-msgs                 # nala_coverage tests (test_ros.py: FollowPath, ComputePathToPose)
       - ros-jazzy-navigation2               # only for tools/sim (app 3 with a fake robot on the PC)
       - ros-jazzy-robot-state-publisher     # tools/sim (robot model)
       - ros-jazzy-xacro                     # tools/sim (robot model)
@@ -96,12 +97,7 @@ apt:
       - python3-pil                         # map images
       - python3-numpy
       - python3-yaml
-      - xserver-xorg                        # small desktop for the robot screen (--no-install-recommends)
-      - xinit
-      - xfce4
-      - lightdm                             # automatic login of user nala
-      - lightdm-gtk-greeter
-      - x11-xserver-utils                   # xset: keep the screen on
+      # No extra desktop: the panel runs in the Ubuntu Desktop (GNOME, Wayland) session (GNOME autostart).
 
 pip: []   # none
 

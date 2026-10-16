@@ -16,11 +16,14 @@
     motion:
       # Coverage driving speeds. Autodrive only drives forwards (the gate passes no negative linear speed
       # from Nav2); manual driving through the gate may reverse.
-      # The MCU protocol has steps of 0.02 m/s and 0.02 rad/s (docs/mcu_protocol.md).
+      # The MCU protocol has steps of 1 mm/s and 1 mrad/s (docs/mcu_protocol.md).
       linear_m_s: 0.12
       angular_rad_s: 0.4
-      linear_accel_m_s2: 0.15
-      angular_accel_rad_s2: 0.6
+      # Acceleration limits of the velocity gate (both directions); angular also for Nav2's controller
+      # (max_angular_accel). Floor test 2026-10-16: while the command is above 0 the robot follows only
+      # 0.1-0.14 m/s^2 of deceleration; with 0.1 m/s^2 it stopped 3 mm from the goal, 0.3 deg with 0.35 rad/s^2.
+      linear_accel_m_s2: 0.1
+      angular_accel_rad_s2: 0.35
       manual_forward_m_s: 0.25
       manual_reverse_m_s: 0.15
       manual_angular_rad_s: 0.5
@@ -80,7 +83,8 @@
       rotation_slack_deg: 5.0
       publish_period_s: 0.5
     battery:
-      # Only when the MCU publishes sensor_msgs/BatteryState on /battery_state.
+      # battery_node (nala_base, INA260) publishes /battery_state. Keep false until the INA260 answers on I2C
+      # (it does not yet, 2026-10-14): with true and no battery data the robot does not start (BATTERY_STALE).
       enabled: false
       start_ratio: 0.3
       critical_ratio: 0.15

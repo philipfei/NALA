@@ -1,4 +1,4 @@
-# Handover (2026-10-15)
+# Handover (2026-10-16)
 
 For the next Claude Code session, after the Pi is reinstalled. Read `CLAUDE.md` first: it has the rules,
 the hardware facts and the open questions. This file says where the work stopped and what to do next.
@@ -8,7 +8,8 @@ the hardware facts and the open questions. This file says where the work stopped
 - App 1 (teleop) was driven on the robot on 2026-10-07 (firmware v1.1.1, UART text protocol).
 - App 2 (mapping): code done. IMU driver and EKF were checked on the Pi on 2026-10-09
   (gyro sign, 50 Hz, EKF at 30 Hz, 360 deg turns by hand). No driving test and no SLAM tuning yet.
-- App 3 (coverage) is on the branch `stage3-coverage` (simulation only), not merged.
+- App 3 (coverage) was merged into main on 2026-10-16 (simulation only, not run on the robot yet):
+  see "2026-10-16: app 3 merged" below.
 - 2026-10-09: the MCU link was moved to I2C (firmware v2.0.0). It never worked. Cause found on 2026-10-12:
   the level shifter on the board is a **TXB** type (the schematic says TXS0104E). A TXB cannot do I2C.
 - 2026-10-12 (this session, **code only, nothing was tested on hardware**): the MCU link is UART again,
@@ -185,8 +186,27 @@ Tricks that worked before:
 - LiDAR height and IMU mount position are placeholders in `config/robot.yaml`.
 - Battery percentage is a rough linear value; INA260 address and current sign are not checked.
 - Feed-forward table: 20-27 % overshoot at 0.10-0.15 m/s (lower two table points when the firmware is touched).
-- App 3 branch: needs IMU + EKF in its launch, and its Pi screen setup was made for Ubuntu Server.
+- App 3: AMCL values were tuned in simulation only; the coverage sensor values are placeholders.
 - `firmware/docs/state_machine.svg` still shows the old text protocol.
+
+## 2026-10-16: app 3 merged
+
+`stage3-coverage` is merged into main and adapted to the current main:
+- `app3_coverage_pi.launch.py` starts base_node (`publish_tf: False`), battery_node, imu_node and the EKF like app 2.
+- Acceleration limits from the floor test: 0.1 m/s^2 and 0.35 rad/s^2 (`config/coverage.yaml`, `nav2_params.yaml`).
+- `scripts/setup_pi_screen.sh` keeps GNOME: it only installs the app 3 packages and adds two autostart entries
+  (`start_panel.sh`, `screen_always_on.sh`). Never run on the Pi yet.
+
+Next steps on the Pi (in this order; ask before anything moves):
+
+1. `git pull`, `bash ~/NALA/scripts/setup_pi_screen.sh` (sudo), build, then the app 3 tests in the isolated
+   sim environment (README "Tests (PC)", the same on the Pi).
+2. Reboot with the user watching the screen: the panel must come up full-screen on the Waveshare (C), touch must
+   land where tapped, the screen must stay on. If the panel does not come up: `journalctl --user -b | grep -i
+   start_panel` (the script names the failed display check).
+3. App 2: map the real test area, `save_map.sh`. On the screen: base station, a short plan.
+4. Robot on the floor (user present): "First run on the robot" in the README (localization, costmaps, a short
+   plan, an obstacle, the return).
 
 ## Prompt for the next conversation
 

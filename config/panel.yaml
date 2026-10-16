@@ -12,4 +12,4 @@ nala_panel:
     update_period: 0.3            # s, how often the screen shows new robot data while driving
     manual_period: 0.05           # s, how often a held arrow button sends its command (drive by hand)
     launch_stop_timeout: 20.0     # s, wait this long for app 3 to stop before it is killed
-    hardware: true                # false: app 3 without base_node and LiDAR driver (simulation, tools/sim)
+    hardware: true                # false: app 3 without base_node, battery, IMU, EKF and LiDAR driver (tools/sim)

@@ -12,7 +12,7 @@ Use it to check a plan, a config change or a code change before taking it to the
 
 | File | Purpose |
 |---|---|
-| `fake_nala.py` | Kinematic NALA, like `nala_base` + MCU. Drives on `/cmd_vel` (forward, sideways, turn) in the MCU protocol's 0.02 steps, scaled down to `max_wheel_speed`, and stops after `cmd_vel_timeout` without a command (`nala_base`'s own functions and `config/base.yaml`). Publishes `/odom` at 20 Hz, TF `odom → base_footprint` and a ray-cast 300-beam `/scan` in the `laser` frame (mount from `robot.yaml`: facing backward). Checks NALA's 410 × 360 mm box (`robot.yaml`) against walls and obstacles. Logs the true pose and velocity. |
+| `fake_nala.py` | Kinematic NALA, like `nala_base` + MCU. Drives on `/cmd_vel` (forward, sideways, turn) in the MCU protocol's 1 mm/s steps, scaled down to `max_wheel_speed`, and stops after `cmd_vel_timeout` without a command (`nala_base`'s own functions and `config/base.yaml`). Publishes `/odom` at 20 Hz, TF `odom → base_footprint` and a ray-cast 300-beam `/scan` in the `laser` frame (mount from `robot.yaml`: facing backward). Checks NALA's 410 × 360 mm box (`robot.yaml`) against walls and obstacles. Logs the true pose and velocity. |
 | `run_sim.py` | Starts the launch and the fake robot at the base station (AMCL starts there too), and acts as the operator: preview, start, resume after listed pauses. A finished task ends back at the base station (`RETURNED_TO_BASE`). Writes everything to `runs/<name>/`. |
 | `analyze.py` | `summary.json` and `plot.png` for one run. |
 | `coverage_map.py` | Covered vs. missed floor per run, next to the plan followed exactly. Uses NALA's coverable area and its sensor disk, 0.26 m ahead of the robot. |
@@ -23,6 +23,7 @@ Use it to check a plan, a config change or a code change before taking it to the
 - Walls come from the map image. `--obstacle X,Y,R` adds round obstacles that exist in the world but not in the map Nav2 loads.
 - A move that would make NALA's box touch a wall or obstacle is not made and counts as a **contact**.
 - **Not simulated:** odometry drift and wheel slip, LiDAR motion blur, and the real MCU's speed controller (dead band at low speed, coasting stop). Odometry is perfect, so AMCL does better than on the robot.
+- App 3 runs with `hardware:=false`: no base_node, battery_node, imu_node, EKF or LiDAR driver. `fake_nala.py` publishes `/odom` and TF `odom → base_footprint` itself (on the robot the EKF publishes that TF from the wheels and the IMU turn rate).
 - Everything runs in real time.
 
 ## Run it

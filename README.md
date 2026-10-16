@@ -10,8 +10,8 @@ plan the path, choose a plan and drive it.
 
 | App | What it does | Status |
 |---|---|---|
-| 1. Teleop | Drive the chassis with the PC keyboard or an Xbox controller | Driven 2026-10-07. Firmware v2.1.0: MCU link, motors and encoders checked in the air (2026-10-15). Speed control tuning with v2.2.0 pending |
-| 2. Mapping | App 1 + real-time LiDAR SLAM on the Pi (wheel odometry + IMU in an EKF) + RViz on the PC + save the map and copy it to the PC | Code done. IMU and EKF checked on the Pi (2026-10-09). The new MCU link (firmware v2.1.0) is not tested on the robot yet: see [docs/handover.md](docs/handover.md). SLAM tuning needs driving |
+| 1. Teleop | Drive the chassis with the PC keyboard or an Xbox controller | Driven 2026-10-07. Firmware v2.3.x: speed control tuned on the floor (2026-10-15). Driving test 2026-10-16: forward and strafe odometry exact |
+| 2. Mapping | App 1 + real-time LiDAR SLAM on the Pi (wheel odometry + IMU in an EKF) + RViz on the PC + save the map and copy it to the PC | First map of one room 2026-10-16: clean. IMU yaw checked in a 360 deg turn. Next: the real house (similar rooms), see [docs/handover.md](docs/handover.md) |
 | 3. Coverage | On the robot screen: choose a map from app 2, set the base station, plan a coverage path (from the base station or another start point, optionally only an area), choose a plan and drive it. The robot starts at the base station, covers, and returns | Code done. Tested in simulation only (`tools/sim`). Not tested on the robot |
 
 ## System
@@ -43,7 +43,7 @@ All dependencies: [requirements.yaml](requirements.yaml).
   Protocol: [docs/mcu_protocol.md](docs/mcu_protocol.md).
 - Level shifter on the board: a TXB type (the schematic says TXS0104E). Fine for UART, cannot do I2C.
 - IMU: WitMotion WT901C-TTL (3.3 V) on a CH340G USB-to-TTL adapter (`/dev/ttyIMU`), flat, chip side up.
-  Only its turn rate is used (EKF in app 2): [docs/imu_ekf.md](docs/imu_ekf.md).
+  Only its turn rate is used (EKF in apps 2 and 3): [docs/imu_ekf.md](docs/imu_ekf.md).
 - Battery: 4S2P Li-ion 18650 (3300 mAh per cell: 16.8 V full, 6.6 Ah). Battery monitor: TI INA260 on the Pi I2C
   bus 1 (GPIO2/3), read by `battery_node` (`/battery_state`, `/battery_low` below 14.0 V).
 - Xbox Wireless Controller (`C8:3F:26:93:1B:B2`), paired with the Pi over Bluetooth.
@@ -66,6 +66,7 @@ RViz <--/map /scan /tf--             rplidar_ros  (/scan)                       
 
 App 3 (all on the Pi; the PC is optional):
 Robot screen: nala_panel --starts--> app3_coverage_pi.launch.py, --runs--> coverage_tool/plan_cli.py
+  nala_base (base_node, battery_node, imu_node) + EKF + rplidar_ros + robot_state_publisher, as in app 2
   map_server + AMCL (starts at the base station): map->odom
   Nav2 planner + controller --/cmd_vel_nav--> velocity gate (nala_coverage) --/cmd_vel--> nala_base
   coverage supervisor (follows the plan, detours, returns to the base station) + coverage meter
@@ -182,8 +183,9 @@ NALA/
 │   │   ├── nala.plymouth                  Plymouth theme description (script plugin)
 │   │   └── nala.script                    Plymouth script: the picture on black, scaled to the screen, centered
 │   ├── save_map.sh                        [2] Pi: save the current SLAM map into maps/<name>/
-│   ├── setup_pi_screen.sh                 [3] One-time Pi setup for the robot screen: desktop, autologin, Nav2, panel start
-│   └── start_panel.sh                     [3] Start the robot screen panel (at login, or by hand)
+│   ├── setup_pi_screen.sh                 [3] One-time Pi setup for the robot screen: Nav2, panel libraries, GNOME autostart entries
+│   ├── screen_always_on.sh                [3] Pi, at every login (GNOME autostart): no screen blanking, dimming, lock or suspend
+│   └── start_panel.sh                     [3] Start the robot screen panel (at login, or by hand); waits for the XWayland display
 │
 ├── tools/
 │   └── sim/                               [3] PC: closed-loop simulation of app 3 with a fake robot (see tools/sim/README.md)
@@ -249,7 +251,7 @@ NALA/
     │   │   ├── app2_slam_pi.launch.py     [2] Pi: app 1 + robot model + LiDAR + SLAM
     │   │   ├── app2_slam_pc.launch.py     [2] PC: RViz with slam.rviz
     │   │   ├── app3_base_station_pc.launch.py   [3] PC: show a saved map, click the base station in RViz (the robot screen can do this too)
-    │   │   ├── app3_coverage_pi.launch.py [3] Pi: base driver + robot model + LiDAR + AMCL + Nav2 + coverage mission + velocity gate
+    │   │   ├── app3_coverage_pi.launch.py [3] Pi: base driver, battery, IMU + EKF, robot model, LiDAR, AMCL, Nav2, coverage mission, velocity gate
     │   │   └── app3_coverage_pc.launch.py [3] PC: RViz with coverage.rviz to watch the mission
     │   └── rviz/
     │       ├── slam.rviz                  [2] RViz layout for mapping: map, scan, robot, frames
@@ -370,12 +372,14 @@ for the GNOME autologin session, measured 2026-10-15; SSH works earlier).
 Robot screen for app 3 (one time, after `setup_pi.sh`), in the Pi SSH terminal:
 
 ```bash
-bash ~/NALA/scripts/setup_pi_screen.sh   # desktop with autologin, Nav2, PyQt5, planner libraries, panel autostart
+bash ~/NALA/scripts/setup_pi_screen.sh   # Nav2, PyQt5, planner libraries, GNOME autostart: panel + screen always on
 cd ~/NALA && colcon build --symlink-install --base-paths src
 sudo reboot
 ```
 
-After the reboot the panel starts full-screen on the 7 inch screen. First check that the picture fills the
+The Pi keeps its Ubuntu Desktop (GNOME, Wayland, automatic login of `nala`); nothing else is installed for the
+screen. After the reboot and the GNOME login the panel starts full-screen on the 7 inch screen (on XWayland,
+`QT_QPA_PLATFORM=xcb` in `start_panel.sh`), and the screen no longer blanks, dims or locks. First check that the picture fills the
 screen and that a tap lands where you touch. The Waveshare 7 inch HDMI LCD (C) normally works without a driver
 (HDMI + USB touch); if the picture or the touch is wrong, see the screen's manual before changing
 `/boot/firmware/config.txt`.
@@ -625,8 +629,12 @@ passage it uses is about 0.66 m. When the sensor position and size are known, ch
   station direction. If that fails, the task pauses (`RETURN_FAILED`); resume tries again.
 - **Forward only:** the plan only drives forwards, the controller cannot reverse (no behavior server), and the
   velocity gate passes no negative forward speed from Nav2.
-- **Speed steps:** the MCU protocol has steps of 0.02 m/s; the controller's slowest speed is 0.04 m/s, so a
-  command never rounds to 0 near a goal.
+- **Speeds and stopping:** cruise 0.12 m/s, turns 0.4 rad/s, slowest 0.04 m/s near a goal (the MCU protocol has
+  1 mm/s steps). Acceleration limits from the floor test 2026-10-16: 0.1 m/s^2 (velocity gate) and 0.35 rad/s^2
+  (gate and controller), so the robot can follow the slow-down before a goal (it cannot brake harder while the
+  command is above 0). A stop command makes the wheels coast (about 0.38 m/s^2).
+- **Heading:** like app 2, the EKF takes the turn rate only from the IMU gyro (the wheels show 10-14 % too much
+  turn). AMCL corrects the remaining drift against the map.
 - **Refused:** plans closer than 0.293 m to a wall, made on another map image, for other sensor values or for
   another base station; a base station closer than 0.293 m to a wall.
 - **Obstacles the LiDAR cannot see** (lower or higher than its scan plane) are not avoided. NALA has no bumper.
@@ -635,15 +643,16 @@ passage it uses is about 0.66 m. When the sensor position and size are known, ch
 
 Keep a hand on the robot's emergency stop.
 
-1. **LiDAR:** the scan must line up with the map when the robot stands still and when it turns.
+1. **LiDAR and EKF:** the scan must line up with the map when the robot stands still and when it turns
+   (if it rotates against the map while turning, check `/imu` and the EKF first, like in app 2).
 2. **Localization:** put the robot on the base station and tap **Drive** on a plan. Before **Start**, drive by
    hand is not possible, so check the map on the screen: the robot arrow must be on the base station.
    AMCL values in `config/localization.yaml` were tuned in simulation only.
 3. **Costmaps:** with RViz on the PC, put a box in front of the robot: it must appear in `/local_costmap/costmap`.
 4. **Plan driving:** a short plan in open space first. Then a box on the path: the robot must stop before it,
    skip past it, drive around and continue. At the end it must drive back to the base station.
-5. **Speeds:** `motion` in `config/coverage.yaml` holds placeholders (0.12 m/s, 0.4 rad/s). Raise them only
-   after the controller is tuned on the floor.
+5. **Speeds:** `motion` in `config/coverage.yaml`: 0.12 m/s and 0.4 rad/s are start values (not tested with Nav2);
+   the acceleration limits are measured. Raise the speeds only after the controller is tuned on the floor.
 
 #### Simulation on the PC
 

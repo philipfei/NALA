@@ -1,4 +1,5 @@
-"""App 3 (Pi): base driver + robot model + LiDAR + localization + Nav2 + coverage mission. Never starts motion.
+"""App 3 (Pi): base driver + battery + IMU + EKF + robot model + LiDAR + localization + Nav2 + coverage mission.
+Never starts motion.
 
 ros2 launch nala_bringup app3_coverage_pi.launch.py map:=$HOME/NALA/maps/house1/map.yaml \
     plan:=$HOME/NALA/maps/house1/plan.yaml output_dir:=$HOME/NALA/output
@@ -6,7 +7,9 @@ ros2 launch nala_bringup app3_coverage_pi.launch.py map:=$HOME/NALA/maps/house1/
 The base station is maps/<name>/base_station.yaml (next to the map; base_station:= to override).
 AMCL starts there (the supervisor sends it as the initial pose). Start the mission from the PC with the /coverage/* services (README).
 The Xbox controller is not started: only the velocity gate may publish /cmd_vel while coverage runs.
-hardware:=false leaves out base_node and the LiDAR driver (simulation, tools/sim).
+Like app 2, the EKF (wheel vx, vy + IMU turn rate) publishes TF odom -> base_footprint, not base_node:
+the wheel turn rate is 10-14 % too high (mecanum roller slip, floor test 2026-10-16).
+hardware:=false leaves out base_node, battery_node, imu_node, the EKF and the LiDAR driver (simulation, tools/sim).
 """
 from pathlib import Path
 import tempfile
@@ -70,8 +73,13 @@ def _setup(context):
                    '--frame-id', settings['runtime']['base_frame'], '--child-frame-id', 'scintillator_link']))
     if hardware:
         nodes += [
-            # Robot repo driver: /cmd_vel (from the velocity gate only) -> MCU; wheel speeds -> /odom and TF.
-            _node('nala_base', 'base_node', 'base_node', parameters=[str(config_dir / 'base.yaml')]),
+            # Robot repo driver: /cmd_vel (from the velocity gate only) -> MCU; wheel speeds -> /odom (no TF here).
+            _node('nala_base', 'base_node', 'base_node',
+                  parameters=[str(config_dir / 'base.yaml'), {'publish_tf': False}]),
+            _node('nala_base', 'battery_node', 'battery_node', parameters=[str(config_dir / 'battery.yaml')]),
+            _node('nala_base', 'imu_node', 'imu_node', parameters=[str(config_dir / 'imu.yaml')]),
+            # EKF: /odom vx, vy + /imu turn rate -> TF odom -> base_footprint (config/ekf.yaml, docs/imu_ekf.md).
+            _node('robot_localization', 'ekf_node', 'ekf_filter_node', parameters=[str(config_dir / 'ekf.yaml')]),
             _node('rplidar_ros', 'rplidar_composition', 'rplidar_node',
                   parameters=[str(config_dir / 'rplidar.yaml')]),
         ]
@@ -105,7 +113,7 @@ def generate_launch_description():
         DeclareLaunchArgument('base_station', default_value='',
                               description='base station file (default: base_station.yaml next to the map)'),
         DeclareLaunchArgument('hardware', default_value='true',
-                              description='false: no base_node and no LiDAR driver (simulation)'),
+                              description='false: no base_node, battery, IMU, EKF and LiDAR driver (simulation)'),
         DeclareLaunchArgument('nav2_stamped_supported', default_value='true'),
         OpaqueFunction(function=preflight),
         OpaqueFunction(function=_setup),

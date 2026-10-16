@@ -68,9 +68,19 @@ def test_rendered_localization_uses_robot_repo_frames(tmp_path):
 
 
 def test_speeds_never_round_to_zero_in_the_mcu_protocol():
-    # The MCU protocol sends speeds in 0.02 m/s steps; below 0.01 m/s a command becomes 0 (docs/mcu_protocol.md).
+    # The MCU protocol sends speeds in 1 mm/s steps; below 0.5 mm/s a command becomes 0 (docs/mcu_protocol.md).
     rpp = load_settings()['nav2']['controller_server']['ros__parameters']['FollowPath']
-    assert rpp['min_approach_linear_velocity'] >= .04 and rpp['regulated_linear_scaling_min_speed'] >= .04
+    assert rpp['min_approach_linear_velocity'] >= .001 and rpp['regulated_linear_scaling_min_speed'] >= .001
+
+
+def test_controller_turn_acceleration_is_the_coverage_motion_value(tmp_path):
+    s = load_settings()
+    rendered = yaml.safe_load(s.render_nav2('/tmp/map.yaml', tmp_path).read_text())
+    rpp = rendered['controller_server']['ros__parameters']['FollowPath']
+    assert rpp['max_angular_accel'] == s['motion']['angular_accel_rad_s2']
+    # The file itself holds the same value, so reading nav2_params.yaml alone is not misleading.
+    assert s['nav2']['controller_server']['ros__parameters']['FollowPath']['max_angular_accel'] == \
+        s['motion']['angular_accel_rad_s2']
 
 
 def test_rendered_nav2_uses_turning_circle_for_planning_and_box_for_the_controller(tmp_path):

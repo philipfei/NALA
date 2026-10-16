@@ -228,8 +228,8 @@ Everything below is project-specific and must be kept up to date.
 
 | Stage | App | Goal | Status |
 |---|---|---|---|
-| 1 | Teleop | Drive the chassis with the keyboard or the Xbox controller | Done and driven on the robot (2026-10-07, firmware v1.1.1). v2.3.0: speed control tuned on the floor and saved (2026-10-15). Next: pair the Xbox controller, drive app 1 |
-| 2 | Mapping | Teleop + real-time LiDAR SLAM + RViz on the PC + save the map and copy it back to the PC | Code done. IMU + EKF added and checked on the Pi (2026-10-09). Driving test and SLAM tuning pending |
+| 1 | Teleop | Drive the chassis with the keyboard or the Xbox controller | Done and driven on the robot (2026-10-07, firmware v1.1.1). v2.3.0: speed control tuned on the floor and saved (2026-10-15). Driving test with the Xbox controller 2026-10-16 (open questions) |
+| 2 | Mapping | Teleop + real-time LiDAR SLAM + RViz on the PC + save the map and copy it back to the PC | Code done. IMU + EKF checked (2026-10-09, 360 deg turn 2026-10-16). First map of one room 2026-10-16: clean. SLAM in the real house pending |
 | 3 | Coverage | On the robot screen: choose a map from app 2, set the base station, plan a path (start at the base station or at another start point; optionally only an area), choose a saved plan and drive it. The robot starts at the base station, covers, then returns to it | Code done 2026-10-08 (coverage stack from a teammate's PC, adapted to this repo). Tested in simulation only (`tools/sim`, panel end to end). Merged into main 2026-10-16. Not tested on the robot |
 
 **Current stage: 3** (coverage; user, 2026-10-16). App 3 is merged but not tested on the robot.
@@ -247,7 +247,7 @@ SLAM must not jump to a wrong but similar-looking place.
   velocity gate, coverage meter, base station), `nala_panel` (robot screen for app 3).
   The coverage planner is `coverage_tool/` (Python, no ROS, not a ROS package), run as `plan_cli.py`.
 - A package that is still empty has a `COLCON_IGNORE` file. Remove it in the stage that fills the package.
-- The Pi runs: `nala_base` (`base_node`, `battery_node`, `imu_node`), robot_localization EKF (app 2), Xbox controller (`joy` + `teleop_twist_joy`: hold LB, left stick = drive + strafe,
+- The Pi runs: `nala_base` (`base_node`, `battery_node`, `imu_node`), robot_localization EKF (apps 2 and 3), Xbox controller (`joy` + `teleop_twist_joy`: hold LB, left stick = drive + strafe,
   right stick = turn), `rplidar_ros`, `robot_state_publisher`, `slam_toolbox` (app 2), AMCL + Nav2 + coverage
   mission + velocity gate (app 3), the robot screen panel (`nala_panel`, app 3).
 - The PC runs: keyboard teleop (`nala_teleop`, own node: IJKL keys, Shift = strafe, the user chose it over WASD;
@@ -271,10 +271,13 @@ SLAM must not jump to a wrong but similar-looking place.
 - Battery: `battery_node` reads the INA260 (I2C) at 1 Hz -> `/battery_state` (percentage is rough: linear in the
   voltage, the 18650 curve is not) and `/battery_low` (true below 14.0 V), for a later "drive home on low battery".
   Started by the app 1 launch file. Tested on the PC with a fake smbus2.
-- IMU + EKF (app 2, `docs/imu_ekf.md`, user decision 2026-10-09): robot_localization EKF fuses `/odom` vx, vy
+- IMU + EKF (apps 2 and 3, `docs/imu_ekf.md`, user decision 2026-10-09): robot_localization EKF fuses `/odom` vx, vy
   and **only the IMU gyro z** for yaw (no wheel turn rate: mecanum slip). No IMU orientation (magnetometer is
   distorted indoors), no acceleration. TF odom -> base_footprint: base_node in app 1 (`publish_tf`), the EKF
-  in app 2 (`odom_tf:=false`). If the IMU fails the EKF has no yaw source: imu_node reports an error.
+  in app 2 (`odom_tf:=false`) and app 3 (`publish_tf: False` in its launch). The EKF output topic is
+  `/odometry/filtered`; `/odom` stays the wheel odometry (Nav2 and the app 3 supervisor read it for speed and
+  standstill only; user decision 2026-10-16: no `odom_raw` rename). If the IMU fails the EKF has no yaw source:
+  imu_node reports an error.
 - The URDF reads its numbers from `config/robot.yaml` (xacro `load_yaml`), passed in as launch arg `robot_config`.
 - Maps: `scripts/save_map.sh <name>` on the Pi saves `map.pgm/.yaml` (map_saver_cli) and
   `map.posegraph/.data` (slam_toolbox serialize_map). The PC copies the folder with `scp`.
@@ -289,15 +292,20 @@ SLAM must not jump to a wrong but similar-looking place.
 ### App 3 (coverage) decisions
 
 - Everything runs on the Pi. The robot screen (`nala_panel`, PyQt5) is the normal way to use it; the PC is optional
-  (RViz, planning with `coverage_tool`). The panel starts at login (`scripts/setup_pi_screen.sh`: Xfce + LightDM
-  autologin, `~/.config/autostart`). `scripts/setup_pi.sh` is unchanged.
+  (RViz, planning with `coverage_tool`). The panel starts at login in the existing Ubuntu Desktop session
+  (GNOME on Wayland, autologin of `nala`; user, 2026-10-16: no Xfce/LightDM): `scripts/setup_pi_screen.sh` adds
+  two GNOME autostart entries, `start_panel.sh` (PyQt5 on XWayland: `QT_QPA_PLATFORM=xcb`; waits up to 10 s for
+  the X display; over SSH it finds the display and the `.mutter-Xwaylandauth.*` file itself) and
+  `screen_always_on.sh` (gsettings: no blanking, dimming, lock or suspend; needs the session bus, so at login).
 - Map library: `maps/<name>/map.yaml/.pgm` (app 2), `base_station.yaml`, `plans/<time>.yaml/.png`, `runs/<time>/`.
 - Base station = a pose only, no dock or charger (user, 2026-10-08). The robot starts and ends there.
   Coverage may start at another start point; the robot still stands on the base station and Nav2 drives it
   to the start first (user, 2026-10-08). A plan records its base station; the robot refuses a plan made for
   another one (`PLAN_BASE_MISMATCH`).
 - Localization in app 3: AMCL on `map.yaml` (not slam_toolbox), initial pose = the base station, sent by the
-  supervisor with a spread of 0.1 m / 10 deg. No global relocalization.
+  supervisor with a spread of 0.1 m / 10 deg. No global relocalization. TF odom -> base_footprint comes from the
+  EKF (wheel vx, vy + IMU turn rate), as in app 2; `hardware:=false` (tools/sim) leaves out base_node, battery,
+  IMU, EKF and LiDAR (fake_nala publishes `/odom` and the TF).
 - Nav2 without BT navigator and behavior server: the supervisor calls `ComputePathToPose` and `FollowPath`
   (Regulated Pure Pursuit) itself. Autodrive is forward only; `linear.y` is always 0.
 - Velocity gate (`nala_coverage/gate_node.py`) is the only `/cmd_vel` publisher in app 3: Nav2 -> `/cmd_vel_nav`,
@@ -307,7 +315,10 @@ SLAM must not jump to a wrong but similar-looking place.
   Collision radius = farthest corner + `planning_padding_m` (0.293 m); plans use 0.33 m.
 - The panel runs `plan_cli.py` as a child process: coverage_tool's package is called `coverage`, the same
   name as the system package `python3-coverage`.
-- Slowest controller speed 0.04 m/s, because the MCU protocol rounds to 0.02 m/s steps.
+- Speeds (`motion` in `config/coverage.yaml`): 0.12 m/s, 0.4 rad/s (start values), slowest 0.04 m/s near a goal
+  (the MCU protocol has 1 mm/s steps). Acceleration limits = floor test 2026-10-16 (user decision): 0.1 m/s^2
+  (velocity gate) and 0.35 rad/s^2 (gate + RPP `max_angular_accel`, also written into `nav2_params.yaml`).
+  RPP has no `acc_lim_*`/`decel_lim_*` (DWB parameters): not added (user decision 2026-10-16).
 - Global costmap robot_radius = collision radius + half a cell: NavFn measures from obstacle cell centres, the
   supervisor checks planner paths exactly against cell edges (else detours and the way back can be refused).
 
@@ -372,16 +383,14 @@ SLAM must not jump to a wrong but similar-looking place.
   Not compensated yet (idea: average the gyro while standing still at start, or while the wheels do not move).
 - [2] IMU mount position and x direction (placeholders in `config/robot.yaml`; do not change the turn rate).
 - [2] EKF variances (`odom_twist_variance`, `angular_velocity_variance`) are start values: tune while driving.
-- [3] When App 3 (branch `stage3-coverage`) is merged: start `imu_node` + EKF in its launch too (or keep
-  base_node TF), and its note "slowest speed 0.04 m/s because of 0.02 steps" is outdated (now 1 mm/s).
-  It can use `/battery_state` now (`battery.enabled` in its `config/coverage.yaml`); its `setup_pi_screen.sh`
-  installs Xfce + LightDM, which is for Ubuntu Server: check it again on Ubuntu Desktop.
 - [3] Base station: answered, a pose only (user, 2026-10-08). Still open: how exact must the return be?
 - [3] Coverage sensor (scintillator): position and size unknown. `sensor_offset_m: 0.26` and
   `coverage_disk_radius_m: 0.6` in `config/coverage.yaml` are placeholders, and the sensor is assumed not to stick
   out of the 410 x 360 mm box. Change them and plan again when known.
 - [3] First robot tests of app 3: localization at the base station, costmaps, a short plan, an obstacle, the
-  return; coverage speeds (`motion` in `config/coverage.yaml`, placeholders 0.12 m/s, 0.4 rad/s).
+  return; coverage speeds (`motion` in `config/coverage.yaml`: 0.12 m/s, 0.4 rad/s are start values; the
+  acceleration limits 0.1 m/s^2 / 0.35 rad/s^2 come from the floor test). Battery check stays off
+  (`battery.enabled: false`) until the INA260 answers. Panel on GNOME/XWayland not seen on the Pi yet.
 - [3] Obstacles lower or higher than the LiDAR scan plane are not seen (no bumper).
 - [3] Robot screen: check picture and touch of the Waveshare (C) on the Pi; planning time on the Pi 4.
 - [3] DDS on the Pi uses only the 10.42.0.0/24 network (`config/cyclonedds.xml`). Check that app 3 and the
