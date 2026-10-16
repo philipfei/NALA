@@ -190,7 +190,8 @@ NALA/
 ├── tools/
 │   └── sim/                               [3] PC: closed-loop simulation of app 3 with a fake robot (see tools/sim/README.md)
 │       ├── README.md                      How to run it, options, what is simulated
-│       ├── env.sh                         ROS environment for the simulation (own domain, localhost only)
+│       ├── env.sh                         ROS environment for the simulation and the app 3 tests (own domain, localhost, Cyclone)
+│       ├── cyclonedds_sim.xml             Cyclone DDS for the simulation: loopback only, big messages and receive buffer
 │       ├── fake_nala.py                   Fake nala_base + MCU + LiDAR (uses nala_base's speed limit and config/base.yaml)
 │       ├── run_sim.py                     Runs app 3 against the fake robot like an operator, records the run
 │       ├── analyze.py                     Summary and plot of a run
@@ -688,8 +689,11 @@ ros2 run nala_panel panel --ros-args --params-file config/panel.yaml -p repo_dir
 
 #### Tests (PC)
 
+In the simulation environment (own domain 77, this PC only): with `config/ros_env.sh` (domain 0, robot network)
+a test velocity gate could send `/cmd_vel` to a robot that is running.
+
 ```bash
-source config/ros_env.sh
+source tools/sim/env.sh
 python3 -m pytest -q -p no:cacheprovider src/nala_coverage/test src/nala_panel/test   # about 3 minutes
 cd coverage_tool && python3 -m pytest -q -p no:cacheprovider tests/test_sensor.py
 ```

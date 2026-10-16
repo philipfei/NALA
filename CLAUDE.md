@@ -115,7 +115,8 @@ Everything below is project-specific and must be kept up to date.
   Never build on an NTFS drive: a `colcon build` on NTFS crashed the ntfs3 kernel driver (2026-10-06).
   Pure-logic tests on the PC:
   `PYTHONPATH=src/nala_base:src/nala_teleop python3 -m pytest -p no:cacheprovider src/nala_base/test src/nala_teleop/test`.
-  App 3 tests (after the build, `source config/ros_env.sh`):
+  App 3 tests (after the build, `source tools/sim/env.sh`: domain 77, localhost only; never `config/ros_env.sh`,
+  whose domain 0 reaches the robot):
   `python3 -m pytest -q -p no:cacheprovider src/nala_coverage/test src/nala_panel/test` (about 3 minutes).
 
 ## Packages and versions
@@ -139,6 +140,7 @@ Everything below is project-specific and must be kept up to date.
 - Network: the PC shares its connection on USB Ethernet (`enx00e17c6840b1`, 10.42.0.1/24).
   The Pi is on WiFi in that network (10.42.0.x, DHCP). The PC also has eduroam WiFi, which ROS must not use.
 - DDS: Cyclone DDS on both (the PC has only Cyclone, no Fast DDS). `ROS_DOMAIN_ID=0`.
+  The simulation (`tools/sim/env.sh`) uses Cyclone too, in domain 77 on loopback only (`tools/sim/cyclonedds_sim.xml`).
   Set by `config/ros_env.sh`; `config/cyclonedds.xml` limits DDS to the 10.42.0.0/24 network.
 - PC firewall: ufw is active (input policy DROP). It must allow 10.42.0.0/24, or DDS from the Pi is blocked.
 - Install Python libraries with apt (`python3-*`). Ubuntu 24.04 blocks system-wide pip (PEP 668).

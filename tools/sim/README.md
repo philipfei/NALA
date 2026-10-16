@@ -17,7 +17,8 @@ Use it to check a plan, a config change or a code change before taking it to the
 | `analyze.py` | `summary.json` and `plot.png` for one run. |
 | `coverage_map.py` | Covered vs. missed floor per run, next to the plan followed exactly. Uses NALA's coverable area and its sensor disk, 0.26 m ahead of the robot. |
 | `amcl_error.py` | AMCL position error against the true pose. |
-| `env.sh` | ROS environment for the simulation (own domain 77, localhost only, FastDDS). |
+| `env.sh` | ROS environment for the simulation (own domain 77, localhost only, Cyclone DDS with `cyclonedds_sim.xml`). |
+| `cyclonedds_sim.xml` | Cyclone DDS for the simulation: loopback only, unicast discovery, room for 50 processes, 64 KB messages, 10 MB receive buffer (the kernel may give less). |
 
 **What is simulated, and what isn't**
 - Walls come from the map image. `--obstacle X,Y,R` adds round obstacles that exist in the world but not in the map Nav2 loads.
@@ -99,6 +100,6 @@ In the coverage map, the colours mean:
 
 | Symptom | Cause and fix |
 |---|---|
-| `AMCL never published a pose`, or lifecycle errors in `launch.log` | A process from an earlier run is still alive in the same domain, or stale FastDDS shared memory. Check with `pgrep -af "app3_coverage_pi.launch\|fake_nala\|run_sim"`, stop those processes, then run `fastdds shm clean`. |
+| `AMCL never published a pose`, or lifecycle errors in `launch.log` | A process from an earlier run is still alive in the same domain. Check with `pgrep -af "app3_coverage_pi.launch\|fake_nala\|run_sim"` and stop those processes. |
 | Occasional `TF_UNAVAILABLE` / `SCAN_STALE` pauses | Timing hiccups of a loaded PC; `run_sim.py` resumes after them. |
 | `resume refused: …` | The reason is printed. For example, a pose too close to a wall: the robot then stays paused. |
