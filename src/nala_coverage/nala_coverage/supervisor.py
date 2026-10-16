@@ -10,6 +10,7 @@ import math
 import time
 import numpy as np
 import rclpy
+from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.signals import SignalHandlerOptions
 from rclpy.time import Time
@@ -596,11 +597,16 @@ def main(args=None):
     previous={sig:signal.getsignal(sig) for sig in (signal.SIGINT,signal.SIGTERM)}
     def interrupt(_signum,_frame):raise KeyboardInterrupt
     for sig in previous:signal.signal(sig,interrupt)
+    # Two threads: the TF listener's callbacks (ReentrantCallbackGroup) run while a slow callback (scan check, ~10 Hz)
+    # is busy; all other callbacks are in the default mutually exclusive group, one at a time as before. With one
+    # thread the TF buffer fell up to 0.5 s behind on the Pi 4 -> TF_UNAVAILABLE (robot, 2026-10-16).
+    executor=MultiThreadedExecutor(num_threads=2)
     try:
-        rclpy.spin(node)
+        rclpy.spin(node,executor=executor)
     except KeyboardInterrupt:
         pass
     finally:
+        executor.shutdown()
         _shutdown_supervisor(node)
         node.destroy_node()
         if rclpy.ok():rclpy.shutdown()
