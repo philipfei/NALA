@@ -1,0 +1,3141 @@
+frame_id: map
+map: examples/RDG_NM-DEP_V4.yaml
+map_image_sha256: e164a8ddd9a762795f6741d7fe3acbbcaee285e74b2cab07573acb8dadbb48d9
+created: '2026-10-07T14:10:44'
+start: [-6.523, 4.809]
+area_polygon: []
+stats: {pattern: Wall loop + boustrophedon cells (31 deg), cost_total_s: 974.5381, cost_drive_s: 291.0002, cost_turn_s: 495.017,
+  cost_bend_s: 62.444, edge_missed_m2: 0.0, cost_reverse_s: 60.0, cost_overlap_s: 128.5208, cost_missed_s: 0.0, sharp_turns: 201,
+  hairpins: 6, overlap_m2: 46.2675, missed_m2: 0.0, coverage_pct: 92.0357, coverage_of_reachable_pct: 100.0, area_m2: 68.0225,
+  covered_m2: 62.605, path_spacing_m: 1.08, overlap_pct: 10.0, regions: 2, rings: 0, loops: 0, working_length_m: 33.7986,
+  connector_length_m: 53.5014, total_length_m: 87.3001, estimated_time_s: 786.0172, goals: 83, wall_segments: 60, spiral_segments: 0,
+  lane_segments: 3, centre_line_segments: 5, gap_goals: 15, skipped_unreachable: 0, uncovered_reachable_cells: 0, uncovered_interior_cells: 0,
+  planning_time_s: 296.4333, drive_stops: 50, drive_arcs: 47, drive_length_m: 80.792, drive_lost_cells: 0, drive_unsafe_segments: 0,
+  drive_min_arc_radius_m: 0.2, drive_corners_planned: 335, drive_corners_kept: 111, footprint_hits: 0}
+settings:
+  geometry:
+    robot_radius_m: 0.33
+    coverage_disk_radius_m: 0.6
+    sensor_offset_m: 0.26
+    footprint_m:
+    - [0.205, 0.18]
+    - [0.205, -0.18]
+    - [-0.205, -0.18]
+    - [-0.205, 0.18]
+    footprint_padding_m: 0.02
+  spiral: {overlap_pct: 10.0, obstacle_mode: around, wall_side: right}
+  strategy: {mode: auto, wall_loop_first: true}
+  cost: {smooth_turn_deg: 20.0, bend_s_per_rad: 1.5, stop_penalty_s: 1.0, reverse_angle_deg: 150.0, reverse_penalty_s: 10.0,
+    overlap_weight: 1.0, missed_weight: 10000.0, edge_band_m: 0.1, edge_missed_weight: 10000.0}
+  planning: {max_segment_length_m: 2.0}
+  motion: {linear_m_s: 0.3, angular_rad_s: 0.8}
+  drive: {min_arc_radius_m: 0.2, spacing_m: 0.05, straight_deg: 1.0, max_corner_group: 8}
+  optimizer: {search_time_s: 4.0, polish_time_s: 15.0, neighbours: 8}
+poses:
+- x: -6.523
+  y: 4.809
+  yaw: -2.38844
+  orientation: {z: -0.929929, w: 0.367738}
+  kind: transit
+- x: -6.7897
+  y: 4.559
+  yaw: -2.38844
+  orientation: {z: -0.929929, w: 0.367738}
+  kind: transit
+- x: -7.0563
+  y: 4.309
+  yaw: -2.38844
+  orientation: {z: -0.929929, w: 0.367738}
+  kind: transit
+- x: -7.323
+  y: 4.059
+  yaw: -2.38844
+  orientation: {z: -0.929929, w: 0.367738}
+  kind: transit
+- x: -7.523
+  y: 3.884
+  yaw: -2.42276
+  orientation: {z: -0.936103, w: 0.351727}
+  kind: transit
+- x: -7.723
+  y: 3.709
+  yaw: -2.42276
+  orientation: {z: -0.936103, w: 0.351727}
+  kind: transit
+- x: -7.823
+  y: 3.6595
+  yaw: -2.68195
+  orientation: {z: -0.973707, w: 0.227806}
+  kind: transit
+- x: -7.923
+  y: 3.6095
+  yaw: -2.67795
+  orientation: {z: -0.973249, w: 0.229753}
+  kind: wall
+- x: -8.023
+  y: 3.6095
+  yaw: 3.14159
+  orientation: {z: 1.0, w: 0.0}
+  kind: wall
+- x: -8.073
+  y: 3.609
+  yaw: -3.13161
+  orientation: {z: -0.999988, w: 0.00499}
+  kind: transit
+- x: -8.073
+  y: 3.6595
+  yaw: 1.5708
+  orientation: {z: 0.707107, w: 0.707107}
+  kind: transit
+- x: -8.423
+  y: 3.6595
+  yaw: 3.14159
+  orientation: {z: 1.0, w: 0.0}
+  kind: wall
+- x: -8.423
+  y: 3.459
+  yaw: -1.5708
+  orientation: {z: -0.707107, w: 0.707107}
+  kind: transit
+- x: -8.473
+  y: 3.259
+  yaw: -1.81577
+  orientation: {z: -0.788205, w: 0.615412}
+  kind: transit
+- x: -8.623
+  y: 3.109
+  yaw: -2.35619
+  orientation: {z: -0.92388, w: 0.382683}
+  kind: transit
+- x: -8.673
+  y: 3.1095
+  yaw: 3.13161
+  orientation: {z: 0.999988, w: 0.00499}
+  kind: transit
+- x: -8.6836
+  y: 3.1042
+  yaw: -2.67795
+  orientation: {z: -0.973249, w: 0.229753}
+  kind: wall
+- x: -8.773
+  y: 3.059
+  yaw: -2.67349
+  orientation: {z: -0.972735, w: 0.231919}
+  kind: transit
+- x: -8.973
+  y: 3.059
+  yaw: 3.14159
+  orientation: {z: 1.0, w: 0.0}
+  kind: transit
+- x: -9.073
+  y: 3.109
+  yaw: 2.67795
+  orientation: {z: 0.973249, w: 0.229753}
+  kind: transit
+- x: -9.123
+  y: 3.109
+  yaw: 3.14159
+  orientation: {z: 1.0, w: 0.0}
+  kind: transit
+- x: -9.123
+  y: 3.1595
+  yaw: 1.5708
+  orientation: {z: 0.707107, w: 0.707107}
+  kind: transit
+- x: -9.273
+  y: 3.1595
+  yaw: 3.14159
+  orientation: {z: 1.0, w: 0.0}
+  kind: wall
+- x: -9.323
+  y: 3.1095
+  yaw: -2.35619
+  orientation: {z: -0.92388, w: 0.382683}
+  kind: wall
+- x: -9.373
+  y: 3.1095
+  yaw: 3.14159
+  orientation: {z: 1.0, w: 0.0}
+  kind: wall
+- x: -9.423
+  y: 3.009
+  yaw: -2.03246
+  orientation: {z: -0.850128, w: 0.526576}
+  kind: transit
+- x: -9.473
+  y: 3.0095
+  yaw: 3.13161
+  orientation: {z: 0.999988, w: 0.00499}
+  kind: transit
+- x: -9.523
+  y: 3.0095
+  yaw: 3.14159
+  orientation: {z: 1.0, w: 0.0}
+  kind: wall
+- x: -9.573
+  y: 2.9595
+  yaw: -2.35619
+  orientation: {z: -0.92388, w: 0.382683}
+  kind: wall
+- x: -9.623
+  y: 2.9595
+  yaw: 3.14159
+  orientation: {z: 1.0, w: 0.0}
+  kind: wall
+- x: -9.773
+  y: 2.809
+  yaw: -2.35453
+  orientation: {z: -0.923561, w: 0.38345}
+  kind: transit
+- x: -9.923
+  y: 2.7595
+  yaw: -2.82284
+  orientation: {z: -0.987326, w: 0.158703}
+  kind: transit
+- x: -9.973
+  y: 2.7595
+  yaw: 3.14159
+  orientation: {z: 1.0, w: 0.0}
+  kind: wall
+- x: -10.073
+  y: 2.6595
+  yaw: -2.35619
+  orientation: {z: -0.92388, w: 0.382683}
+  kind: wall
+- x: -10.123
+  y: 2.6595
+  yaw: 3.14159
+  orientation: {z: 1.0, w: 0.0}
+  kind: wall
+- x: -10.373
+  y: 2.259
+  yaw: -2.12884
+  orientation: {z: -0.874507, w: 0.485013}
+  kind: transit
+- x: -10.373
+  y: 2.209
+  yaw: -1.5708
+  orientation: {z: -0.707107, w: 0.707107}
+  kind: transit
+- x: -10.4235
+  y: 2.209
+  yaw: 3.14159
+  orientation: {z: 1.0, w: 0.0}
+  kind: transit
+- x: -10.4235
+  y: 2.159
+  yaw: -1.5708
+  orientation: {z: -0.707107, w: 0.707107}
+  kind: wall
+- x: -10.573
+  y: 2.009
+  yaw: -2.35453
+  orientation: {z: -0.92356, w: 0.383453}
+  kind: transit
+- x: -10.773
+  y: 1.959
+  yaw: -2.89661
+  orientation: {z: -0.992508, w: 0.122183}
+  kind: transit
+- x: -10.873
+  y: 1.959
+  yaw: 3.14159
+  orientation: {z: 1.0, w: 0.0}
+  kind: transit
+- x: -10.973
+  y: 2.009
+  yaw: 2.67795
+  orientation: {z: 0.973249, w: 0.229753}
+  kind: transit
+- x: -11.023
+  y: 2.009
+  yaw: 3.14159
+  orientation: {z: 1.0, w: 0.0}
+  kind: transit
+- x: -11.023
+  y: 2.0595
+  yaw: 1.5708
+  orientation: {z: 0.707107, w: 0.707107}
+  kind: transit
+- x: -11.123
+  y: 2.0595
+  yaw: 3.14159
+  orientation: {z: 1.0, w: 0.0}
+  kind: wall
+- x: -11.0735
+  y: 1.959
+  yaw: -1.11312
+  orientation: {z: -0.528271, w: 0.849076}
+  kind: wall
+- x: -11.0735
+  y: 1.759
+  yaw: -1.5708
+  orientation: {z: -0.707107, w: 0.707107}
+  kind: wall
+- x: -11.173
+  y: 1.559
+  yaw: -2.03245
+  orientation: {z: -0.850125, w: 0.526581}
+  kind: transit
+- x: -11.223
+  y: 1.459
+  yaw: -2.03444
+  orientation: {z: -0.850651, w: 0.525731}
+  kind: transit
+- x: -11.423
+  y: 1.4095
+  yaw: -2.89896
+  orientation: {z: -0.99265, w: 0.121017}
+  kind: transit
+- x: -11.523
+  y: 1.4095
+  yaw: 3.14159
+  orientation: {z: 1.0, w: 0.0}
+  kind: wall
+- x: -11.723
+  y: 1.5095
+  yaw: 2.67795
+  orientation: {z: 0.973249, w: 0.229753}
+  kind: wall
+- x: -12.0734
+  y: 1.3842
+  yaw: -2.79827
+  orientation: {z: -0.985302, w: 0.170822}
+  kind: transit
+- x: -12.4238
+  y: 1.259
+  yaw: -2.79827
+  orientation: {z: -0.985302, w: 0.170822}
+  kind: transit
+- x: -12.573
+  y: 1.1595
+  yaw: -2.55359
+  orientation: {z: -0.957092, w: 0.289784}
+  kind: wall
+- x: -12.623
+  y: 1.1595
+  yaw: 3.14159
+  orientation: {z: 1.0, w: 0.0}
+  kind: wall
+- x: -12.623
+  y: 1.109
+  yaw: -1.5708
+  orientation: {z: -0.707107, w: 0.707107}
+  kind: transit
+- x: -12.673
+  y: 1.1095
+  yaw: 3.13161
+  orientation: {z: 0.999988, w: 0.00499}
+  kind: transit
+- x: -12.873
+  y: 1.0095
+  yaw: -2.67795
+  orientation: {z: -0.973249, w: 0.229753}
+  kind: wall
+- x: -13.023
+  y: 1.0095
+  yaw: 3.14159
+  orientation: {z: 1.0, w: 0.0}
+  kind: wall
+- x: -13.0423
+  y: 0.5627
+  yaw: -1.61398
+  orientation: {z: -0.722208, w: 0.691676}
+  kind: transit
+- x: -13.0616
+  y: 0.1159
+  yaw: -1.61398
+  orientation: {z: -0.722208, w: 0.691676}
+  kind: transit
+- x: -13.1043
+  y: 0.09
+  yaw: -2.59534
+  orientation: {z: -0.962932, w: 0.269744}
+  kind: lane
+- x: -13.1684
+  y: 0.051
+  yaw: -2.59534
+  orientation: {z: -0.962932, w: 0.269744}
+  kind: lane
+- x: -13.1898
+  y: 0.038
+  yaw: -2.59534
+  orientation: {z: -0.962932, w: 0.269744}
+  kind: lane
+- x: -13.4821
+  y: 0.2785
+  yaw: 2.45326
+  orientation: {z: 0.941356, w: 0.337414}
+  kind: transit
+- x: -13.7745
+  y: 0.5189
+  yaw: 2.45326
+  orientation: {z: 0.941356, w: 0.337414}
+  kind: transit
+- x: -14.0668
+  y: 0.7594
+  yaw: 2.45326
+  orientation: {z: 0.941356, w: 0.337414}
+  kind: transit
+- x: -14.073
+  y: 0.809
+  yaw: 1.69515
+  orientation: {z: 0.749678, w: 0.661803}
+  kind: aim
+- x: -13.9791
+  y: 1.0833
+  yaw: 1.2408
+  orientation: {z: 0.581362, w: 0.813645}
+  kind: transit
+- x: -13.8851
+  y: 1.3575
+  yaw: 1.2408
+  orientation: {z: 0.581362, w: 0.813645}
+  kind: transit
+- x: -13.873
+  y: 1.309
+  yaw: -1.32582
+  orientation: {z: -0.615412, w: 0.788205}
+  kind: aim
+- x: -13.5225
+  y: 1.609
+  yaw: 0.70792
+  orientation: {z: 0.346616, w: 0.938007}
+  kind: transit
+- x: -13.5225
+  y: 1.659
+  yaw: 1.5708
+  orientation: {z: 0.707107, w: 0.707107}
+  kind: wall
+- x: -13.623
+  y: 1.709
+  yaw: 2.67993
+  orientation: {z: 0.973477, w: 0.228785}
+  kind: transit
+- x: -13.6225
+  y: 1.759
+  yaw: 1.56082
+  orientation: {z: 0.70357, w: 0.710626}
+  kind: transit
+- x: -13.6225
+  y: 1.809
+  yaw: 1.5708
+  orientation: {z: 0.707107, w: 0.707107}
+  kind: wall
+- x: -13.773
+  y: 1.959
+  yaw: 2.35786
+  orientation: {z: 0.924197, w: 0.381916}
+  kind: transit
+- x: -13.9228
+  y: 2.234
+  yaw: 2.06944
+  orientation: {z: 0.85972, w: 0.510765}
+  kind: transit
+- x: -14.0725
+  y: 2.509
+  yaw: 2.06944
+  orientation: {z: 0.85972, w: 0.510765}
+  kind: transit
+- x: -14.1725
+  y: 2.709
+  yaw: 2.03444
+  orientation: {z: 0.850651, w: 0.525731}
+  kind: wall
+- x: -14.1725
+  y: 2.759
+  yaw: 1.5708
+  orientation: {z: 0.707107, w: 0.707107}
+  kind: wall
+- x: -14.273
+  y: 2.809
+  yaw: 2.67993
+  orientation: {z: 0.973477, w: 0.228785}
+  kind: transit
+- x: -14.2725
+  y: 2.859
+  yaw: 1.56082
+  orientation: {z: 0.70357, w: 0.710626}
+  kind: transit
+- x: -14.2725
+  y: 2.909
+  yaw: 1.5708
+  orientation: {z: 0.707107, w: 0.707107}
+  kind: wall
+- x: -14.673
+  y: 2.8095
+  yaw: -2.89808
+  orientation: {z: -0.992597, w: 0.121456}
+  kind: transit
+- x: -14.723
+  y: 2.8095
+  yaw: 3.14159
+  orientation: {z: 1.0, w: 0.0}
+  kind: wall
+- x: -14.823
+  y: 2.7095
+  yaw: -2.35619
+  orientation: {z: -0.92388, w: 0.382683}
+  kind: wall
+- x: -14.873
+  y: 2.7095
+  yaw: 3.14159
+  orientation: {z: 1.0, w: 0.0}
+  kind: wall
+- x: -14.8735
+  y: 2.309
+  yaw: -1.57204
+  orientation: {z: -0.707547, w: 0.706666}
+  kind: transit
+- x: -14.8235
+  y: 2.209
+  yaw: -1.10715
+  orientation: {z: -0.525731, w: 0.850651}
+  kind: wall
+- x: -14.8235
+  y: 2.109
+  yaw: -1.5708
+  orientation: {z: -0.707107, w: 0.707107}
+  kind: wall
+- x: -14.8735
+  y: 2.009
+  yaw: -2.03444
+  orientation: {z: -0.850651, w: 0.525731}
+  kind: wall
+- x: -14.8568
+  y: 1.6423
+  yaw: -1.5254
+  orientation: {z: -0.690874, w: 0.722975}
+  kind: transit
+- x: -14.8402
+  y: 1.2757
+  yaw: -1.5254
+  orientation: {z: -0.690874, w: 0.722975}
+  kind: transit
+- x: -14.7735
+  y: 1.209
+  yaw: -0.7854
+  orientation: {z: -0.382683, w: 0.92388}
+  kind: wall
+- x: -14.6735
+  y: 1.009
+  yaw: -1.10715
+  orientation: {z: -0.525731, w: 0.850651}
+  kind: wall
+- x: -14.6735
+  y: 0.809
+  yaw: -1.5708
+  orientation: {z: -0.707107, w: 0.707107}
+  kind: wall
+- x: -14.5735
+  y: 0.709
+  yaw: -0.7854
+  orientation: {z: -0.382683, w: 0.92388}
+  kind: wall
+- x: -14.5735
+  y: 0.659
+  yaw: -1.5708
+  orientation: {z: -0.707107, w: 0.707107}
+  kind: wall
+- x: -14.5235
+  y: 0.609
+  yaw: -0.7854
+  orientation: {z: -0.382683, w: 0.92388}
+  kind: wall
+- x: -14.4735
+  y: 0.459
+  yaw: -1.24905
+  orientation: {z: -0.58471, w: 0.811242}
+  kind: wall
+- x: -14.3235
+  y: 0.309
+  yaw: -0.7854
+  orientation: {z: -0.382683, w: 0.92388}
+  kind: wall
+- x: -14.2444
+  y: 0.1772
+  yaw: -1.03038
+  orientation: {z: -0.492699, w: 0.8702}
+  kind: wall
+- x: -14.0708
+  y: -0.1122
+  yaw: -1.03038
+  orientation: {z: -0.492699, w: 0.8702}
+  kind: wall
+- x: -13.8971
+  y: -0.4016
+  yaw: -1.03038
+  orientation: {z: -0.492699, w: 0.8702}
+  kind: wall
+- x: -13.7235
+  y: -0.691
+  yaw: -1.03038
+  orientation: {z: -0.492699, w: 0.8702}
+  kind: wall
+- x: -13.7235
+  y: -0.741
+  yaw: -1.5708
+  orientation: {z: -0.707107, w: 0.707107}
+  kind: wall
+- x: -13.6735
+  y: -0.791
+  yaw: -0.7854
+  orientation: {z: -0.382683, w: 0.92388}
+  kind: wall
+- x: -13.6735
+  y: -0.841
+  yaw: -1.5708
+  orientation: {z: -0.707107, w: 0.707107}
+  kind: wall
+- x: -13.6235
+  y: -0.891
+  yaw: -0.7854
+  orientation: {z: -0.382683, w: 0.92388}
+  kind: wall
+- x: -13.6235
+  y: -0.941
+  yaw: -1.5708
+  orientation: {z: -0.707107, w: 0.707107}
+  kind: wall
+- x: -13.1732
+  y: -0.7912
+  yaw: 0.32109
+  orientation: {z: 0.159854, w: 0.987141}
+  kind: transit
+- x: -12.723
+  y: -0.6415
+  yaw: 0.32109
+  orientation: {z: 0.159854, w: 0.987141}
+  kind: transit
+- x: -12.673
+  y: -0.6415
+  yaw: 0.0
+  orientation: {z: 0.0, w: 1.0}
+  kind: wall
+- x: -12.523
+  y: -0.491
+  yaw: 0.78706
+  orientation: {z: 0.38345, w: 0.923561}
+  kind: transit
+- x: -12.3725
+  y: -0.441
+  yaw: 0.32076
+  orientation: {z: 0.159691, w: 0.987167}
+  kind: transit
+- x: -12.3725
+  y: -0.391
+  yaw: 1.5708
+  orientation: {z: 0.707107, w: 0.707107}
+  kind: wall
+- x: -12.3225
+  y: -0.341
+  yaw: 0.7854
+  orientation: {z: 0.382683, w: 0.92388}
+  kind: wall
+- x: -12.3225
+  y: -0.291
+  yaw: 1.5708
+  orientation: {z: 0.707107, w: 0.707107}
+  kind: wall
+- x: -12.273
+  y: -0.241
+  yaw: 0.79041
+  orientation: {z: 0.384999, w: 0.922917}
+  kind: transit
+- x: -11.9725
+  y: -0.041
+  yaw: 0.58724
+  orientation: {z: 0.289417, w: 0.957203}
+  kind: transit
+- x: -11.9725
+  y: 0.009
+  yaw: 1.5708
+  orientation: {z: 0.707107, w: 0.707107}
+  kind: wall
+- x: -11.823
+  y: 0.159
+  yaw: 0.78706
+  orientation: {z: 0.383453, w: 0.92356}
+  kind: transit
+- x: -11.623
+  y: 0.2585
+  yaw: 0.46165
+  orientation: {z: 0.228781, w: 0.973478}
+  kind: transit
+- x: -11.473
+  y: 0.3085
+  yaw: 0.32175
+  orientation: {z: 0.160182, w: 0.987087}
+  kind: wall
+- x: -11.323
+  y: 0.509
+  yaw: 0.92849
+  orientation: {z: 0.447748, w: 0.89416}
+  kind: transit
+- x: -10.998
+  y: 0.6588
+  yaw: 0.43177
+  orientation: {z: 0.214214, w: 0.976787}
+  kind: transit
+- x: -10.673
+  y: 0.8085
+  yaw: 0.43177
+  orientation: {z: 0.214214, w: 0.976787}
+  kind: transit
+- x: -10.623
+  y: 0.8085
+  yaw: 0.0
+  orientation: {z: 0.0, w: 1.0}
+  kind: wall
+- x: -10.473
+  y: 1.009
+  yaw: 0.92849
+  orientation: {z: 0.447748, w: 0.89416}
+  kind: transit
+- x: -10.073
+  y: 1.1588
+  yaw: 0.35822
+  orientation: {z: 0.178156, w: 0.984002}
+  kind: transit
+- x: -9.673
+  y: 1.3085
+  yaw: 0.35822
+  orientation: {z: 0.178156, w: 0.984002}
+  kind: transit
+- x: -9.623
+  y: 1.3085
+  yaw: 0.0
+  orientation: {z: 0.0, w: 1.0}
+  kind: wall
+- x: -9.623
+  y: 1.359
+  yaw: 1.5708
+  orientation: {z: 0.707107, w: 0.707107}
+  kind: transit
+- x: -9.5072
+  y: 1.3616
+  yaw: 0.02215
+  orientation: {z: 0.011076, w: 0.999939}
+  kind: transit
+- x: -9.523
+  y: 1.409
+  yaw: 1.89255
+  orientation: {z: 0.811242, w: 0.58471}
+  kind: aim
+- x: -9.248
+  y: 1.5588
+  yaw: 0.49865
+  orientation: {z: 0.246749, w: 0.96908}
+  kind: transit
+- x: -8.973
+  y: 1.7085
+  yaw: 0.49865
+  orientation: {z: 0.246749, w: 0.96908}
+  kind: transit
+- x: -8.923
+  y: 1.7085
+  yaw: 0.0
+  orientation: {z: 0.0, w: 1.0}
+  kind: wall
+- x: -8.9225
+  y: 1.759
+  yaw: 1.56092
+  orientation: {z: 0.703605, w: 0.710592}
+  kind: wall
+- x: -8.8725
+  y: 1.809
+  yaw: 0.7854
+  orientation: {z: 0.382683, w: 0.92388}
+  kind: wall
+- x: -8.8725
+  y: 1.859
+  yaw: 1.5708
+  orientation: {z: 0.707107, w: 0.707107}
+  kind: wall
+- x: -8.723
+  y: 2.059
+  yaw: 0.92889
+  orientation: {z: 0.447928, w: 0.894069}
+  kind: transit
+- x: -8.473
+  y: 2.1588
+  yaw: 0.37965
+  orientation: {z: 0.188685, w: 0.982038}
+  kind: transit
+- x: -8.223
+  y: 2.2585
+  yaw: 0.37965
+  orientation: {z: 0.188685, w: 0.982038}
+  kind: transit
+- x: -8.073
+  y: 2.3085
+  yaw: 0.32175
+  orientation: {z: 0.160182, w: 0.987087}
+  kind: wall
+- x: -7.923
+  y: 2.459
+  yaw: 0.78706
+  orientation: {z: 0.38345, w: 0.923561}
+  kind: transit
+- x: -7.623
+  y: 2.6085
+  yaw: 0.46232
+  orientation: {z: 0.229105, w: 0.973402}
+  kind: transit
+- x: -7.473
+  y: 2.6585
+  yaw: 0.32175
+  orientation: {z: 0.160182, w: 0.987087}
+  kind: wall
+- x: -7.473
+  y: 2.709
+  yaw: 1.5708
+  orientation: {z: 0.707107, w: 0.707107}
+  kind: transit
+- x: -7.023
+  y: 2.909
+  yaw: 0.41822
+  orientation: {z: 0.207591, w: 0.978216}
+  kind: transit
+- x: -7.023
+  y: 2.959
+  yaw: 1.5708
+  orientation: {z: 0.707107, w: 0.707107}
+  kind: aim
+- x: -6.573
+  y: 3.1085
+  yaw: 0.32075
+  orientation: {z: 0.15969, w: 0.987167}
+  kind: transit
+- x: -6.523
+  y: 3.1085
+  yaw: 0.0
+  orientation: {z: 0.0, w: 1.0}
+  kind: wall
+- x: -6.373
+  y: 3.259
+  yaw: 0.78706
+  orientation: {z: 0.38345, w: 0.923561}
+  kind: transit
+- x: -6.073
+  y: 3.4085
+  yaw: 0.46232
+  orientation: {z: 0.229105, w: 0.973402}
+  kind: transit
+- x: -6.023
+  y: 3.4085
+  yaw: 0.0
+  orientation: {z: 0.0, w: 1.0}
+  kind: wall
+- x: -6.0225
+  y: 3.509
+  yaw: 1.56583
+  orientation: {z: 0.705349, w: 0.70886}
+  kind: transit
+- x: -6.0225
+  y: 3.559
+  yaw: 1.5708
+  orientation: {z: 0.707107, w: 0.707107}
+  kind: wall
+- x: -6.0518
+  y: 3.5883
+  yaw: 2.35619
+  orientation: {z: 0.92388, w: 0.382683}
+  kind: wall
+- x: -6.073
+  y: 3.809
+  yaw: 1.6666
+  orientation: {z: 0.740154, w: 0.672437}
+  kind: transit
+- x: -5.973
+  y: 4.009
+  yaw: 1.10715
+  orientation: {z: 0.525731, w: 0.850651}
+  kind: transit
+- x: -5.773
+  y: 4.109
+  yaw: 0.46365
+  orientation: {z: 0.229753, w: 0.973249}
+  kind: transit
+- x: -5.373
+  y: 4.109
+  yaw: 0.0
+  orientation: {z: 0.0, w: 1.0}
+  kind: transit
+- x: -4.9848
+  y: 3.8061
+  yaw: -0.66261
+  orientation: {z: -0.32528, w: 0.945618}
+  kind: transit
+- x: -4.5965
+  y: 3.5031
+  yaw: -0.66261
+  orientation: {z: -0.32528, w: 0.945618}
+  kind: transit
+- x: -4.573
+  y: 3.459
+  yaw: -1.08084
+  orientation: {z: -0.514496, w: 0.857493}
+  kind: aim
+- x: -4.646
+  y: 3.4511
+  yaw: -3.03318
+  orientation: {z: -0.998531, w: 0.054179}
+  kind: transit
+- x: -4.673
+  y: 3.409
+  yaw: -2.14213
+  orientation: {z: -0.877712, w: 0.479188}
+  kind: aim
+- x: -4.573
+  y: 3.4585
+  yaw: 0.45965
+  orientation: {z: 0.227806, w: 0.973707}
+  kind: transit
+- x: -4.423
+  y: 3.4585
+  yaw: 0.0
+  orientation: {z: 0.0, w: 1.0}
+  kind: wall
+- x: -4.373
+  y: 3.4085
+  yaw: -0.7854
+  orientation: {z: -0.382683, w: 0.92388}
+  kind: wall
+- x: -4.373
+  y: 3.459
+  yaw: 1.5708
+  orientation: {z: 0.707107, w: 0.707107}
+  kind: transit
+- x: -4.323
+  y: 3.4585
+  yaw: -0.00998
+  orientation: {z: -0.00499, w: 0.999988}
+  kind: transit
+- x: -4.273
+  y: 3.5095
+  yaw: 0.79528
+  orientation: {z: 0.387243, w: 0.921978}
+  kind: wall
+- x: -4.2707
+  y: 3.4941
+  yaw: -1.42419
+  orientation: {z: -0.65342, w: 0.756996}
+  kind: transit
+- x: -4.223
+  y: 3.509
+  yaw: 0.30288
+  orientation: {z: 0.150864, w: 0.988554}
+  kind: aim
+- x: -4.2729
+  y: 3.5119
+  yaw: 3.08284
+  orientation: {z: 0.999569, w: 0.029374}
+  kind: transit
+- x: -4.223
+  y: 3.509
+  yaw: -0.05876
+  orientation: {z: -0.029374, w: 0.999569}
+  kind: aim
+- x: -4.3151
+  y: 3.486
+  yaw: -2.89715
+  orientation: {z: -0.99254, w: 0.121916}
+  kind: transit
+- x: -4.273
+  y: 3.459
+  yaw: -0.57134
+  orientation: {z: -0.281799, w: 0.959473}
+  kind: aim
+- x: -4.3
+  y: 3.5011
+  yaw: 2.14213
+  orientation: {z: 0.877712, w: 0.479188}
+  kind: transit
+- x: -4.273
+  y: 3.459
+  yaw: -0.99946
+  orientation: {z: -0.479188, w: 0.877712}
+  kind: aim
+- x: -4.6405
+  y: 3.6079
+  yaw: 2.75677
+  orientation: {z: 0.981546, w: 0.191228}
+  kind: transit
+- x: -5.0081
+  y: 3.7567
+  yaw: 2.75677
+  orientation: {z: 0.981546, w: 0.191228}
+  kind: transit
+- x: -5.023
+  y: 3.709
+  yaw: -1.87368
+  orientation: {z: -0.805691, w: 0.592336}
+  kind: aim
+- x: -5.073
+  y: 3.809
+  yaw: 2.03444
+  orientation: {z: 0.850651, w: 0.525731}
+  kind: transit
+- x: -5.3697
+  y: 3.9091
+  yaw: 2.81615
+  orientation: {z: 0.98679, w: 0.162005}
+  kind: transit
+- x: -5.373
+  y: 3.959
+  yaw: 1.63736
+  orientation: {z: 0.730246, w: 0.683184}
+  kind: aim
+- x: -5.1172
+  y: 3.8087
+  yaw: -0.53128
+  orientation: {z: -0.262527, w: 0.964925}
+  kind: transit
+- x: -5.123
+  y: 3.759
+  yaw: -1.68791
+  orientation: {z: -0.747275, w: 0.664514}
+  kind: aim
+- x: -4.9228
+  y: 3.934
+  yaw: 0.71821
+  orientation: {z: 0.351437, w: 0.936211}
+  kind: transit
+- x: -4.7225
+  y: 4.109
+  yaw: 0.71821
+  orientation: {z: 0.351437, w: 0.936211}
+  kind: transit
+- x: -4.6725
+  y: 4.259
+  yaw: 1.24905
+  orientation: {z: 0.58471, w: 0.811242}
+  kind: wall
+- x: -4.523
+  y: 4.4085
+  yaw: 0.7854
+  orientation: {z: 0.382683, w: 0.92388}
+  kind: wall
+- x: -4.473
+  y: 4.4085
+  yaw: 0.0
+  orientation: {z: 0.0, w: 1.0}
+  kind: wall
+- x: -4.348
+  y: 4.8338
+  yaw: 1.2849
+  orientation: {z: 0.59916, w: 0.800629}
+  kind: transit
+- x: -4.223
+  y: 5.259
+  yaw: 1.2849
+  orientation: {z: 0.59916, w: 0.800629}
+  kind: transit
+- x: -3.923
+  y: 5.409
+  yaw: 0.46365
+  orientation: {z: 0.229753, w: 0.973249}
+  kind: fill
+- x: -3.623
+  y: 5.559
+  yaw: 0.46365
+  orientation: {z: 0.229753, w: 0.973249}
+  kind: fill
+- x: -3.323
+  y: 5.709
+  yaw: 0.46365
+  orientation: {z: 0.229753, w: 0.973249}
+  kind: fill
+- x: -3.098
+  y: 5.534
+  yaw: -0.66104
+  orientation: {z: -0.324536, w: 0.945873}
+  kind: fill
+- x: -2.873
+  y: 5.359
+  yaw: -0.66104
+  orientation: {z: -0.324536, w: 0.945873}
+  kind: fill
+- x: -3.198
+  y: 5.1588
+  yaw: -2.58938
+  orientation: {z: -0.962124, w: 0.272611}
+  kind: transit
+- x: -3.523
+  y: 4.9585
+  yaw: -2.58938
+  orientation: {z: -0.962124, w: 0.272611}
+  kind: transit
+- x: -3.473
+  y: 4.9585
+  yaw: 0.0
+  orientation: {z: 0.0, w: 1.0}
+  kind: wall
+- x: -3.123
+  y: 5.309
+  yaw: 0.78611
+  orientation: {z: 0.383012, w: 0.923743}
+  kind: transit
+- x: -2.803
+  y: 5.579
+  yaw: 0.70085
+  orientation: {z: 0.343299, w: 0.939226}
+  kind: transit
+- x: -2.483
+  y: 5.849
+  yaw: 0.70085
+  orientation: {z: 0.343299, w: 0.939226}
+  kind: transit
+- x: -2.163
+  y: 6.119
+  yaw: 0.70085
+  orientation: {z: 0.343299, w: 0.939226}
+  kind: transit
+- x: -1.843
+  y: 6.389
+  yaw: 0.70085
+  orientation: {z: 0.343299, w: 0.939226}
+  kind: transit
+- x: -1.523
+  y: 6.659
+  yaw: 0.70085
+  orientation: {z: 0.343299, w: 0.939226}
+  kind: transit
+- x: -1.148
+  y: 6.7214
+  yaw: 0.16482
+  orientation: {z: 0.082319, w: 0.996606}
+  kind: transit
+- x: -0.773
+  y: 6.7838
+  yaw: 0.16482
+  orientation: {z: 0.082319, w: 0.996606}
+  kind: transit
+- x: -0.398
+  y: 6.8461
+  yaw: 0.16482
+  orientation: {z: 0.082319, w: 0.996606}
+  kind: transit
+- x: -0.023
+  y: 6.9085
+  yaw: 0.16482
+  orientation: {z: 0.082319, w: 0.996606}
+  kind: transit
+- x: 0.027
+  y: 6.9085
+  yaw: 0.0
+  orientation: {z: 0.0, w: 1.0}
+  kind: wall
+- x: 0.377
+  y: 7.259
+  yaw: 0.78611
+  orientation: {z: 0.383012, w: 0.923743}
+  kind: transit
+- x: 0.677
+  y: 7.4338
+  yaw: 0.52745
+  orientation: {z: 0.26068, w: 0.965425}
+  kind: transit
+- x: 0.977
+  y: 7.6085
+  yaw: 0.52745
+  orientation: {z: 0.26068, w: 0.965425}
+  kind: transit
+- x: 1.027
+  y: 7.6085
+  yaw: 0.0
+  orientation: {z: 0.0, w: 1.0}
+  kind: wall
+- x: 1.027
+  y: 7.659
+  yaw: 1.5708
+  orientation: {z: 0.707107, w: 0.707107}
+  kind: transit
+- x: 1.3437
+  y: 7.8255
+  yaw: 0.48407
+  orientation: {z: 0.239677, w: 0.970853}
+  kind: transit
+- x: 1.6603
+  y: 7.992
+  yaw: 0.48407
+  orientation: {z: 0.239677, w: 0.970853}
+  kind: transit
+- x: 1.977
+  y: 8.1585
+  yaw: 0.48407
+  orientation: {z: 0.239677, w: 0.970853}
+  kind: transit
+- x: 2.227
+  y: 8.2085
+  yaw: 0.1974
+  orientation: {z: 0.098538, w: 0.995133}
+  kind: wall
+- x: 2.377
+  y: 8.409
+  yaw: 0.92849
+  orientation: {z: 0.447748, w: 0.89416}
+  kind: transit
+- x: 2.6654
+  y: 8.559
+  yaw: 0.47962
+  orientation: {z: 0.23752, w: 0.971383}
+  kind: transit
+- x: 2.9538
+  y: 8.709
+  yaw: 0.47962
+  orientation: {z: 0.23752, w: 0.971383}
+  kind: transit
+- x: 3.2615
+  y: 8.8923
+  yaw: 0.53728
+  orientation: {z: 0.265421, w: 0.964133}
+  kind: fill
+- x: 3.5693
+  y: 9.0757
+  yaw: 0.53728
+  orientation: {z: 0.265421, w: 0.964133}
+  kind: fill
+- x: 3.877
+  y: 9.259
+  yaw: 0.53728
+  orientation: {z: 0.265421, w: 0.964133}
+  kind: fill
+- x: 3.4286
+  y: 9.1927
+  yaw: -2.99491
+  orientation: {z: -0.997312, w: 0.073274}
+  kind: fill
+- x: 2.9801
+  y: 9.1265
+  yaw: -2.99491
+  orientation: {z: -0.997312, w: 0.073274}
+  kind: fill
+- x: 2.6659
+  y: 9.0801
+  yaw: -2.99491
+  orientation: {z: -0.997312, w: 0.073274}
+  kind: fill
+- x: 2.3516
+  y: 9.0336
+  yaw: -2.99491
+  orientation: {z: -0.997312, w: 0.073274}
+  kind: fill
+- x: 1.9639
+  y: 8.8079
+  yaw: -2.61437
+  orientation: {z: -0.965455, w: 0.26057}
+  kind: fill
+- x: 1.5762
+  y: 8.5822
+  yaw: -2.61437
+  orientation: {z: -0.965455, w: 0.26057}
+  kind: fill
+- x: 1.1885
+  y: 8.3564
+  yaw: -2.61437
+  orientation: {z: -0.965455, w: 0.26057}
+  kind: fill
+- x: 0.9455
+  y: 8.215
+  yaw: -2.61437
+  orientation: {z: -0.965455, w: 0.26057}
+  kind: fill
+- x: 0.5939
+  y: 8.0103
+  yaw: -2.61437
+  orientation: {z: -0.965455, w: 0.26057}
+  kind: fill
+- x: 0.2424
+  y: 7.8057
+  yaw: -2.61437
+  orientation: {z: -0.965455, w: 0.26057}
+  kind: fill
+- x: -0.1091
+  y: 7.601
+  yaw: -2.61437
+  orientation: {z: -0.965455, w: 0.26057}
+  kind: fill
+- x: -0.4607
+  y: 7.3963
+  yaw: -2.61437
+  orientation: {z: -0.965455, w: 0.26057}
+  kind: fill
+- x: -0.5237
+  y: 7.3596
+  yaw: -2.61437
+  orientation: {z: -0.965455, w: 0.26057}
+  kind: fill
+- x: -0.8595
+  y: 7.1641
+  yaw: -2.61437
+  orientation: {z: -0.965455, w: 0.26057}
+  kind: fill
+- x: -1.1953
+  y: 6.9686
+  yaw: -2.61437
+  orientation: {z: -0.965455, w: 0.26057}
+  kind: fill
+- x: -1.5311
+  y: 6.7731
+  yaw: -2.61437
+  orientation: {z: -0.965455, w: 0.26057}
+  kind: fill
+- x: -1.8668
+  y: 6.5777
+  yaw: -2.61437
+  orientation: {z: -0.965455, w: 0.26057}
+  kind: fill
+- x: -2.236
+  y: 6.3628
+  yaw: -2.61437
+  orientation: {z: -0.965455, w: 0.26057}
+  kind: fill
+- x: -2.1295
+  y: 6.1106
+  yaw: -1.17121
+  orientation: {z: -0.552705, w: 0.833377}
+  kind: transit
+- x: -2.023
+  y: 5.8585
+  yaw: -1.17121
+  orientation: {z: -0.552705, w: 0.833377}
+  kind: transit
+- x: -1.973
+  y: 5.8585
+  yaw: 0.0
+  orientation: {z: 0.0, w: 1.0}
+  kind: wall
+- x: -1.823
+  y: 6.059
+  yaw: 0.92849
+  orientation: {z: 0.447748, w: 0.89416}
+  kind: transit
+- x: -1.423
+  y: 6.209
+  yaw: 0.35877
+  orientation: {z: 0.178425, w: 0.983954}
+  kind: transit
+- x: -1.223
+  y: 6.309
+  yaw: 0.46365
+  orientation: {z: 0.229753, w: 0.973249}
+  kind: transit
+- x: -0.973
+  y: 6.3585
+  yaw: 0.19548
+  orientation: {z: 0.097582, w: 0.995227}
+  kind: transit
+- x: -0.923
+  y: 6.3585
+  yaw: 0.0
+  orientation: {z: 0.0, w: 1.0}
+  kind: wall
+- x: -0.748
+  y: 6.5588
+  yaw: 0.85258
+  orientation: {z: 0.413498, w: 0.910505}
+  kind: transit
+- x: -0.573
+  y: 6.759
+  yaw: 0.85258
+  orientation: {z: 0.413498, w: 0.910505}
+  kind: transit
+- x: -0.2048
+  y: 7.059
+  yaw: 0.68365
+  orientation: {z: 0.335207, w: 0.942145}
+  kind: transit
+- x: 0.1635
+  y: 7.359
+  yaw: 0.68365
+  orientation: {z: 0.335207, w: 0.942145}
+  kind: transit
+- x: 0.5317
+  y: 7.659
+  yaw: 0.68365
+  orientation: {z: 0.335207, w: 0.942145}
+  kind: transit
+- x: 0.8999
+  y: 7.959
+  yaw: 0.68365
+  orientation: {z: 0.335207, w: 0.942145}
+  kind: transit
+- x: 1.2681
+  y: 8.259
+  yaw: 0.68365
+  orientation: {z: 0.335207, w: 0.942145}
+  kind: transit
+- x: 1.6364
+  y: 8.559
+  yaw: 0.68365
+  orientation: {z: 0.335207, w: 0.942145}
+  kind: transit
+- x: 2.0046
+  y: 8.859
+  yaw: 0.68365
+  orientation: {z: 0.335207, w: 0.942145}
+  kind: transit
+- x: 2.3728
+  y: 9.159
+  yaw: 0.68365
+  orientation: {z: 0.335207, w: 0.942145}
+  kind: transit
+- x: 2.741
+  y: 9.459
+  yaw: 0.68365
+  orientation: {z: 0.335207, w: 0.942145}
+  kind: transit
+- x: 3.1093
+  y: 9.759
+  yaw: 0.68365
+  orientation: {z: 0.335207, w: 0.942145}
+  kind: transit
+- x: 3.4775
+  y: 10.059
+  yaw: 0.68365
+  orientation: {z: 0.335207, w: 0.942145}
+  kind: transit
+- x: 3.4775
+  y: 10.109
+  yaw: 1.5708
+  orientation: {z: 0.707107, w: 0.707107}
+  kind: wall
+- x: 3.2343
+  y: 10.2033
+  yaw: 2.77185
+  orientation: {z: 0.98296, w: 0.183822}
+  kind: transit
+- x: 2.9911
+  y: 10.2975
+  yaw: 2.77185
+  orientation: {z: 0.98296, w: 0.183822}
+  kind: transit
+- x: 2.6482
+  y: 10.0891
+  yaw: -2.59539
+  orientation: {z: -0.962939, w: 0.269718}
+  kind: wall
+- x: 2.3054
+  y: 9.8807
+  yaw: -2.59539
+  orientation: {z: -0.962939, w: 0.269718}
+  kind: wall
+- x: 1.9625
+  y: 9.6723
+  yaw: -2.59539
+  orientation: {z: -0.962939, w: 0.269718}
+  kind: wall
+- x: 1.777
+  y: 9.5595
+  yaw: -2.59539
+  orientation: {z: -0.962939, w: 0.269718}
+  kind: wall
+- x: 1.727
+  y: 9.5595
+  yaw: 3.14159
+  orientation: {z: 1.0, w: 0.0}
+  kind: wall
+- x: 1.677
+  y: 9.5095
+  yaw: -2.35619
+  orientation: {z: -0.92388, w: 0.382683}
+  kind: wall
+- x: 1.527
+  y: 9.4595
+  yaw: -2.81984
+  orientation: {z: -0.987087, w: 0.160182}
+  kind: wall
+- x: 1.427
+  y: 9.3595
+  yaw: -2.35619
+  orientation: {z: -0.92388, w: 0.382683}
+  kind: wall
+- x: 1.1838
+  y: 9.2144
+  yaw: -2.60357
+  orientation: {z: -0.964035, w: 0.265776}
+  kind: wall
+- x: 0.9407
+  y: 9.0693
+  yaw: -2.60357
+  orientation: {z: -0.964035, w: 0.265776}
+  kind: wall
+- x: 0.6528
+  y: 8.8994
+  yaw: -2.60837
+  orientation: {z: -0.964669, w: 0.263465}
+  kind: transit
+- x: 0.3649
+  y: 8.7294
+  yaw: -2.60837
+  orientation: {z: -0.964669, w: 0.263465}
+  kind: transit
+- x: 0.077
+  y: 8.5595
+  yaw: -2.60837
+  orientation: {z: -0.964669, w: 0.263465}
+  kind: transit
+- x: -0.2697
+  y: 8.3573
+  yaw: -2.61352
+  orientation: {z: -0.965344, w: 0.26098}
+  kind: wall
+- x: -0.6164
+  y: 8.155
+  yaw: -2.61352
+  orientation: {z: -0.965344, w: 0.26098}
+  kind: wall
+- x: -0.963
+  y: 7.9528
+  yaw: -2.61352
+  orientation: {z: -0.965344, w: 0.26098}
+  kind: wall
+- x: -1.3097
+  y: 7.7506
+  yaw: -2.61352
+  orientation: {z: -0.965344, w: 0.26098}
+  kind: wall
+- x: -1.6475
+  y: 7.5535
+  yaw: -2.61352
+  orientation: {z: -0.965344, w: 0.26098}
+  kind: wall
+- x: -1.9852
+  y: 7.3565
+  yaw: -2.61352
+  orientation: {z: -0.965344, w: 0.26098}
+  kind: wall
+- x: -2.323
+  y: 7.1595
+  yaw: -2.61352
+  orientation: {z: -0.965344, w: 0.26098}
+  kind: wall
+- x: -2.523
+  y: 7.0595
+  yaw: -2.67795
+  orientation: {z: -0.973249, w: 0.229753}
+  kind: wall
+- x: -2.7316
+  y: 7.0509
+  yaw: -3.10049
+  orientation: {z: -0.999789, w: 0.020551}
+  kind: wall
+- x: -3.073
+  y: 6.709
+  yaw: -2.35546
+  orientation: {z: -0.92374, w: 0.383021}
+  kind: transit
+- x: -3.273
+  y: 6.609
+  yaw: -2.67795
+  orientation: {z: -0.973249, w: 0.229753}
+  kind: transit
+- x: -3.4291
+  y: 6.5534
+  yaw: -2.79954
+  orientation: {z: -0.985411, w: 0.170194}
+  kind: transit
+- x: -3.523
+  y: 6.4595
+  yaw: -2.35619
+  orientation: {z: -0.92388, w: 0.382683}
+  kind: wall
+- x: -3.573
+  y: 6.4595
+  yaw: 3.14159
+  orientation: {z: 1.0, w: 0.0}
+  kind: wall
+- x: -3.673
+  y: 6.3595
+  yaw: -2.35619
+  orientation: {z: -0.92388, w: 0.382683}
+  kind: wall
+- x: -3.723
+  y: 6.3595
+  yaw: 3.14159
+  orientation: {z: 1.0, w: 0.0}
+  kind: wall
+- x: -3.773
+  y: 6.3095
+  yaw: -2.35619
+  orientation: {z: -0.92388, w: 0.382683}
+  kind: wall
+- x: -3.823
+  y: 6.3095
+  yaw: 3.14159
+  orientation: {z: 1.0, w: 0.0}
+  kind: wall
+- x: -3.873
+  y: 6.2595
+  yaw: -2.35619
+  orientation: {z: -0.92388, w: 0.382683}
+  kind: wall
+- x: -3.923
+  y: 6.2595
+  yaw: 3.14159
+  orientation: {z: 1.0, w: 0.0}
+  kind: wall
+- x: -3.973
+  y: 6.2095
+  yaw: -2.35619
+  orientation: {z: -0.92388, w: 0.382683}
+  kind: wall
+- x: -4.023
+  y: 6.2095
+  yaw: 3.14159
+  orientation: {z: 1.0, w: 0.0}
+  kind: wall
+- x: -4.123
+  y: 6.1095
+  yaw: -2.35619
+  orientation: {z: -0.92388, w: 0.382683}
+  kind: wall
+- x: -4.173
+  y: 6.1095
+  yaw: 3.14159
+  orientation: {z: 1.0, w: 0.0}
+  kind: wall
+- x: -4.2084
+  y: 6.0741
+  yaw: -2.35619
+  orientation: {z: -0.92388, w: 0.382683}
+  kind: wall
+- x: -4.223
+  y: 6.0595
+  yaw: -2.35619
+  orientation: {z: -0.92388, w: 0.382683}
+  kind: wall
+- x: -4.273
+  y: 6.0595
+  yaw: 3.14159
+  orientation: {z: 1.0, w: 0.0}
+  kind: wall
+- x: -4.3291
+  y: 6.0034
+  yaw: -2.35619
+  orientation: {z: -0.92388, w: 0.382683}
+  kind: wall
+- x: -4.373
+  y: 5.9595
+  yaw: -2.35619
+  orientation: {z: -0.92388, w: 0.382683}
+  kind: wall
+- x: -4.423
+  y: 5.9595
+  yaw: 3.14159
+  orientation: {z: 1.0, w: 0.0}
+  kind: wall
+- x: -4.523
+  y: 5.8595
+  yaw: -2.35619
+  orientation: {z: -0.92388, w: 0.382683}
+  kind: wall
+- x: -4.573
+  y: 5.8595
+  yaw: 3.14159
+  orientation: {z: 1.0, w: 0.0}
+  kind: wall
+- x: -4.623
+  y: 5.8095
+  yaw: -2.35619
+  orientation: {z: -0.92388, w: 0.382683}
+  kind: wall
+- x: -4.673
+  y: 5.8095
+  yaw: 3.14159
+  orientation: {z: 1.0, w: 0.0}
+  kind: wall
+- x: -4.723
+  y: 5.7595
+  yaw: -2.35619
+  orientation: {z: -0.92388, w: 0.382683}
+  kind: wall
+- x: -4.773
+  y: 5.7595
+  yaw: 3.14159
+  orientation: {z: 1.0, w: 0.0}
+  kind: wall
+- x: -4.823
+  y: 5.7095
+  yaw: -2.35619
+  orientation: {z: -0.92388, w: 0.382683}
+  kind: wall
+- x: -4.873
+  y: 5.7095
+  yaw: 3.14159
+  orientation: {z: 1.0, w: 0.0}
+  kind: wall
+- x: -4.923
+  y: 5.6595
+  yaw: -2.35619
+  orientation: {z: -0.92388, w: 0.382683}
+  kind: wall
+- x: -4.973
+  y: 5.6595
+  yaw: 3.14159
+  orientation: {z: 1.0, w: 0.0}
+  kind: wall
+- x: -5.023
+  y: 5.6095
+  yaw: -2.35619
+  orientation: {z: -0.92388, w: 0.382683}
+  kind: wall
+- x: -5.073
+  y: 5.6095
+  yaw: 3.14159
+  orientation: {z: 1.0, w: 0.0}
+  kind: wall
+- x: -5.123
+  y: 5.5595
+  yaw: -2.35619
+  orientation: {z: -0.92388, w: 0.382683}
+  kind: wall
+- x: -5.273
+  y: 5.5595
+  yaw: 3.14159
+  orientation: {z: 1.0, w: 0.0}
+  kind: wall
+- x: -5.673
+  y: 5.509
+  yaw: -3.01601
+  orientation: {z: -0.998029, w: 0.06275}
+  kind: transit
+- x: -5.773
+  y: 5.509
+  yaw: 3.14159
+  orientation: {z: 1.0, w: 0.0}
+  kind: transit
+- x: -5.973
+  y: 5.609
+  yaw: 2.67795
+  orientation: {z: 0.973249, w: 0.229753}
+  kind: transit
+- x: -6.023
+  y: 5.609
+  yaw: 3.14159
+  orientation: {z: 1.0, w: 0.0}
+  kind: transit
+- x: -6.167
+  y: 5.8853
+  yaw: 2.05131
+  orientation: {z: 0.855055, w: 0.518538}
+  kind: transit
+- x: -6.123
+  y: 5.909
+  yaw: 0.49394
+  orientation: {z: 0.244468, w: 0.969657}
+  kind: aim
+- x: -6.2553
+  y: 5.9708
+  yaw: 2.70439
+  orientation: {z: 0.976202, w: 0.216862}
+  kind: transit
+- x: -6.223
+  y: 6.009
+  yaw: 0.86854
+  orientation: {z: 0.420748, w: 0.907178}
+  kind: aim
+- x: -6.423
+  y: 6.209
+  yaw: 2.35619
+  orientation: {z: 0.92388, w: 0.382683}
+  kind: transit
+- x: -6.5725
+  y: 6.609
+  yaw: 1.92847
+  orientation: {z: 0.821614, w: 0.570044}
+  kind: transit
+- x: -6.5725
+  y: 6.659
+  yaw: 1.5708
+  orientation: {z: 0.707107, w: 0.707107}
+  kind: wall
+- x: -6.7225
+  y: 6.809
+  yaw: 2.35619
+  orientation: {z: 0.92388, w: 0.382683}
+  kind: wall
+- x: -6.8225
+  y: 7.009
+  yaw: 2.03444
+  orientation: {z: 0.850651, w: 0.525731}
+  kind: wall
+- x: -6.8225
+  y: 7.159
+  yaw: 1.5708
+  orientation: {z: 0.707107, w: 0.707107}
+  kind: wall
+- x: -6.7225
+  y: 7.359
+  yaw: 1.10715
+  orientation: {z: 0.525731, w: 0.850651}
+  kind: wall
+- x: -6.8725
+  y: 7.584
+  yaw: 2.1588
+  orientation: {z: 0.881675, w: 0.471858}
+  kind: transit
+- x: -7.0225
+  y: 7.809
+  yaw: 2.1588
+  orientation: {z: 0.881675, w: 0.471858}
+  kind: transit
+- x: -7.0225
+  y: 7.859
+  yaw: 1.5708
+  orientation: {z: 0.707107, w: 0.707107}
+  kind: wall
+- x: -7.0725
+  y: 7.909
+  yaw: 2.35619
+  orientation: {z: 0.92388, w: 0.382683}
+  kind: wall
+- x: -7.073
+  y: 7.9595
+  yaw: 1.58068
+  orientation: {z: 0.710592, w: 0.703605}
+  kind: wall
+- x: -7.123
+  y: 7.9595
+  yaw: 3.14159
+  orientation: {z: 1.0, w: 0.0}
+  kind: wall
+- x: -7.223
+  y: 8.009
+  yaw: 2.68195
+  orientation: {z: 0.973707, w: 0.227806}
+  kind: transit
+- x: -7.273
+  y: 8.009
+  yaw: 3.14159
+  orientation: {z: 1.0, w: 0.0}
+  kind: transit
+- x: -7.3725
+  y: 8.259
+  yaw: 1.94958
+  orientation: {z: 0.827584, w: 0.561342}
+  kind: transit
+- x: -7.4225
+  y: 8.459
+  yaw: 1.81577
+  orientation: {z: 0.788205, w: 0.615412}
+  kind: wall
+- x: -7.473
+  y: 8.459
+  yaw: 3.14159
+  orientation: {z: 1.0, w: 0.0}
+  kind: transit
+- x: -7.4725
+  y: 8.509
+  yaw: 1.56082
+  orientation: {z: 0.70357, w: 0.710626}
+  kind: transit
+- x: -7.4725
+  y: 8.559
+  yaw: 1.5708
+  orientation: {z: 0.707107, w: 0.707107}
+  kind: wall
+- x: -7.523
+  y: 8.559
+  yaw: 3.14159
+  orientation: {z: 1.0, w: 0.0}
+  kind: transit
+- x: -7.7225
+  y: 8.959
+  yaw: 2.03345
+  orientation: {z: 0.850388, w: 0.526156}
+  kind: transit
+- x: -7.7225
+  y: 9.059
+  yaw: 1.5708
+  orientation: {z: 0.707107, w: 0.707107}
+  kind: wall
+- x: -7.6225
+  y: 9.259
+  yaw: 1.10715
+  orientation: {z: 0.525731, w: 0.850651}
+  kind: wall
+- x: -7.5725
+  y: 9.309
+  yaw: 0.7854
+  orientation: {z: 0.382683, w: 0.92388}
+  kind: wall
+- x: -7.723
+  y: 9.459
+  yaw: 2.35786
+  orientation: {z: 0.924197, w: 0.381916}
+  kind: transit
+- x: -7.8728
+  y: 9.759
+  yaw: 2.03378
+  orientation: {z: 0.850476, w: 0.526014}
+  kind: transit
+- x: -8.0225
+  y: 10.059
+  yaw: 2.03378
+  orientation: {z: 0.850476, w: 0.526014}
+  kind: transit
+- x: -8.0225
+  y: 10.109
+  yaw: 1.5708
+  orientation: {z: 0.707107, w: 0.707107}
+  kind: wall
+- x: -8.3228
+  y: 10.0592
+  yaw: -2.97739
+  orientation: {z: -0.996631, w: 0.08201}
+  kind: transit
+- x: -8.623
+  y: 10.0095
+  yaw: -2.97739
+  orientation: {z: -0.996631, w: 0.08201}
+  kind: transit
+- x: -8.673
+  y: 10.0095
+  yaw: 3.14159
+  orientation: {z: 1.0, w: 0.0}
+  kind: wall
+- x: -8.773
+  y: 9.9095
+  yaw: -2.35619
+  orientation: {z: -0.92388, w: 0.382683}
+  kind: wall
+- x: -8.823
+  y: 9.9095
+  yaw: 3.14159
+  orientation: {z: 1.0, w: 0.0}
+  kind: wall
+- x: -8.7235
+  y: 9.559
+  yaw: -1.29419
+  orientation: {z: -0.602871, w: 0.797839}
+  kind: transit
+- x: -8.6735
+  y: 9.409
+  yaw: -1.24905
+  orientation: {z: -0.58471, w: 0.811242}
+  kind: wall
+- x: -8.473
+  y: 9.259
+  yaw: -0.64231
+  orientation: {z: -0.315661, w: 0.948872}
+  kind: transit
+- x: -8.3232
+  y: 8.934
+  yaw: -1.13902
+  orientation: {z: -0.53922, w: 0.842165}
+  kind: transit
+- x: -8.1735
+  y: 8.609
+  yaw: -1.13902
+  orientation: {z: -0.53922, w: 0.842165}
+  kind: transit
+- x: -8.1235
+  y: 8.509
+  yaw: -1.10715
+  orientation: {z: -0.525731, w: 0.850651}
+  kind: wall
+- x: -8.1235
+  y: 8.309
+  yaw: -1.5708
+  orientation: {z: -0.707107, w: 0.707107}
+  kind: wall
+- x: -8.0735
+  y: 8.259
+  yaw: -0.7854
+  orientation: {z: -0.382683, w: 0.92388}
+  kind: wall
+- x: -8.0735
+  y: 8.209
+  yaw: -1.5708
+  orientation: {z: -0.707107, w: 0.707107}
+  kind: wall
+- x: -7.9735
+  y: 8.109
+  yaw: -0.7854
+  orientation: {z: -0.382683, w: 0.92388}
+  kind: wall
+- x: -7.9235
+  y: 7.959
+  yaw: -1.24905
+  orientation: {z: -0.58471, w: 0.811242}
+  kind: wall
+- x: -7.573
+  y: 7.609
+  yaw: -0.78469
+  orientation: {z: -0.382354, w: 0.924016}
+  kind: transit
+- x: -7.423
+  y: 7.409
+  yaw: -0.9273
+  orientation: {z: -0.447214, w: 0.894427}
+  kind: transit
+- x: -7.373
+  y: 7.209
+  yaw: -1.32582
+  orientation: {z: -0.615412, w: 0.788205}
+  kind: transit
+- x: -7.373
+  y: 7.009
+  yaw: -1.5708
+  orientation: {z: -0.707107, w: 0.707107}
+  kind: transit
+- x: -7.473
+  y: 6.809
+  yaw: -2.03444
+  orientation: {z: -0.850651, w: 0.525731}
+  kind: transit
+- x: -7.573
+  y: 6.7595
+  yaw: -2.68195
+  orientation: {z: -0.973707, w: 0.227806}
+  kind: transit
+- x: -7.623
+  y: 6.7595
+  yaw: 3.14159
+  orientation: {z: 1.0, w: 0.0}
+  kind: wall
+- x: -7.773
+  y: 6.559
+  yaw: -2.2131
+  orientation: {z: -0.89416, w: 0.447748}
+  kind: transit
+- x: -8.123
+  y: 6.4095
+  yaw: -2.73791
+  orientation: {z: -0.979699, w: 0.200476}
+  kind: transit
+- x: -8.323
+  y: 6.3095
+  yaw: -2.67795
+  orientation: {z: -0.973249, w: 0.229753}
+  kind: wall
+- x: -8.373
+  y: 6.3095
+  yaw: 3.14159
+  orientation: {z: 1.0, w: 0.0}
+  kind: wall
+- x: -8.2672
+  y: 6.0161
+  yaw: -1.22471
+  orientation: {z: -0.574796, w: 0.818297}
+  kind: transit
+- x: -8.1614
+  y: 5.7226
+  yaw: -1.22471
+  orientation: {z: -0.574796, w: 0.818297}
+  kind: transit
+- x: -7.9674
+  y: 5.4158
+  yaw: -1.00711
+  orientation: {z: -0.482541, w: 0.875873}
+  kind: wall
+- x: -7.7735
+  y: 5.109
+  yaw: -1.00711
+  orientation: {z: -0.482541, w: 0.875873}
+  kind: wall
+- x: -7.6735
+  y: 4.909
+  yaw: -1.10715
+  orientation: {z: -0.525731, w: 0.850651}
+  kind: wall
+- x: -7.6735
+  y: 4.809
+  yaw: -1.5708
+  orientation: {z: -0.707107, w: 0.707107}
+  kind: wall
+- x: -7.5235
+  y: 4.659
+  yaw: -0.7854
+  orientation: {z: -0.382683, w: 0.92388}
+  kind: wall
+- x: -7.5235
+  y: 4.609
+  yaw: -1.5708
+  orientation: {z: -0.707107, w: 0.707107}
+  kind: wall
+- x: -7.473
+  y: 4.609
+  yaw: 0.0
+  orientation: {z: 0.0, w: 1.0}
+  kind: transit
+- x: -7.4735
+  y: 4.559
+  yaw: -1.58078
+  orientation: {z: -0.710626, w: 0.70357}
+  kind: transit
+- x: -7.4735
+  y: 4.509
+  yaw: -1.5708
+  orientation: {z: -0.707107, w: 0.707107}
+  kind: wall
+- x: -7.4235
+  y: 4.459
+  yaw: -0.7854
+  orientation: {z: -0.382683, w: 0.92388}
+  kind: wall
+- x: -7.0184
+  y: 4.526
+  yaw: 0.16393
+  orientation: {z: 0.081874, w: 0.996643}
+  kind: transit
+- x: -6.6133
+  y: 4.593
+  yaw: 0.16393
+  orientation: {z: 0.081874, w: 0.996643}
+  kind: transit
+- x: -6.2288
+  y: 4.8268
+  yaw: 0.54625
+  orientation: {z: 0.269744, w: 0.962932}
+  kind: lane
+- x: -6.4977
+  y: 4.9533
+  yaw: 2.70178
+  orientation: {z: 0.975918, w: 0.218136}
+  kind: lane
+- x: -6.7667
+  y: 5.0799
+  yaw: 2.70178
+  orientation: {z: 0.975918, w: 0.218136}
+  kind: lane
+- x: -6.8845
+  y: 5.1353
+  yaw: 2.70178
+  orientation: {z: 0.975918, w: 0.218136}
+  kind: lane
+- x: -7.0428
+  y: 5.5642
+  yaw: 1.92446
+  orientation: {z: 0.820468, w: 0.571693}
+  kind: lane
+- x: -7.2011
+  y: 5.993
+  yaw: 1.92446
+  orientation: {z: 0.820468, w: 0.571693}
+  kind: lane
+drive_path:
+  format: 1
+  driving: forward_only
+  spacing_m: 0.05
+  min_arc_radius_m: 0.2
+  stops: [12, 58, 104, 105, 132, 133, 134, 162, 163, 199, 200, 201, 202, 213, 243, 244, 252, 253, 254, 255, 256, 257, 258,
+    264, 265, 266, 267, 288, 289, 401, 402, 403, 424, 430, 455, 456, 457, 458, 480, 481, 482, 483, 484, 492, 493, 494, 495,
+    551, 552, 553]
+  points:
+  - [-6.523, 4.809]
+  - [-7.6635, 3.7635]
+  - [-7.694, 3.7375]
+  - [-7.7262, 3.7137]
+  - [-7.76, 3.6922]
+  - [-7.7952, 3.6731]
+  - [-7.8144, 3.6635]
+  - [-7.8578, 3.6449]
+  - [-7.903, 3.6313]
+  - [-7.9494, 3.6228]
+  - [-7.9965, 3.6195]
+  - [-8.0437, 3.6216]
+  - [-8.423, 3.6595]
+  - [-8.423, 3.5621]
+  - [-8.424, 3.5211]
+  - [-8.427, 3.4802]
+  - [-8.432, 3.4394]
+  - [-8.439, 3.399]
+  - [-8.448, 3.359]
+  - [-8.4627, 3.312]
+  - [-8.4829, 3.2671]
+  - [-8.5081, 3.2249]
+  - [-8.5382, 3.1859]
+  - [-8.5726, 3.1507]
+  - [-8.6109, 3.1198]
+  - [-8.6526, 3.0936]
+  - [-8.6971, 3.0725]
+  - [-8.7437, 3.0568]
+  - [-8.7919, 3.0466]
+  - [-8.8409, 3.0422]
+  - [-8.8901, 3.0435]
+  - [-8.9388, 3.0507]
+  - [-8.9864, 3.0635]
+  - [-9.0305, 3.0751]
+  - [-9.0757, 3.0811]
+  - [-9.1213, 3.0812]
+  - [-9.1666, 3.0756]
+  - [-9.2108, 3.0643]
+  - [-9.2532, 3.0474]
+  - [-10.0228, 2.6832]
+  - [-10.0539, 2.6649]
+  - [-10.0812, 2.6414]
+  - [-10.1038, 2.6133]
+  - [-10.3064, 2.3091]
+  - [-10.3337, 2.2697]
+  - [-10.3626, 2.2315]
+  - [-10.393, 2.1944]
+  - [-10.4248, 2.1586]
+  - [-10.458, 2.124]
+  - [-10.4948, 2.0872]
+  - [-10.532, 2.0543]
+  - [-10.573, 2.0262]
+  - [-10.6171, 2.0033]
+  - [-10.6637, 1.986]
+  - [-10.7121, 1.9746]
+  - [-10.7615, 1.9691]
+  - [-10.8112, 1.9698]
+  - [-10.8605, 1.9765]
+  - [-11.023, 2.009]
+  - [-11.0403, 1.9233]
+  - [-11.0506, 1.8768]
+  - [-11.0627, 1.8307]
+  - [-11.0764, 1.7852]
+  - [-11.0919, 1.7401]
+  - [-11.109, 1.6957]
+  - [-11.1278, 1.652]
+  - [-11.1482, 1.609]
+  - [-11.1734, 1.5665]
+  - [-11.2043, 1.528]
+  - [-11.2403, 1.4944]
+  - [-11.2808, 1.4662]
+  - [-11.3249, 1.444]
+  - [-11.3717, 1.4284]
+  - [-11.4203, 1.4196]
+  - [-11.4696, 1.4178]
+  - [-11.5187, 1.423]
+  - [-11.5665, 1.4352]
+  - [-11.6121, 1.454]
+  - [-11.6552, 1.4711]
+  - [-11.7006, 1.4803]
+  - [-11.7469, 1.4816]
+  - [-11.7928, 1.4748]
+  - [-11.8367, 1.4601]
+  - [-12.4045, 1.2132]
+  - [-12.4481, 1.1931]
+  - [-12.4908, 1.1713]
+  - [-12.5326, 1.1476]
+  - [-12.5733, 1.1222]
+  - [-12.6129, 1.095]
+  - [-12.6513, 1.0663]
+  - [-12.6885, 1.0359]
+  - [-12.7244, 1.004]
+  - [-12.7588, 0.9706]
+  - [-12.7919, 0.9357]
+  - [-12.8234, 0.8996]
+  - [-12.8534, 0.8621]
+  - [-12.8818, 0.8233]
+  - [-12.9085, 0.7834]
+  - [-12.9335, 0.7425]
+  - [-12.9567, 0.7004]
+  - [-12.9782, 0.6575]
+  - [-12.9978, 0.6137]
+  - [-13.0155, 0.5691]
+  - [-13.0314, 0.5238]
+  - [-13.1898, 0.038]
+  - [-13.5225, 1.659]
+  - [-13.5603, 1.6807]
+  - [-13.5952, 1.7067]
+  - [-13.6268, 1.7367]
+  - [-13.6546, 1.7702]
+  - [-13.6782, 1.8067]
+  - [-14.1432, 2.63]
+  - [-14.1708, 2.6716]
+  - [-14.2041, 2.7087]
+  - [-14.2424, 2.7407]
+  - [-14.285, 2.7669]
+  - [-14.3308, 2.7866]
+  - [-14.379, 2.7995]
+  - [-14.4286, 2.8054]
+  - [-14.4785, 2.804]
+  - [-14.5277, 2.7955]
+  - [-14.5807, 2.7823]
+  - [-14.6281, 2.7668]
+  - [-14.6729, 2.7449]
+  - [-14.7142, 2.7169]
+  - [-14.7511, 2.6833]
+  - [-14.783, 2.6449]
+  - [-14.8092, 2.6025]
+  - [-14.8291, 2.5567]
+  - [-14.8424, 2.5086]
+  - [-14.8488, 2.4591]
+  - [-14.8482, 2.4092]
+  - [-14.8235, 2.109]
+  - [-14.8735, 2.009]
+  - [-14.8402, 1.2757]
+  - [-14.8145, 1.25]
+  - [-14.7887, 1.2216]
+  - [-14.7657, 1.1909]
+  - [-14.7457, 1.1582]
+  - [-13.7483, -0.6632]
+  - [-13.7222, -0.703]
+  - [-13.6901, -0.7383]
+  - [-13.6529, -0.7681]
+  - [-13.6115, -0.7917]
+  - [-13.5669, -0.8085]
+  - [-13.5203, -0.8181]
+  - [-13.4726, -0.8203]
+  - [-13.4253, -0.815]
+  - [-13.3794, -0.8023]
+  - [-12.6891, -0.5514]
+  - [-12.643, -0.533]
+  - [-12.5981, -0.5117]
+  - [-12.5546, -0.4877]
+  - [-12.5127, -0.461]
+  - [-12.4725, -0.4317]
+  - [-12.4342, -0.4]
+  - [-12.398, -0.366]
+  - [-12.3285, -0.2965]
+  - [-12.3001, -0.2695]
+  - [-12.2705, -0.244]
+  - [-12.2397, -0.22]
+  - [-12.2077, -0.1975]
+  - [-11.9725, -0.041]
+  - [-11.9725, 0.009]
+  - [-11.9501, 0.0315]
+  - [-11.918, 0.0626]
+  - [-11.8848, 0.0927]
+  - [-11.8507, 0.1215]
+  - [-11.8155, 0.1492]
+  - [-11.7795, 0.1757]
+  - [-11.7426, 0.2009]
+  - [-11.7048, 0.2249]
+  - [-11.6663, 0.2475]
+  - [-11.0867, 0.5748]
+  - [-11.0453, 0.5981]
+  - [-11.0039, 0.6213]
+  - [-10.9624, 0.6444]
+  - [-10.9208, 0.6674]
+  - [-10.8792, 0.6903]
+  - [-10.8375, 0.7131]
+  - [-10.7958, 0.7358]
+  - [-10.754, 0.7584]
+  - [-10.7121, 0.7808]
+  - [-10.6702, 0.8032]
+  - [-10.6282, 0.8255]
+  - [-10.5862, 0.8476]
+  - [-10.5441, 0.8697]
+  - [-10.502, 0.8916]
+  - [-10.4598, 0.9134]
+  - [-10.4175, 0.9352]
+  - [-10.3752, 0.9568]
+  - [-10.3329, 0.9783]
+  - [-10.2905, 0.9997]
+  - [-10.248, 1.021]
+  - [-9.7509, 1.2696]
+  - [-9.7116, 1.2882]
+  - [-9.6717, 1.3054]
+  - [-9.6312, 1.321]
+  - [-9.5901, 1.335]
+  - [-9.5072, 1.3616]
+  - [-9.523, 1.409]
+  - [-8.8725, 1.809]
+  - [-8.8725, 1.859]
+  - [-8.8422, 1.8978]
+  - [-8.8103, 1.9352]
+  - [-8.7769, 1.9713]
+  - [-8.742, 2.006]
+  - [-8.7056, 2.0391]
+  - [-8.6679, 2.0707]
+  - [-8.6289, 2.1006]
+  - [-8.5886, 2.1289]
+  - [-8.5472, 2.1555]
+  - [-8.5047, 2.1802]
+  - [-6.0225, 3.559]
+  - [-6.0427, 3.5792]
+  - [-6.0724, 3.6145]
+  - [-6.0956, 3.6544]
+  - [-6.1117, 3.6976]
+  - [-6.1201, 3.7429]
+  - [-6.1206, 3.7891]
+  - [-6.1132, 3.8346]
+  - [-6.0981, 3.8781]
+  - [-6.0758, 3.9185]
+  - [-6.0469, 3.9544]
+  - [-6.0123, 3.9849]
+  - [-5.973, 4.009]
+  - [-5.9519, 4.0196]
+  - [-5.9074, 4.0402]
+  - [-5.8617, 4.0583]
+  - [-5.8151, 4.0737]
+  - [-5.7676, 4.0863]
+  - [-5.7196, 4.0962]
+  - [-5.671, 4.1033]
+  - [-5.6221, 4.1076]
+  - [-5.573, 4.109]
+  - [-5.5253, 4.1068]
+  - [-5.4781, 4.1002]
+  - [-5.4316, 4.0894]
+  - [-5.3864, 4.0743]
+  - [-5.3427, 4.0551]
+  - [-5.301, 4.032]
+  - [-5.2615, 4.0052]
+  - [-5.2247, 3.9748]
+  - [-4.646, 3.4511]
+  - [-4.673, 3.409]
+  - [-4.6402, 3.4252]
+  - [-4.5947, 3.4436]
+  - [-4.5469, 3.4547]
+  - [-4.498, 3.4585]
+  - [-4.4483, 3.4606]
+  - [-4.399, 3.4667]
+  - [-4.3503, 3.4769]
+  - [-4.223, 3.509]
+  - [-4.2729, 3.5119]
+  - [-4.223, 3.509]
+  - [-4.3, 3.5011]
+  - [-4.273, 3.459]
+  - [-5.0081, 3.7567]
+  - [-5.023, 3.709]
+  - [-5.0449, 3.7453]
+  - [-5.0721, 3.7778]
+  - [-5.1041, 3.8056]
+  - [-5.14, 3.8281]
+  - [-5.1789, 3.8447]
+  - [-5.3697, 3.9091]
+  - [-5.373, 3.959]
+  - [-5.1172, 3.8087]
+  - [-5.123, 3.759]
+  - [-4.782, 4.057]
+  - [-4.7547, 4.0842]
+  - [-4.7313, 4.1148]
+  - [-4.7121, 4.1483]
+  - [-4.6975, 4.184]
+  - [-4.6832, 4.2202]
+  - [-4.6652, 4.2547]
+  - [-4.6436, 4.287]
+  - [-4.6186, 4.3169]
+  - [-3.5172, 5.5003]
+  - [-3.4834, 5.5317]
+  - [-3.4453, 5.5577]
+  - [-3.4037, 5.5778]
+  - [-3.3597, 5.5915]
+  - [-3.3141, 5.5986]
+  - [-3.268, 5.5989]
+  - [-3.2224, 5.5923]
+  - [-3.1782, 5.5791]
+  - [-3.1364, 5.5595]
+  - [-3.098, 5.534]
+  - [-2.873, 5.359]
+  - [-3.523, 4.9585]
+  - [-2.5664, 5.7719]
+  - [-2.5287, 5.8037]
+  - [-2.4908, 5.8353]
+  - [-2.4527, 5.8667]
+  - [-2.4145, 5.8979]
+  - [-2.376, 5.9288]
+  - [-2.3374, 5.9595]
+  - [-2.2986, 5.99]
+  - [-2.2596, 6.0203]
+  - [-2.2204, 6.0503]
+  - [-2.181, 6.08]
+  - [-2.1415, 6.1095]
+  - [-2.1018, 6.1388]
+  - [-2.0619, 6.1679]
+  - [-2.0218, 6.1967]
+  - [-1.9816, 6.2253]
+  - [-1.9412, 6.2536]
+  - [-1.9006, 6.2817]
+  - [-1.8599, 6.3095]
+  - [-1.819, 6.3371]
+  - [-1.7779, 6.3644]
+  - [-1.7366, 6.3915]
+  - [-1.6952, 6.4184]
+  - [-1.6537, 6.445]
+  - [-1.612, 6.4713]
+  - [-1.5701, 6.4974]
+  - [-1.528, 6.5233]
+  - [-1.4858, 6.5489]
+  - [-1.4435, 6.5742]
+  - [-1.401, 6.5993]
+  - [-1.3584, 6.6241]
+  - [-1.3156, 6.6487]
+  - [-1.2726, 6.673]
+  - [-1.2295, 6.697]
+  - [-1.1863, 6.7208]
+  - [-1.1429, 6.7443]
+  - [-1.0994, 6.7676]
+  - [-1.0558, 6.7906]
+  - [-1.012, 6.8134]
+  - [-0.968, 6.8358]
+  - [-0.924, 6.8581]
+  - [-0.8798, 6.88]
+  - [-0.8355, 6.9017]
+  - [-0.791, 6.9231]
+  - [-0.7464, 6.9443]
+  - [-0.7017, 6.9651]
+  - [-0.6569, 6.9857]
+  - [-0.6119, 7.0061]
+  - [-0.5668, 7.0262]
+  - [-0.5216, 7.046]
+  - [-0.4763, 7.0655]
+  - [-0.4309, 7.0847]
+  - [-0.3853, 7.1037]
+  - [-0.3397, 7.1224]
+  - [-0.2939, 7.1408]
+  - [-0.248, 7.159]
+  - [-0.2017, 7.1772]
+  - [-0.1555, 7.1955]
+  - [-0.1093, 7.214]
+  - [-0.0632, 7.2325]
+  - [-0.0171, 7.2512]
+  - [0.0289, 7.27]
+  - [0.0749, 7.2889]
+  - [0.1208, 7.3079]
+  - [0.1667, 7.3271]
+  - [0.2126, 7.3463]
+  - [0.2584, 7.3657]
+  - [0.3041, 7.3852]
+  - [0.3498, 7.4047]
+  - [0.3955, 7.4245]
+  - [0.4411, 7.4443]
+  - [0.4866, 7.4642]
+  - [0.5321, 7.4843]
+  - [0.5776, 7.5044]
+  - [0.623, 7.5247]
+  - [0.6683, 7.5451]
+  - [0.7136, 7.5656]
+  - [0.7589, 7.5862]
+  - [0.8041, 7.607]
+  - [0.8492, 7.6278]
+  - [0.8943, 7.6488]
+  - [0.9393, 7.6698]
+  - [0.9843, 7.691]
+  - [1.0292, 7.7123]
+  - [1.0741, 7.7337]
+  - [1.1189, 7.7553]
+  - [1.1637, 7.7769]
+  - [1.2084, 7.7986]
+  - [1.2531, 7.8205]
+  - [1.2977, 7.8425]
+  - [1.3422, 7.8645]
+  - [1.3867, 7.8867]
+  - [1.4312, 7.909]
+  - [1.4756, 7.9315]
+  - [1.5199, 7.954]
+  - [1.5641, 7.9766]
+  - [1.6084, 7.9994]
+  - [1.6525, 8.0222]
+  - [1.6966, 8.0452]
+  - [1.7407, 8.0683]
+  - [1.7846, 8.0915]
+  - [1.8286, 8.1148]
+  - [1.8724, 8.1382]
+  - [1.9162, 8.1617]
+  - [1.96, 8.1854]
+  - [2.0037, 8.2091]
+  - [2.0473, 8.2329]
+  - [2.0909, 8.2569]
+  - [2.1344, 8.281]
+  - [2.1778, 8.3051]
+  - [2.2212, 8.3294]
+  - [3.877, 9.259]
+  - [-1.823, 6.059]
+  - [3.4775, 10.109]
+  - [3.4045, 10.1373]
+  - [3.3588, 10.1536]
+  - [3.3124, 10.1674]
+  - [3.2652, 10.1788]
+  - [3.2175, 10.1876]
+  - [3.1694, 10.1938]
+  - [3.121, 10.1975]
+  - [3.0725, 10.1985]
+  - [3.024, 10.197]
+  - [2.9757, 10.1929]
+  - [2.9276, 10.1862]
+  - [2.88, 10.1769]
+  - [2.833, 10.1651]
+  - [2.7866, 10.1508]
+  - [2.7411, 10.134]
+  - [2.6965, 10.1148]
+  - [2.653, 10.0933]
+  - [2.6108, 10.0695]
+  - [1.677, 9.5095]
+  - [-3.673, 6.3595]
+  - [-4.723, 5.7595]
+  - [-4.8523, 5.6949]
+  - [-4.8879, 5.6778]
+  - [-4.9241, 5.6621]
+  - [-4.9608, 5.6476]
+  - [-4.998, 5.6345]
+  - [-5.073, 5.6095]
+  - [-5.123, 5.5595]
+  - [-5.1587, 5.5266]
+  - [-5.1971, 5.4966]
+  - [-5.2377, 5.4699]
+  - [-5.2803, 5.4466]
+  - [-5.3247, 5.4269]
+  - [-5.3706, 5.4108]
+  - [-5.4177, 5.3985]
+  - [-5.4655, 5.3901]
+  - [-5.5139, 5.3857]
+  - [-5.5625, 5.3851]
+  - [-5.611, 5.3886]
+  - [-5.6591, 5.396]
+  - [-5.7064, 5.4072]
+  - [-5.7526, 5.4223]
+  - [-5.7974, 5.4411]
+  - [-5.8405, 5.4635]
+  - [-5.8817, 5.4893]
+  - [-5.9207, 5.5184]
+  - [-5.9571, 5.5506]
+  - [-5.9908, 5.5856]
+  - [-6.0215, 5.6233]
+  - [-6.0491, 5.6633]
+  - [-6.0733, 5.7055]
+  - [-6.167, 5.8853]
+  - [-6.123, 5.909]
+  - [-6.2553, 5.9708]
+  - [-6.223, 6.009]
+  - [-6.2556, 6.0425]
+  - [-6.2873, 6.0768]
+  - [-6.318, 6.112]
+  - [-6.3478, 6.148]
+  - [-6.3767, 6.1848]
+  - [-6.4045, 6.2223]
+  - [-6.4313, 6.2606]
+  - [-6.457, 6.2996]
+  - [-6.4817, 6.3393]
+  - [-6.5054, 6.3796]
+  - [-6.5279, 6.4205]
+  - [-6.5494, 6.462]
+  - [-6.7726, 6.909]
+  - [-6.7905, 6.9507]
+  - [-6.8034, 6.9941]
+  - [-6.8112, 7.0388]
+  - [-6.8138, 7.084]
+  - [-6.8112, 7.1293]
+  - [-6.8033, 7.1739]
+  - [-6.7904, 7.2174]
+  - [-6.7725, 7.259]
+  - [-6.7225, 7.359]
+  - [-7.0225, 7.809]
+  - [-7.0225, 7.859]
+  - [-7.0725, 7.909]
+  - [-7.073, 7.9595]
+  - [-7.1285, 7.9732]
+  - [-7.1719, 7.9877]
+  - [-7.2126, 8.0089]
+  - [-7.2494, 8.0361]
+  - [-7.2814, 8.0688]
+  - [-7.3079, 8.1062]
+  - [-7.3282, 8.1473]
+  - [-7.4725, 8.509]
+  - [-7.4725, 8.559]
+  - [-7.523, 8.559]
+  - [-7.7225, 8.959]
+  - [-7.7225, 8.9868]
+  - [-7.7248, 9.0345]
+  - [-7.7318, 9.0818]
+  - [-7.7433, 9.1282]
+  - [-7.9231, 9.7275]
+  - [-7.9393, 9.7716]
+  - [-7.9607, 9.8134]
+  - [-7.9871, 9.8522]
+  - [-8.018, 9.8876]
+  - [-8.053, 9.9189]
+  - [-8.0915, 9.9457]
+  - [-8.1331, 9.9677]
+  - [-8.1769, 9.9844]
+  - [-8.2225, 9.9957]
+  - [-8.2691, 10.0013]
+  - [-8.3161, 10.0013]
+  - [-8.3627, 9.9955]
+  - [-8.4101, 9.983]
+  - [-8.4551, 9.9638]
+  - [-8.4969, 9.9382]
+  - [-8.5345, 9.9068]
+  - [-8.5672, 9.8703]
+  - [-8.5942, 9.8294]
+  - [-8.6149, 9.785]
+  - [-8.6291, 9.7381]
+  - [-8.6362, 9.6897]
+  - [-8.6362, 9.6407]
+  - [-8.6291, 9.5922]
+  - [-8.615, 9.5453]
+  - [-8.5942, 9.5009]
+  - [-7.4759, 7.5035]
+  - [-7.4547, 7.463]
+  - [-7.4358, 7.4212]
+  - [-7.4193, 7.3785]
+  - [-7.4053, 7.3349]
+  - [-7.3937, 7.2906]
+  - [-7.3847, 7.2457]
+  - [-7.3782, 7.2004]
+  - [-7.3743, 7.1548]
+  - [-7.373, 7.109]
+  - [-7.3757, 7.0608]
+  - [-7.3839, 7.0132]
+  - [-7.3974, 6.9668]
+  - [-7.4161, 6.9222]
+  - [-7.4396, 6.8801]
+  - [-7.4678, 6.8408]
+  - [-7.5003, 6.805]
+  - [-7.5366, 6.7731]
+  - [-7.5762, 6.7456]
+  - [-8.0277, 6.468]
+  - [-8.066, 6.445]
+  - [-8.1047, 6.4226]
+  - [-8.1438, 6.4009]
+  - [-8.1832, 6.3798]
+  - [-8.223, 6.3595]
+  - [-8.323, 6.3095]
+  - [-7.5235, 4.659]
+  - [-7.5235, 4.609]
+  - [-6.8032, 4.7302]
+  - [-6.7578, 4.7411]
+  - [-6.7143, 4.7583]
+  - [-6.6736, 4.7814]
+  - [-6.6366, 4.81]
+  - [-6.6039, 4.8434]
+  - [-6.5761, 4.8811]
+  - [-6.5539, 4.9222]
+  - [-6.5377, 4.9661]
+  - [-6.5277, 5.0118]
+  - [-6.5242, 5.0584]
+  - [-6.5273, 5.1051]
+  - [-6.5368, 5.1509]
+  - [-6.5526, 5.1949]
+  - [-6.5745, 5.2363]
+  - [-6.6018, 5.2742]
+  - [-7.2011, 5.993]
+segments:
+- kind: wall
+  points:
+  - [-7.823, 3.6595]
+  - [-7.923, 3.6095]
+  - [-8.023, 3.6095]
+- kind: wall
+  points:
+  - [-8.073, 3.6595]
+  - [-8.423, 3.6595]
+- kind: wall
+  points:
+  - [-8.673, 3.1095]
+  - [-8.6836, 3.1042]
+- kind: wall
+  points:
+  - [-9.123, 3.1595]
+  - [-9.273, 3.1595]
+  - [-9.323, 3.1095]
+  - [-9.373, 3.1095]
+- kind: wall
+  points:
+  - [-9.473, 3.0095]
+  - [-9.523, 3.0095]
+  - [-9.573, 2.9595]
+  - [-9.623, 2.9595]
+- kind: wall
+  points:
+  - [-9.923, 2.7595]
+  - [-9.973, 2.7595]
+  - [-10.073, 2.6595]
+  - [-10.123, 2.6595]
+- kind: wall
+  points:
+  - [-10.4235, 2.209]
+  - [-10.4235, 2.159]
+- kind: wall
+  points:
+  - [-11.023, 2.0595]
+  - [-11.123, 2.0595]
+  - [-11.0735, 1.959]
+  - [-11.0735, 1.759]
+- kind: wall
+  points:
+  - [-11.423, 1.4095]
+  - [-11.523, 1.4095]
+  - [-11.723, 1.5095]
+- kind: wall
+  points:
+  - [-12.4238, 1.259]
+  - [-12.573, 1.1595]
+  - [-12.623, 1.1595]
+- kind: wall
+  points:
+  - [-12.673, 1.1095]
+  - [-12.873, 1.0095]
+  - [-13.023, 1.0095]
+- kind: lane
+  points:
+  - [-13.0616, 0.1159]
+  - [-13.1043, 0.09]
+  - [-13.1684, 0.051]
+  - [-13.1898, 0.038]
+- kind: aim
+  points:
+  - [-14.0668, 0.7594]
+  - [-14.073, 0.809]
+- kind: aim
+  points:
+  - [-13.8851, 1.3575]
+  - [-13.873, 1.309]
+- kind: wall
+  points:
+  - [-13.5225, 1.609]
+  - [-13.5225, 1.659]
+- kind: wall
+  points:
+  - [-13.6225, 1.759]
+  - [-13.6225, 1.809]
+- kind: wall
+  points:
+  - [-14.0725, 2.509]
+  - [-14.1725, 2.709]
+  - [-14.1725, 2.759]
+- kind: wall
+  points:
+  - [-14.2725, 2.859]
+  - [-14.2725, 2.909]
+- kind: wall
+  points:
+  - [-14.673, 2.8095]
+  - [-14.723, 2.8095]
+  - [-14.823, 2.7095]
+  - [-14.873, 2.7095]
+- kind: wall
+  points:
+  - [-14.8735, 2.309]
+  - [-14.8235, 2.209]
+  - [-14.8235, 2.109]
+  - [-14.8735, 2.009]
+- kind: wall
+  points:
+  - [-14.8402, 1.2757]
+  - [-14.7735, 1.209]
+  - [-14.6735, 1.009]
+  - [-14.6735, 0.809]
+  - [-14.5735, 0.709]
+  - [-14.5735, 0.659]
+  - [-14.5235, 0.609]
+  - [-14.4735, 0.459]
+  - [-14.3235, 0.309]
+  - [-14.2444, 0.1772]
+- kind: wall
+  points:
+  - [-14.2444, 0.1772]
+  - [-13.7235, -0.691]
+  - [-13.7235, -0.741]
+  - [-13.6735, -0.791]
+  - [-13.6735, -0.841]
+  - [-13.6235, -0.891]
+  - [-13.6235, -0.941]
+- kind: wall
+  points:
+  - [-12.723, -0.6415]
+  - [-12.673, -0.6415]
+- kind: wall
+  points:
+  - [-12.3725, -0.441]
+  - [-12.3725, -0.391]
+  - [-12.3225, -0.341]
+  - [-12.3225, -0.291]
+- kind: wall
+  points:
+  - [-11.9725, -0.041]
+  - [-11.9725, 0.009]
+- kind: wall
+  points:
+  - [-11.623, 0.2585]
+  - [-11.473, 0.3085]
+- kind: wall
+  points:
+  - [-10.673, 0.8085]
+  - [-10.623, 0.8085]
+- kind: wall
+  points:
+  - [-9.673, 1.3085]
+  - [-9.623, 1.3085]
+- kind: aim
+  points:
+  - [-9.5072, 1.3616]
+  - [-9.523, 1.409]
+- kind: wall
+  points:
+  - [-8.973, 1.7085]
+  - [-8.923, 1.7085]
+  - [-8.9225, 1.759]
+  - [-8.8725, 1.809]
+  - [-8.8725, 1.859]
+- kind: wall
+  points:
+  - [-8.223, 2.2585]
+  - [-8.073, 2.3085]
+- kind: wall
+  points:
+  - [-7.623, 2.6085]
+  - [-7.473, 2.6585]
+- kind: aim
+  points:
+  - [-7.023, 2.909]
+  - [-7.023, 2.959]
+- kind: wall
+  points:
+  - [-6.573, 3.1085]
+  - [-6.523, 3.1085]
+- kind: wall
+  points:
+  - [-6.073, 3.4085]
+  - [-6.023, 3.4085]
+- kind: wall
+  points:
+  - [-6.0225, 3.509]
+  - [-6.0225, 3.559]
+  - [-6.0518, 3.5883]
+- kind: aim
+  points:
+  - [-4.5965, 3.5031]
+  - [-4.573, 3.459]
+- kind: aim
+  points:
+  - [-4.646, 3.4511]
+  - [-4.673, 3.409]
+- kind: wall
+  points:
+  - [-4.573, 3.4585]
+  - [-4.423, 3.4585]
+  - [-4.373, 3.4085]
+- kind: wall
+  points:
+  - [-4.323, 3.4585]
+  - [-4.273, 3.5095]
+- kind: aim
+  points:
+  - [-4.2707, 3.4941]
+  - [-4.223, 3.509]
+- kind: aim
+  points:
+  - [-4.2729, 3.5119]
+  - [-4.223, 3.509]
+- kind: aim
+  points:
+  - [-4.3151, 3.486]
+  - [-4.273, 3.459]
+- kind: aim
+  points:
+  - [-4.3, 3.5011]
+  - [-4.273, 3.459]
+- kind: aim
+  points:
+  - [-5.0081, 3.7567]
+  - [-5.023, 3.709]
+- kind: aim
+  points:
+  - [-5.3697, 3.9091]
+  - [-5.373, 3.959]
+- kind: aim
+  points:
+  - [-5.1172, 3.8087]
+  - [-5.123, 3.759]
+- kind: wall
+  points:
+  - [-4.7225, 4.109]
+  - [-4.6725, 4.259]
+  - [-4.523, 4.4085]
+  - [-4.473, 4.4085]
+- kind: fill
+  points:
+  - [-4.223, 5.259]
+  - [-3.323, 5.709]
+  - [-2.873, 5.359]
+- kind: wall
+  points:
+  - [-3.523, 4.9585]
+  - [-3.473, 4.9585]
+- kind: wall
+  points:
+  - [-0.023, 6.9085]
+  - [0.027, 6.9085]
+- kind: wall
+  points:
+  - [0.977, 7.6085]
+  - [1.027, 7.6085]
+- kind: wall
+  points:
+  - [1.977, 8.1585]
+  - [2.227, 8.2085]
+- kind: fill
+  points:
+  - [2.9538, 8.709]
+  - [3.877, 9.259]
+  - [2.9801, 9.1265]
+- kind: fill
+  points:
+  - [2.9801, 9.1265]
+  - [2.3516, 9.0336]
+  - [1.1885, 8.3564]
+- kind: fill
+  points:
+  - [1.1885, 8.3564]
+  - [0.9455, 8.215]
+  - [-0.4607, 7.3963]
+  - [-0.5237, 7.3596]
+- kind: fill
+  points:
+  - [-0.5237, 7.3596]
+  - [-1.8668, 6.5777]
+  - [-2.236, 6.3628]
+- kind: wall
+  points:
+  - [-2.023, 5.8585]
+  - [-1.973, 5.8585]
+- kind: wall
+  points:
+  - [-0.973, 6.3585]
+  - [-0.923, 6.3585]
+- kind: wall
+  points:
+  - [3.4775, 10.059]
+  - [3.4775, 10.109]
+- kind: wall
+  points:
+  - [2.9911, 10.2975]
+  - [1.9625, 9.6723]
+- kind: wall
+  points:
+  - [1.9625, 9.6723]
+  - [1.777, 9.5595]
+  - [1.727, 9.5595]
+  - [1.677, 9.5095]
+  - [1.527, 9.4595]
+  - [1.427, 9.3595]
+  - [0.9407, 9.0693]
+- kind: wall
+  points:
+  - [0.077, 8.5595]
+  - [-1.3097, 7.7506]
+- kind: wall
+  points:
+  - [-1.3097, 7.7506]
+  - [-2.323, 7.1595]
+  - [-2.523, 7.0595]
+  - [-2.7316, 7.0509]
+- kind: wall
+  points:
+  - [-3.4291, 6.5534]
+  - [-3.523, 6.4595]
+  - [-3.573, 6.4595]
+  - [-3.673, 6.3595]
+  - [-3.723, 6.3595]
+  - [-3.773, 6.3095]
+  - [-3.823, 6.3095]
+  - [-3.873, 6.2595]
+  - [-3.923, 6.2595]
+  - [-3.973, 6.2095]
+  - [-4.023, 6.2095]
+  - [-4.123, 6.1095]
+  - [-4.173, 6.1095]
+  - [-4.2084, 6.0741]
+  - [-4.223, 6.0595]
+  - [-4.273, 6.0595]
+  - [-4.3291, 6.0034]
+- kind: wall
+  points:
+  - [-4.3291, 6.0034]
+  - [-4.373, 5.9595]
+  - [-4.423, 5.9595]
+  - [-4.523, 5.8595]
+  - [-4.573, 5.8595]
+  - [-4.623, 5.8095]
+  - [-4.673, 5.8095]
+  - [-4.723, 5.7595]
+  - [-4.773, 5.7595]
+  - [-4.823, 5.7095]
+  - [-4.873, 5.7095]
+  - [-4.923, 5.6595]
+  - [-4.973, 5.6595]
+  - [-5.023, 5.6095]
+  - [-5.073, 5.6095]
+  - [-5.123, 5.5595]
+  - [-5.273, 5.5595]
+- kind: aim
+  points:
+  - [-6.167, 5.8853]
+  - [-6.123, 5.909]
+- kind: aim
+  points:
+  - [-6.2553, 5.9708]
+  - [-6.223, 6.009]
+- kind: wall
+  points:
+  - [-6.5725, 6.609]
+  - [-6.5725, 6.659]
+  - [-6.7225, 6.809]
+  - [-6.8225, 7.009]
+  - [-6.8225, 7.159]
+  - [-6.7225, 7.359]
+- kind: wall
+  points:
+  - [-7.0225, 7.809]
+  - [-7.0225, 7.859]
+  - [-7.0725, 7.909]
+  - [-7.073, 7.9595]
+  - [-7.123, 7.9595]
+- kind: wall
+  points:
+  - [-7.3725, 8.259]
+  - [-7.4225, 8.459]
+- kind: wall
+  points:
+  - [-7.4725, 8.509]
+  - [-7.4725, 8.559]
+- kind: wall
+  points:
+  - [-7.7225, 8.959]
+  - [-7.7225, 9.059]
+  - [-7.6225, 9.259]
+  - [-7.5725, 9.309]
+- kind: wall
+  points:
+  - [-8.0225, 10.059]
+  - [-8.0225, 10.109]
+- kind: wall
+  points:
+  - [-8.623, 10.0095]
+  - [-8.673, 10.0095]
+  - [-8.773, 9.9095]
+  - [-8.823, 9.9095]
+- kind: wall
+  points:
+  - [-8.7235, 9.559]
+  - [-8.6735, 9.409]
+- kind: wall
+  points:
+  - [-8.1735, 8.609]
+  - [-8.1235, 8.509]
+  - [-8.1235, 8.309]
+  - [-8.0735, 8.259]
+  - [-8.0735, 8.209]
+  - [-7.9735, 8.109]
+  - [-7.9235, 7.959]
+- kind: wall
+  points:
+  - [-7.573, 6.7595]
+  - [-7.623, 6.7595]
+- kind: wall
+  points:
+  - [-8.123, 6.4095]
+  - [-8.323, 6.3095]
+  - [-8.373, 6.3095]
+- kind: wall
+  points:
+  - [-8.1614, 5.7226]
+  - [-7.7735, 5.109]
+  - [-7.6735, 4.909]
+  - [-7.6735, 4.809]
+  - [-7.5235, 4.659]
+  - [-7.5235, 4.609]
+- kind: wall
+  points:
+  - [-7.4735, 4.559]
+  - [-7.4735, 4.509]
+  - [-7.4235, 4.459]
+- kind: lane
+  points:
+  - [-6.6133, 4.593]
+  - [-6.2288, 4.8268]
+  - [-6.7667, 5.0799]
+- kind: lane
+  points:
+  - [-6.7667, 5.0799]
+  - [-6.8845, 5.1353]
+  - [-7.2011, 5.993]
+base_station: {x: -6.523, y: 4.809, yaw: 0.0}

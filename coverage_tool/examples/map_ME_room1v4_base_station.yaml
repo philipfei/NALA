@@ -1,0 +1,5 @@
+# Base station for the example map map_ME_room1v4 (map frame, m and rad).
+frame_id: map
+x: 1.157
+y: -1.875
+yaw: 0.0

@@ -1,0 +1,5 @@
+# Base station for the example map RDG_NM-DEP_V4 (map frame, m and rad).
+frame_id: map
+x: -6.523
+y: 4.809
+yaw: 0.0

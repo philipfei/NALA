@@ -1,0 +1,15 @@
+# Touchscreen panel on the robot (nala_panel, app 3). Runs on the Pi, on the 7 inch screen (1024 x 600).
+# Started by scripts/start_panel.sh (at boot, see scripts/setup_pi_screen.sh).
+# Write decimal values with a point (2.0, not 2), or the node stops with a type error.
+nala_panel:
+  ros__parameters:
+    maps_dir: maps                # map library, relative to the repo folder (app 2 saves maps there)
+    fullscreen: true              # false: a normal window (on the PC)
+    window_width: 1024            # px, Waveshare 7 inch HDMI LCD (C)
+    window_height: 600            # px
+    font_size: 13                 # pt
+    button_height: 52             # px, big enough for a finger
+    update_period: 0.3            # s, how often the screen shows new robot data while driving
+    manual_period: 0.05           # s, how often a held arrow button sends its command (drive by hand)
+    launch_stop_timeout: 20.0     # s, wait this long for app 3 to stop before it is killed
+    hardware: true                # false: app 3 without base_node and LiDAR driver (simulation, tools/sim)
