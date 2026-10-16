@@ -75,12 +75,14 @@ from .params import load_settings
 
 
 class Inputs:
-    def __init__(self,node):
+    def __init__(self,node,tf=True):
         self.settings=getattr(node,'settings',None) or load_settings()
         self.node=node;self.messages={};self.received={};self.invalid=set()
         for name,typ in [('scan',LaserScan),('odom',Odometry),('battery_state',BatteryState)]:
             node.create_subscription(typ,'/'+name,lambda msg,k=name:self.receive(k,msg),qos_profile_sensor_data)
-        self.tf=Buffer(cache_time=Duration(seconds=self.settings['localization']['tf_cache_s']));self.listener=TransformListener(self.tf,node)
+        # tf=False: no TF listener. Every /tf message (~45/s) costs a Python wake-up and decoding; on the Pi 4 that
+        # took CPU from nodes that never look up a transform (velocity gate, robot 2026-10-16).
+        if tf:self.tf=Buffer(cache_time=Duration(seconds=self.settings['localization']['tf_cache_s']));self.listener=TransformListener(self.tf,node)
 
     def receive(self,key,msg):
         t=stamp_seconds(msg.header.stamp)
