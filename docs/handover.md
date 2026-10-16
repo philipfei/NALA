@@ -139,8 +139,11 @@ What the user said (verbatim facts):
   takes the turn rate only from the IMU, so apps 2/3 heading was not affected; Nav2 turn commands were (11 % slow).
 - Body length is now **415 mm** (was 410 mm).
 - A **rod sticks out 235 mm in front**, so the total length is **650 mm**.
-- **The turning centre (chassis centre, `base_link`) is no longer the centre of the outline.** If the 415 mm body is
-  still centred on `base_link`: front edge +0.2075 m, rod tip +0.4425 m, rear -0.2075 m.
+- **The turning centre (chassis centre, `base_link`) is no longer the centre of the outline.** The 415 x 360 mm body
+  (without the rod) **is centred on the wheel centre** (user, 2026-10-16). So in `base_link` (x forward, y left):
+  body x -0.2075 .. +0.2075 m, y -0.18 .. +0.18 m; the rod reaches x = +0.2075 + 0.235 = **+0.4425 m**.
+  Farthest body corner from the turning centre: hypot(0.2075, 0.18) = 0.275 m; rod tip: ~0.4425 m (more if the rod
+  is wide or not on the centre line) -> a turn on the spot sweeps a circle of ~0.44 m radius.
 
 Why it matters (everything assumes a centred box today):
 - `config/robot.yaml` `body_length`/`body_width` -> `nala_coverage/params.py robot_footprint()` makes a box
@@ -155,9 +158,8 @@ Why it matters (everything assumes a centred box today):
   0.6` as placeholders. If the sensor sits at the rod tip, the offset becomes ~0.44 m. Ask.
 - The LiDAR is at the chassis centre at 0.20 m (placeholder height): check that it does not see the rod
   (`tools/debug/scan_on_map.py`, or the scan check in this file's history: no points < 0.45 m before the rod).
-- Questions still to ask: rod height and width, rigid or not, what it carries (the coverage sensor?); where
-  exactly `base_link` (rotation centre = centre between the four wheels) is relative to the 415 mm body (is the
-  body still centred on it, or does it now sit further back or forward?).
+- Questions still to ask: rod height, width and lateral position (on the centre line?), rigid or not, what it
+  carries (the coverage sensor?). Answered: the body is centred on the wheel centre.
 - Then: support a non-centred outline (front/back extents, not only length) in `robot.yaml`, `params.py`
   (`robot_footprint`, collision radius), `coverage_tool`, the URDF; new plans. Keep "the outline is configured once".
 
@@ -255,8 +257,8 @@ Two problems to solve now, in this order:
 1. The robot dimensions changed (handover section A): body 415 mm long, a 235 mm rod in front (650 mm total),
    the turning centre is no longer the centre of the outline; the wheelbase is now 335 mm (config/firmware still
    260 mm: fix base.yaml + firmware config.h together, then repeat the 360 deg turn test). Ask me the open questions
-   of section A first (rod height/width, whether the rod carries the coverage sensor, where the body sits relative
-   to the wheel centre), then make
+   of section A first (rod height/width/position, whether the rod carries the coverage sensor; the body is centred
+   on the wheel centre), then make
    robot.yaml, nala_coverage (params.py footprint and collision radius), coverage_tool and the URDF support a
    non-centred outline, configured once. New plans are needed afterwards.
 2. Long stops at every corner (section B): Nav2's Regulated Pure Pursuit limits turn-in-place to

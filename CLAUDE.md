@@ -160,7 +160,7 @@ Everything below is project-specific and must be kept up to date.
 | Half wheelbase | **0.1675 m** (config still 0.130 m) |
 | Wheel **radius** | 0.040 m (diameter 0.080 m) |
 | Mecanum rotation term = half track + half wheelbase | **0.3275 m** with the 335 mm wheelbase (code still 0.290 m: wheel odometry turn +12.9 %, commanded turns ~11 % slow; likely the main cause of the "10-14 % too high" wheel turn rate of 2026-10-16) |
-| Robot outer size (length x width) | 0.410 m x 0.360 m (still in `config/robot.yaml`). **Changed (user, 2026-10-16), config not updated yet:** body 0.415 m x 0.360 m, plus a rod 0.235 m forward = 0.650 m total length; the turning centre is no longer the centre of the outline. Track width still 0.320 m. See `docs/handover.md` section A |
+| Robot outer size (length x width) | 0.410 m x 0.360 m (still in `config/robot.yaml`). **Changed (user, 2026-10-16), config not updated yet:** body 0.415 m x 0.360 m, **centred on the wheel centre** (turning centre), plus a rod 0.235 m forward (tip at x = +0.4425 m) = 0.650 m total length; so the turning centre is no longer the centre of the whole outline. Track width still 0.320 m. See `docs/handover.md` section A |
 | Motors | M1 front-left, M2 rear-left, M3 rear-right, M4 front-right |
 | Encoder | 1536 counts per wheel revolution (confirmed: 1.17 m driven = 1.17 m odometry, 2026-10-07) |
 | Teleop speeds | 0.45 m/s linear (= motor limit), 0.5 rad/s angular (keys and full stick; `config/teleop.yaml`; 1.0 until 2026-10-16, slower is better for SLAM) |
@@ -415,8 +415,8 @@ SLAM must not jump to a wrong but similar-looking place.
 - [3] Robot dimensions changed (user, 2026-10-16): wheelbase 0.335 m, body 0.415 x 0.360 m, rod 0.235 m in front
   (0.650 m total), turning centre not at the outline centre; track 0.320 m unchanged. The odometry scale check
   (rear-wheel travel) stays valid. To do: half_wheelbase 0.1675 in base.yaml + firmware config.h together and repeat
-  the 360 deg turn test; ask rod height/width, whether it carries the coverage sensor, where the body sits relative
-  to the wheel centre; then a non-centred outline in robot.yaml / params.py / coverage_tool / URDF and new plans
+  the 360 deg turn test; body is centred on the wheel centre (user); ask rod height/width/position and whether it
+  carries the coverage sensor; then a non-centred outline in robot.yaml / params.py / coverage_tool / URDF and new plans
   (`docs/handover.md` section A).
 - [3] Long stops at corners: Nav2 RPP turn-in-place from standstill is limited to 0.0175 rad/s (measured rate +
   max_angular_accel x 0.05 s), below the breakaway -> deadlock until the progress checker gives up (15 s).
