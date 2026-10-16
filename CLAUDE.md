@@ -301,7 +301,8 @@ SLAM must not jump to a wrong but similar-looking place.
   (RViz, planning with `coverage_tool`). The panel starts at login in the existing Ubuntu Desktop session
   (GNOME on Wayland, autologin of `nala`; user, 2026-10-16: no Xfce/LightDM): `scripts/setup_pi_screen.sh` adds
   two GNOME autostart entries, `start_panel.sh` (PyQt5 on XWayland: `QT_QPA_PLATFORM=xcb`; waits up to 10 s for
-  the X display; over SSH it finds the display and the `.mutter-Xwaylandauth.*` file itself) and
+  the X display; over SSH it takes DISPLAY/XAUTHORITY of the desktop session from `systemctl --user
+  show-environment`: the Pi has two X sockets, X0 and X1, and the session uses :0, checked 2026-10-16) and
   `screen_always_on.sh` (gsettings: no blanking, dimming, lock or suspend; needs the session bus, so at login).
 - Map library: `maps/<name>/map.yaml/.pgm` (app 2), `base_station.yaml`, `plans/<time>.yaml/.png`, `runs/<time>/`.
 - Base station = a pose only, no dock or charger (user, 2026-10-08). The robot starts and ends there.

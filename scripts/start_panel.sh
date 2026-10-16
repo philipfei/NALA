@@ -12,8 +12,15 @@ WAIT_S=10          # s, at login GNOME may still be starting XWayland
 # The Pi desktop is GNOME on Wayland. PyQt5 runs on its XWayland (the xcb plugin comes with python3-pyqt5).
 export QT_QPA_PLATFORM=xcb
 # Inside the GNOME session DISPLAY, XAUTHORITY and XDG_RUNTIME_DIR are set and kept.
-# Over SSH they are not: then the first local X display and the XWayland login file are used.
+# Over SSH they are not: then the desktop session's values are used (from the user's systemd manager; GNOME on
+# the Pi has two X sockets, X0 and X1, and uses :0), else the first local X display and the XWayland login file.
 export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+display_given="${DISPLAY:-}"
+xauthority_given="${XAUTHORITY:-}"
+
+session_value() {   # a variable of the logged-in desktop session, empty if there is none (yet)
+  systemctl --user show-environment 2>/dev/null | sed -n "s/^$1=//p" || true
+}
 
 x_socket() {   # the socket of DISPLAY (":1" or ":1.0" -> /tmp/.X11-unix/X1), or of the first local display
   if [ -n "${DISPLAY:-}" ]; then
@@ -45,6 +52,10 @@ esac
 
 deadline=$((SECONDS + WAIT_S))
 while :; do
+  if [ -z "$display_given" ]; then
+    DISPLAY="$(session_value DISPLAY)"
+    if [ -z "$xauthority_given" ]; then XAUTHORITY="$(session_value XAUTHORITY)"; fi
+  fi
   socket="$(x_socket)"
   auth="${XAUTHORITY:-$(xwayland_auth)}"
   if [ -z "$socket" ] || [ ! -S "$socket" ]; then
