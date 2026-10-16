@@ -159,7 +159,7 @@ Everything below is project-specific and must be kept up to date.
 | Robot outer size (length x width) | 0.410 m x 0.360 m |
 | Motors | M1 front-left, M2 rear-left, M3 rear-right, M4 front-right |
 | Encoder | 1536 counts per wheel revolution (confirmed: 1.17 m driven = 1.17 m odometry, 2026-10-07) |
-| Teleop speeds | 0.45 m/s linear (= motor limit), 1.0 rad/s angular (keys and full stick; `config/teleop.yaml`) |
+| Teleop speeds | 0.45 m/s linear (= motor limit), 0.5 rad/s angular (keys and full stick; `config/teleop.yaml`; 1.0 until 2026-10-16, slower is better for SLAM) |
 | Motor top speed | Measured 2026-10-07 at 100 % PWM: 12.6-13.1 rad/s = 0.50-0.52 m/s rim speed (M4 slowest), the same with wheels in the air and on the floor. Firmware assumed 25 rad/s. `max_wheel_speed: 0.45` in `config/base.yaml` |
 | Game controller | Xbox Wireless Controller `C8:3F:26:93:1B:B2`, paired with the **Pi** over Bluetooth (`/dev/input/js0`; Bluetooth runs on the mini UART since 2026-10-09, `dtoverlay=miniuart-bt`). In `joy` (SDL): LB = button 4, left stick x/y = axes 0/1, right stick x = axis 3, triggers = axes 2/5 (1.0 released). Checked 2026-10-07 |
 | LiDAR | RPLIDAR A2M8 (firmware 1.28), USB CP2102 adapter (`/dev/serial/by-id/usb-Silicon_Labs_CP2102_...`), 115200 baud, driver `rplidar_ros` (`rplidar_composition`). Sensitivity mode: 16 m, about 7900 points/s, about 14 scans/s. Mounted at the chassis center (x = y = 0), facing backward (yaw 180 deg, checked 2026-10-07 with objects behind and right of the robot). Height not measured (placeholder 0.20 m in `config/robot.yaml`) |
@@ -298,12 +298,15 @@ SLAM must not jump to a wrong but similar-looking place.
     = ~1.022 m tape (difference below the tape resolution). Wheel odometry is good for vx, vy.
   - Turn in place 360.3 deg by wheel odometry, real only ~315-330 deg (user, tape line): the wheel turn rate is
     10-14 % too high (roller slip). Confirms the design: the EKF (app 2) takes only vx, vy from /odom and the turn
-    rate only from the IMU gyro (`config/ekf.yaml`). Not checked yet: the IMU yaw in the same turn.
+    rate only from the IMU gyro (`config/ekf.yaml`). IMU check (app 2): stopped at 360.7 deg by the EKF yaw
+    (wheels: 408.3 deg); the user saw the robot back on the tape line: the IMU yaw is right.
   - Stopping (user choice: plan A = slow down before the goal, no MCU brake): a stop command = coasting
     (~0.38 m/s^2, 5 cm from 0.2 m/s). While the command is above 0 the robot follows only about 0.1-0.14 m/s^2
     of deceleration (the FF keeps pushing). With a planned deceleration of 0.1 m/s^2 and a 0.03 m/s creep the robot
     stopped 3 mm from the goal (0.3 deg in a turn with 0.35 rad/s^2). Use these limits for Nav2 (stage 3).
-  - Then: SLAM tuning in the real house (no jumps between similar rooms).
+  - First SLAM test 2026-10-16 (Xbox, one room ~5.8 x 2.2 m): clean map, single walls, user: everything looks good.
+    `save_map.sh Test` and `scp` to the PC work (4 files; maps/Test is git-ignored).
+  - Then: SLAM in the real house with several similar rooms (no jumps), and an EKF check while driving.
 - [3] Base station: only a pose, or a physical dock or charger? How exact must the return be?
 - [3] Coverage width (tool width) and any coverage pattern requirements.
 - [2] Checked 2026-10-09 (old Pi installation): miniuart-bt + core_freq=250 -> `/dev/ttyAMA0`, core clock fixed
