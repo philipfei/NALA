@@ -9,6 +9,7 @@ import json
 import math
 import time
 import numpy as np
+from scipy.spatial import cKDTree
 import rclpy
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
@@ -44,6 +45,10 @@ class Supervisor(Node):
         self.plan_file=self.declare_parameter('plan_file','').value
         self.map_frame=cfg['runtime']['map_frame'];self.odom_frame=cfg['runtime']['odom_frame'];self.base_frame=cfg['runtime']['base_frame']
         self.base=Grid.load(cfg['runtime']['map_yaml']);self.grid=self.base
+        # Wall cell centres for the scan check, as a KD-tree: the old loop over all walls per scan point took
+        # 55 ms per scan on the Pi 4 (half a core at 10 Hz) and starved the node (robot, 2026-10-16).
+        walls=self.base.world(np.argwhere(self.base.cells==100))
+        self.wall_tree=cKDTree(walls) if len(walls) else None
         # Coverage starts and ends at the base station.
         self.station_file=cfg['runtime']['base_station_yaml'] or str(base_station.default_path(cfg['runtime']['map_yaml']))
         self.station=base_station.load(self.station_file,self.map_frame)
@@ -166,10 +171,9 @@ class Supervisor(Node):
                 if len(ids)>self.settings['localization']['max_endpoints']:ids=ids[np.linspace(0,len(ids)-1,self.settings['localization']['max_endpoints']).astype(int)]
                 angles=scan.angle_min+ids*scan.angle_increment+laser[2]
                 endpoints=np.column_stack((laser[0]+ranges[ids]*np.cos(angles),laser[1]+ranges[ids]*np.sin(angles)))
-                obstacles=self.base.world(np.argwhere(self.base.cells==100))
-                matched=0
-                for p in endpoints:
-                    if len(obstacles) and np.min(np.sum((obstacles-p)**2,axis=1))<=self.settings['localization']['match_distance_m']**2:matched+=1
+                match=self.settings['localization']['match_distance_m']
+                matched=0 if self.wall_tree is None or not len(endpoints) else int(np.sum(
+                    self.wall_tree.query(endpoints,distance_upper_bound=match+1e-9)[0]<=match))
                 self.scan_score=(len(endpoints),matched);self.scan_stamp=stamp_seconds(scan.header.stamp)
         except Exception as e:
             tf_ok=False
