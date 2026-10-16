@@ -1,4 +1,4 @@
-# Handover (2026-10-16, evening): app 3 merged, first robot tests
+# Handover (2026-10-16, late evening): app 3 covers 98.9 % on the robot; next problems
 
 For the next person and their Claude Code session. Read `CLAUDE.md` first (rules, hardware facts, decisions,
 open questions), then this file. It says what the session of 2026-10-16 did, where the work stopped, and what
@@ -8,8 +8,15 @@ to do next. Older handover text (Pi reinstall, phase A/B, firmware tuning) is in
 ## Where we are
 
 - Apps 1 and 2 work on the robot (driving test and a first SLAM map of the room "Test", 2026-10-16).
-- App 3 (coverage) is merged into `main` and set up on the Pi. On the robot it **starts to drive, but pauses
-  after about 30 cm** because messages arrive too late on the busy Pi 4 (details below). This is the open problem.
+- App 3 (coverage) is merged into `main` and set up on the Pi. **Last robot run (2026-10-16 15:44, run 8 below):
+  98.9 % of the room covered** (12.03 of 12.16 m^2). The stale-data pauses are fixed (CPU fixes, run 8).
+- Open problems now (details in "Open problems after run 8"):
+  1. **The robot dimensions changed** (user, 2026-10-16): longer body and a 235 mm rod in front; the turning centre
+     is no longer the centre of the outline. Config, planner and Nav2 still use the old centred 410 x 360 mm box.
+  2. **Long stops at every corner** (user): root cause found in the recording, not fixed yet: Nav2's controller
+     limits the turn-in-place command from the *measured* turn rate, so from standstill it only asks for
+     0.0175 rad/s, which is below what the wheels can start with -> deadlock until the progress checker gives up.
+  3. The last plan target `(1.34, -1.33)` was not reachable for the Nav2 planner -> `BLOCKED_IN_PLACE`, user cancelled.
 - Current stage: 3 (user decision).
 
 ## What the session of 2026-10-16 did (all on `main`, pushed)
@@ -30,7 +37,10 @@ In order (`git log --oneline c2417cf..HEAD`):
 | `4349c15` | Supervisor fix 2: `main()` spins a `MultiThreadedExecutor(2)` so TF (reentrant group) is received while slow callbacks run |
 | `2aff7fe` | Supervisor fix 3: scan-to-map check with a `cKDTree` (55 ms -> 1 ms per scan on the Pi; it used half a core) |
 | `79bd5b8` | Supervisor fix 4: pose lookup at `now - tf_delay_s` falls back to the newest TF if it is not older than `health.odom_age_s` |
-| (this commit) | This handover; `tools/debug/` (diagnosis scripts); docs |
+| `2038ffa` | First version of this handover; `tools/debug/` (diagnosis scripts) |
+| `5571c5d` | CPU fix 1: the velocity gate creates no TF listener (`Inputs(node, tf=False)`); it never looks up a transform |
+| `cc584a7` | CPU fix 2: the supervisor's TF listener runs on its own small node and thread (tf2 `node=None, spin_thread=True`); replaces the 2-thread executor of fix 2; `Inputs.close()` stops that thread at exit |
+| (this commit) | This handover update (run 8, the new problems, the dimension change) |
 
 Verification of the merge (before the robot tests):
 - PC: build OK; `nala_base` + `nala_teleop` tests 55/55; app 3 tests now 115/115 (run in `tools/sim/env.sh`);
@@ -71,14 +81,109 @@ format) are on the Pi in `~/nala_debug/drive_1..4_*.csv`.
    `health.gate_age_s` = 0.5 s). Later events: `SCAN_STALE`, `ODOM_STALE`. The trust check still reports
    `TF_UNAVAILABLE` sometimes (124 times in 6 min, mostly right after start-up).
 
-## The open problem: late messages on the Pi 4
+8. **Run 8 (`runs/2026-10-16_154430`, recording `~/nala_debug/drive_5_after_cc584a7.csv`), after the CPU fixes:
+   98.9 % covered.** See the next section. (Note: the recording covers only the first 360 s; the run lasted 474 s.)
+
+## CPU fixes before run 8 (how the stale-data problem was solved)
+
+Measured on the Pi with app 3 running but not started (robot standing):
+- Messages were on time when standing (`/safety/state` 20 Hz, `/coverage/trust` 10 Hz, no gap > 250 ms), but the
+  supervisor used 77-80 % and the gate 53 % of a core: no headroom once Nav2 drives.
+- `cProfile` on the Pi (75 s, launch file copy with `prefix='python3 -m cProfile ...'`): our own code was cheap
+  (the whole trust check 0.2 s, the gate logic ~1 s). Almost all time was in the rclpy executor: on every wake-up
+  it rebuilds the wait set of all subscriptions, timers, services, action clients and QoS event handlers, and it
+  decodes the message. `/tf` alone is ~45 messages/s. (`builtins.compile` in the profile is module import at start.)
+- After `5571c5d` + `cc584a7`: supervisor 56 %, gate 32 % (idle); `/safety/state`, `/coverage/trust` still exact;
+  trust check warnings only at start-up. In run 8 the trust stayed stable (only 4 untrusted states, all at start).
+- `rclpy.experimental.EventsExecutor` exists in Jazzy (PC and Pi) and would cut the executor cost much more, but it
+  is experimental and single-threaded; not used. Keep it in mind if CPU gets tight again.
+
+## Run 8 in detail (`maps/Test/runs/2026-10-16_154430/` on the Pi)
+
+- Plan `plans/2026-10-16_131806.yaml`, whole map. Result: `fraction` 0.989, covered 12.03 m^2 of 12.16 m^2
+  coverable (`coverage_*.json`: also `actual_trajectory`, `covered_indices`). Task ended `CANCELED / OPERATOR_CANCEL`
+  after 474 s; `root_cause` `POSITION_UNCERTAIN` (the pause right after start, t = 0 s, before AMCL settled).
+- Task events (t from the first event): 0 s pause `POSITION_UNCERTAIN` (start-up); 117-209 s target
+  `plan:-2.33,-1.34`: `FOLLOW_PATH_ERROR_106` (collision ahead) x2, `_105` (no progress), `NO_MOVEMENT` x5;
+  224 s `OPERATOR_PAUSE` (user); 231 s 0.05 m skipped; 286-327 s target `plan:1.34,-1.33`: `_105`, `NO_MOVEMENT` x2,
+  `_106` x2; 328 s pause `SCAN_MAP_MISMATCH`; 338 s 12 x `NAVIGATION_FAILED` -> `BLOCKED_IN_PLACE`; resumed,
+  431 s again 12 x `NAVIGATION_FAILED` -> `BLOCKED_IN_PLACE`; 442 s cancelled by the user. `target_failures`:
+  `plan:-2.33,-1.34`: 9, `plan:1.34,-1.33`: 29.
+- `launch.log`: planner "failed to plan from (0.74, -1.29) / (1.20, -1.16) to (1.34, -1.33): Failed to create plan
+  with tolerance of 0.05" (26x aborted); controller "Failed to make progress" 9x, "collision ahead" 5x. At shutdown
+  a supervisor `RuntimeError: Unable to convert call argument '0'` in `take_message` and `InvalidHandle`: this is
+  after Finish (Nav2 already cleaning up), shutdown noise like before.
+- Recording (141-301 s of driving): 11 standstills > 1 s, together 61 s of 160 s. In **every** standstill Nav2
+  sends `vx = 0, wz = +-0.0175` (sometimes 0.0203 / 0.026) rad/s, the gate passes it, the wheels do not move
+  (odom/EKF 0.000), AMCL yaw stays constant (e.g. 11.8 deg for 24 s at 163-187 s). 90 % of all rotate-only
+  commands (2351 of 2617) are below 0.03 rad/s.
+
+## Open problems after run 8 (suggested order)
+
+### A. Robot dimensions changed (user, 2026-10-16) - needs answers first
+
+What the user said (verbatim facts):
+- "The wheelbase (axle distance) is still 335 mm." **Conflict:** `CLAUDE.md` says wheelbase 0.260 m (axles) and
+  track width 0.320 m (wheels left-right), and `config/base.yaml` uses half 0.130 / 0.160; odometry was checked
+  with these values (1.053 m = 1.053 m). Ask what 335 mm is (track? wheelbase? centre to centre?) before changing
+  any number; if the odometry numbers really changed, `base.yaml` (and firmware `config.h`) must change too.
+- Body length is now **415 mm** (was 410 mm). Width not given: ask (still 360 mm?).
+- A **rod sticks out 235 mm in front**, so the total length is **650 mm**.
+- **The turning centre (chassis centre, `base_link`) is no longer the centre of the outline.** If the 415 mm body is
+  still centred on `base_link`: front edge +0.2075 m, rod tip +0.4425 m, rear -0.2075 m.
+
+Why it matters (everything assumes a centred box today):
+- `config/robot.yaml` `body_length`/`body_width` -> `nala_coverage/params.py robot_footprint()` makes a box
+  **centred** on `base_link`; the collision radius = farthest corner + padding (now 0.293 m). With the rod the
+  farthest point is about 0.44-0.48 m from the turning centre (depends on the rod width and the body width): a turn
+  on the spot sweeps a circle of that radius. Plans that keep the centre 0.33 m from walls would hit with the rod.
+- `coverage_tool` also derives the robot from `robot.yaml` (`settings.robot_config`) and assumes a centred box;
+  the plan robot radius 0.33 m is hard-coded as "0.273 + 0.02 + 0.03". It must be re-derived and plans re-made.
+- Nav2 local costmap footprint (`params.render_nav2`: `footprint` from the box) and global `robot_radius`.
+- The URDF (`nala_description`, RViz picture) uses `body_length`/`body_width`.
+- Is the rod the coverage sensor (scintillator)? `coverage.yaml` has `sensor_offset_m: 0.26`, `coverage_disk_radius_m:
+  0.6` as placeholders. If the sensor sits at the rod tip, the offset becomes ~0.44 m. Ask.
+- The LiDAR is at the chassis centre at 0.20 m (placeholder height): check that it does not see the rod
+  (`tools/debug/scan_on_map.py`, or the scan check in this file's history: no points < 0.45 m before the rod).
+- Questions to ask: rod height and width, rigid or not, what it carries; body width; where exactly `base_link`
+  (rotation centre) is relative to the body; the 335 mm conflict.
+- Then: support a non-centred outline (front/back extents, not only length) in `robot.yaml`, `params.py`
+  (`robot_footprint`, collision radius), `coverage_tool`, the URDF; new plans. Keep "the outline is configured once".
+
+### B. Long stops at corners (turn on the spot) - root cause known
+
+- Regulated Pure Pursuit (`nav2_regulated_pure_pursuit_controller`, Jazzy) clamps the turn-in-place command to
+  `measured turn rate +- max_angular_accel * control period` = `0 +- 0.35 * 0.05 = +-0.0175 rad/s` when the robot
+  stands. The measured rate comes from `/odom` (`odom_topic` in `nav2_params.yaml`). 0.0175 rad/s is ~5 mm/s at the
+  wheels, far below the breakaway (dead zone / stick-slip, floor test: low speeds 0.05-0.10 m/s already stick-slip),
+  so the robot never starts turning, the measured rate stays 0 -> deadlock until the progress checker (15 s) or the
+  supervisor's `no_motion_s` (15 s) gives up and a new goal is sent. That is the user's "waits very long at corners".
+- The velocity gate is fine: it ramps from its own last output (0.35 rad/s^2), not from the measurement.
+- `params.render_nav2` writes `motion.angular_accel_rad_s2` (0.35) into RPP `max_angular_accel`; the test
+  `test_controller_turn_acceleration_is_the_coverage_motion_value` (test_revision.py) checks that they are equal.
+- Fix idea (not done, decide with the user): give RPP a much higher `max_angular_accel` (e.g. >= 3 rad/s^2, so one
+  control step allows >= 0.15 rad/s) and leave the smooth 0.35 rad/s^2 ramp to the velocity gate; change
+  `render_nav2` and that test accordingly (a separate config value, or keep the file value). Check the stop
+  accuracy of turns afterwards (floor test 2026-10-16: 0.3 deg with a planned 0.35 rad/s^2 deceleration).
+  Also check how RPP slows the turn near the target heading so it does not end in the same dead zone.
+  Alternative: feed RPP the EKF odometry (`/odometry/filtered`) - does not help, it is also 0 at standstill.
+
+### C. Unreachable plan target and other run 8 events
+
+- `plan:1.34,-1.33`: NavFn could not plan to it from (0.74, -1.29) / (1.20, -1.16) ("tolerance 0.05"): the target is
+  probably inside the global costmap's inflated area (robot_radius = 0.293 + half a cell) near a wall, or it was
+  blocked by a costmap obstacle. Check it on the map; the plan keeps 0.33 m, the planner needs < 0.3175 m free.
+- `plan:-2.33,-1.34`: collision ahead / no movement near the left end of the room (turning margin ~6 cm, see "Other points" further down).
+- Start-up pause `POSITION_UNCERTAIN` is normal (AMCL settles in ~20 s); the panel enables Start only when trusted.
+
+## The old open problem: late messages on the Pi 4 (solved by the CPU fixes, kept for reference)
 
 All remaining pauses are "data too old" checks of the app 3 nodes (supervisor, velocity gate, meter: Python,
 `nala_coverage`). They were tuned in simulation on a fast PC. CPU on the Pi during app 3 (top, 4 cores):
 panel ~57 % (map redraw while driving), supervisor ~52-80 %, AMCL ~33 %, velocity gate ~33 %, base_node ~14 %,
 controller ~14 %, EKF ~10 %. `ekf_filter_node` once "Failed to meet update rate" (36 ms).
 
-Suggested order (measure first with `tools/debug/`, change one thing at a time, ask the user before the robot moves):
+Suggested order that was used (measure first with `tools/debug/`, change one thing at a time, ask the user before the robot moves):
 1. Find out which messages are late and why: the gate publishes `/safety/state` at 20 Hz; record its arrival
    times at the supervisor side (add `/safety/state` to `record_drive.py`) and the CPU per process while driving.
    Check whether the gate (`gate_node.py`: `check_graph()` every 0.5 s calls `get_publishers_info_by_topic` and
@@ -129,17 +234,26 @@ Other points seen during the tests:
 Copy this into a new Claude Code session in the repo folder (PC, `/home/philip/Documents/NALA` or your clone):
 
 ```
-Read CLAUDE.md and docs/handover.md first, then `git log --oneline c2417cf..HEAD`.
+Read CLAUDE.md and docs/handover.md first (especially "Open problems after run 8"), then
+`git log --oneline c2417cf..HEAD`.
 
-Context: app 3 (coverage) was merged into main on 2026-10-16 and tested on the robot. After several fixes in
-src/nala_coverage/nala_coverage/supervisor.py the robot starts to drive, but pauses after about 30 cm with
-root cause SAFETY_GATE_STALE (and later SCAN_STALE / ODOM_STALE): on the Pi 4 the app 3 Python nodes handle
-messages too late. Details, data and suggested steps: docs/handover.md, "The open problem".
+State: app 3 (coverage) runs on the robot and covered 98.9 % of the room "Test" on 2026-10-16
+(run maps/Test/runs/2026-10-16_154430 on the Pi, recording ~/nala_debug/drive_5_after_cc584a7.csv).
 
-Task: find which node or message is late and why, and fix the cause (prefer less CPU / better threading over
-looser safety limits). Start by measuring on the Pi with tools/debug/ while I run app 3 from the robot screen.
-The Pi is reachable with `ssh nala@nala.local`; I give the sudo password in the chat if needed.
-Rules: change code on the PC and push, the Pi only pulls; run ROS tests only in the isolated environment
-(source tools/sim/env.sh); ask me before anything moves; after each fix run the app 3 tests and the simulation
-before pushing, then tell me exactly what to do on the robot screen.
+Two problems to solve now, in this order:
+1. The robot dimensions changed (handover section A): body 415 mm long, a 235 mm rod in front (650 mm total),
+   the turning centre is no longer the centre of the outline. Ask me the open questions of section A first
+   (the "335 mm" conflict, body width, rod height/width, whether the rod carries the coverage sensor), then make
+   robot.yaml, nala_coverage (params.py footprint and collision radius), coverage_tool and the URDF support a
+   non-centred outline, configured once. New plans are needed afterwards.
+2. Long stops at every corner (section B): Nav2's Regulated Pure Pursuit limits turn-in-place to
+   measured rate + max_angular_accel * 0.05 s = 0.0175 rad/s from standstill, below the wheels' breakaway.
+   Propose a fix (e.g. a high RPP max_angular_accel, the velocity gate keeps the 0.35 rad/s^2 ramp), discuss
+   it with me, implement, test in the simulation, then on the robot.
+Also look at section C (unreachable last plan target).
+
+Rules: change code on the PC and push, the Pi only pulls; run ROS tests only after `source tools/sim/env.sh`;
+ask me before anything moves; after each fix run the app 3 tests and the simulation before pushing; use
+tools/debug/record_drive.py on the Pi to record the next drive, then tell me exactly what to do on the screen.
+The Pi is `ssh nala@nala.local`; I give the sudo password in the chat if needed.
 ```

@@ -160,7 +160,7 @@ Everything below is project-specific and must be kept up to date.
 | Half wheelbase | 0.130 m |
 | Wheel **radius** | 0.040 m (diameter 0.080 m) |
 | Mecanum rotation term = half track + half wheelbase | 0.290 m |
-| Robot outer size (length x width) | 0.410 m x 0.360 m |
+| Robot outer size (length x width) | 0.410 m x 0.360 m (still in `config/robot.yaml`). **Changed (user, 2026-10-16), config not updated yet:** body length 0.415 m, plus a rod 0.235 m forward = 0.650 m total; the turning centre is no longer the centre of the outline. User also said "wheelbase still 335 mm", which conflicts with 0.260 m above: open question, see `docs/handover.md` section A |
 | Motors | M1 front-left, M2 rear-left, M3 rear-right, M4 front-right |
 | Encoder | 1536 counts per wheel revolution (confirmed: 1.17 m driven = 1.17 m odometry, 2026-10-07) |
 | Teleop speeds | 0.45 m/s linear (= motor limit), 0.5 rad/s angular (keys and full stick; `config/teleop.yaml`; 1.0 until 2026-10-16, slower is better for SLAM) |
@@ -234,9 +234,10 @@ Everything below is project-specific and must be kept up to date.
 | 2 | Mapping | Teleop + real-time LiDAR SLAM + RViz on the PC + save the map and copy it back to the PC | Code done. IMU + EKF checked (2026-10-09, 360 deg turn 2026-10-16). First map of one room 2026-10-16: clean. SLAM in the real house pending |
 | 3 | Coverage | On the robot screen: choose a map from app 2, set the base station, plan a path (start at the base station or at another start point; optionally only an area), choose a saved plan and drive it. The robot starts at the base station, covers, then returns to it | Code done 2026-10-08 (coverage stack from a teammate's PC, adapted to this repo). Tested in simulation only (`tools/sim`, panel end to end). Merged into main 2026-10-16. Not tested on the robot |
 
-**Current stage: 3** (coverage; user, 2026-10-16). App 3 is merged and set up on the Pi. First robot tests
-2026-10-16 (room "Test"): it starts to drive, then pauses after ~30 cm (`SAFETY_GATE_STALE`): the app 3 Python
-nodes handle messages too late on the Pi 4. Next steps, data and test history: `docs/handover.md`.
+**Current stage: 3** (coverage; user, 2026-10-16). App 3 is merged and set up on the Pi. Robot test 2026-10-16
+(room "Test", run 8): **98.9 % covered** after the supervisor/CPU fixes. Open: the changed robot dimensions (rod in
+front, non-centred outline) and long stops at corners (Nav2 RPP turn-in-place deadlock). Details, data, test
+history and the next prompt: `docs/handover.md`.
 App 2 is still open in the real house (SLAM with several similar rooms, EKF check while driving).
 
 Stage 2 special requirement: the house has many very similar rooms.
@@ -411,5 +412,12 @@ SLAM must not jump to a wrong but similar-looking place.
   before the merge adaptation: fixed waits (e.g. 3.4 s for localization) are too short for the Pi. On the PC the
   second one fails now and then, also before the merge. `coverage_tool/tests/regression.py --quick`: `bumpy` misses
   2 cells, the same on the original branch. Teammate's code, not changed.
+- [3] Robot dimensions changed (user, 2026-10-16): body 0.415 m, rod 0.235 m in front (0.650 m total), turning
+  centre not at the outline centre. Ask: what is "335 mm" (wheelbase is 0.260 m in this file), body width, rod height
+  and width, does the rod carry the coverage sensor. Then a non-centred outline in robot.yaml / params.py /
+  coverage_tool / URDF and new plans (`docs/handover.md` section A).
+- [3] Long stops at corners: Nav2 RPP turn-in-place from standstill is limited to 0.0175 rad/s (measured rate +
+  max_angular_accel x 0.05 s), below the breakaway -> deadlock until the progress checker gives up (15 s).
+  Fix not done (`docs/handover.md` section B).
 - [3] DDS on the Pi uses only the 10.42.0.0/24 network (`config/cyclonedds.xml`). Check that app 3 and the
   panel also work when the PC network is not there.
