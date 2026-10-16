@@ -13,6 +13,7 @@ import rclpy
 from rclpy.node import Node
 from rclpy.signals import SignalHandlerOptions
 from rclpy.time import Time
+from tf2_ros import ExtrapolationException
 from geometry_msgs.msg import PoseWithCovarianceStamped, PoseStamped
 from nav_msgs.msg import OccupancyGrid, Path as PathMsg
 from nav2_msgs.action import ComputePathToPose, FollowPath
@@ -153,7 +154,13 @@ class Supervisor(Node):
             odom=transform3(self.inputs.lookup(self.odom_frame,self.base_frame,stamp))
             scan=self.inputs.messages.get('scan')
             if scan is not None and self.scan_stamp!=stamp_seconds(scan.header.stamp):
-                laser=transform3(self.inputs.lookup(self.map_frame,scan.header.frame_id,scan.header.stamp))
+                try:laser=transform3(self.inputs.lookup(self.map_frame,scan.header.frame_id,scan.header.stamp))
+                except ExtrapolationException:
+                    # On the robot a scan often arrives before the EKF's odom TF for its stamp (scan ~30 ms old,
+                    # TF up to ~25 ms behind, 2026-10-16): use the newest TF (a few mm off at coverage speed).
+                    # Only a scan older than scan_age_s is a TF error.
+                    if ros_now(self)-stamp_seconds(scan.header.stamp)>self.settings['health']['scan_age_s']:raise
+                    laser=transform3(self.inputs.lookup(self.map_frame,scan.header.frame_id))
                 ranges=np.asarray(scan.ranges);ids=np.flatnonzero(np.isfinite(ranges)&(ranges>=max(self.settings['localization']['min_scan_range_m'],scan.range_min))&(ranges<min(self.settings['localization']['max_scan_range_m'],scan.range_max)))
                 if len(ids)>self.settings['localization']['max_endpoints']:ids=ids[np.linspace(0,len(ids)-1,self.settings['localization']['max_endpoints']).astype(int)]
                 angles=scan.angle_min+ids*scan.angle_increment+laser[2]

@@ -14,6 +14,7 @@ pytest.importorskip('rclpy', reason='ROS 2 Python runtime is not installed')
 pytest.importorskip('nav2_msgs', reason='Nav2 messages are not installed')
 import rclpy
 from rclpy.node import Node
+from rclpy.time import Time
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.action import ActionServer,CancelResponse
 from rclpy.callback_groups import ReentrantCallbackGroup
@@ -67,7 +68,7 @@ class FakeInputs(Node):
         super().__init__('isolated_fake_robot')
         self.settings=node_settings(self)
         self.battery=.8;self.x=2.;self.y=2.;self.yaw=0.;self.pose_bad=False
-        self.publish_scan=True;self.battery_enabled=True;self.publish_trust=True;self.request_owner='NONE';self.epoch='test'
+        self.publish_scan=True;self.scan_ahead=0.;self.battery_enabled=True;self.publish_trust=True;self.request_owner='NONE';self.epoch='test'
         self.outputs=[];self.final=(0.,0.)
         types={'scan':LaserScan,'odom':Odometry,'battery_state':BatteryState,'tf':TFMessage,'amcl_pose':PoseWithCovarianceStamped}
         self.pubs={name:self.create_publisher(typ,'/'+name,10) for name,typ in types.items()}
@@ -88,7 +89,9 @@ class FakeInputs(Node):
         if self.battery_enabled:
             bat=BatteryState();bat.header.stamp=stamp;bat.percentage=self.battery;self.pubs['battery_state'].publish(bat)
         if self.publish_scan:
-            scan=LaserScan();scan.header.stamp=stamp;scan.header.frame_id='laser';scan.angle_min=-math.pi
+            scan=LaserScan();scan.header.frame_id='laser';scan.angle_min=-math.pi
+            # scan_ahead > 0: the scan's stamp is newer than the newest TF (on the robot the EKF lags the LiDAR).
+            scan.header.stamp=Time(nanoseconds=self.get_clock().now().nanoseconds+int(self.scan_ahead*1e9)).to_msg()
             scan.angle_increment=2*math.pi/180;scan.range_min=.1;scan.range_max=12.
             # Distance to the walls of the 4 m box (vectorised: a slow fake scan goes stale on a busy PC).
             a=scan.angle_min+np.arange(180)*scan.angle_increment;c,s=np.cos(a),np.sin(a)
@@ -152,6 +155,16 @@ def test_gate_dropout_extra_publisher_and_optional_battery(ros):
     rogue=fake.create_publisher(Twist,'/cmd_vel',10);pump(.6)
     assert not gate.graph_ok
     fake.destroy_publisher(rogue)
+
+
+def test_trust_with_scans_newer_than_the_odom_tf(ros):
+    # Robot 2026-10-16: scans arrived before the EKF's TF for their stamp; every check failed with TF_UNAVAILABLE.
+    add,pump,_,_=ros;sup=add(Supervisor());fake=add(FakeInputs())
+    fake.request_owner=None;fake.publish_trust=False;fake.scan_ahead=.03;fake.publish_map(sup.base)
+    end=time.monotonic()+10.
+    while not sup.trusted and time.monotonic()<end:pump(.2)
+    assert sup.trusted,sup.trust.reason
+    assert sup.scan_score[0]>0
 
 
 def test_supervisor_launch_no_motion_and_continuous_trust(ros):
