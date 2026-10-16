@@ -123,11 +123,21 @@ Measured on the Pi with app 3 running but not started (robot standing):
 ### A. Robot dimensions changed (user, 2026-10-16) - needs answers first
 
 What the user said (verbatim facts):
-- "The wheelbase (axle distance) is still 335 mm." **Conflict:** `CLAUDE.md` says wheelbase 0.260 m (axles) and
-  track width 0.320 m (wheels left-right), and `config/base.yaml` uses half 0.130 / 0.160; odometry was checked
-  with these values (1.053 m = 1.053 m). Ask what 335 mm is (track? wheelbase? centre to centre?) before changing
-  any number; if the odometry numbers really changed, `base.yaml` (and firmware `config.h`) must change too.
-- Body length is now **415 mm** (was 410 mm). Width not given: ask (still 360 mm?).
+- **Wheelbase (front-rear axle distance) is 335 mm** (user, 2026-10-16; half 0.1675 m). The config still has
+  0.260 m: `config/base.yaml` `half_wheelbase: 0.130`, firmware `config.h` `HALF_WHEELBASE_M 0.130f`
+  (`ROT_ARM_M` = half track + half wheelbase), `docs/mcu_protocol.md` and `CLAUDE.md` text. **Not changed yet.**
+- Track width (left-right) is still **320 mm**, body width still **360 mm** (user).
+- The odometry scale check (1.053 m = 1.053 m) is still valid: the user measured the travel of the rear wheels,
+  and forward/strafe odometry does not depend on the wheelbase.
+- **But turning does:** the rotation arm k = half track + half wheelbase is really 0.160 + 0.1675 = **0.3275 m**,
+  the code uses 0.290 m. So (a) the wheel odometry reports 0.3275 / 0.290 = 1.129x the real turn (+12.9 %), and
+  (b) a commanded turn rate is driven ~11 % too slow (0.290 / 0.3275). The floor test of 2026-10-16 measured
+  "wheel turn rate 10-14 % too high" (360 deg by the wheels, 315-330 deg real) and blamed roller slip: **the old
+  wheelbase very likely explains most of it.** To do (ask the user, firmware owner is the teammate): set
+  `half_wheelbase: 0.1675` in `config/base.yaml` and `HALF_WHEELBASE_M 0.1675f` in `config.h` (both together:
+  "firmware and Pi code must match"), flash, then repeat the 360 deg turn test with the wheels and the IMU. The EKF
+  takes the turn rate only from the IMU, so apps 2/3 heading was not affected; Nav2 turn commands were (11 % slow).
+- Body length is now **415 mm** (was 410 mm).
 - A **rod sticks out 235 mm in front**, so the total length is **650 mm**.
 - **The turning centre (chassis centre, `base_link`) is no longer the centre of the outline.** If the 415 mm body is
   still centred on `base_link`: front edge +0.2075 m, rod tip +0.4425 m, rear -0.2075 m.
@@ -145,8 +155,9 @@ Why it matters (everything assumes a centred box today):
   0.6` as placeholders. If the sensor sits at the rod tip, the offset becomes ~0.44 m. Ask.
 - The LiDAR is at the chassis centre at 0.20 m (placeholder height): check that it does not see the rod
   (`tools/debug/scan_on_map.py`, or the scan check in this file's history: no points < 0.45 m before the rod).
-- Questions to ask: rod height and width, rigid or not, what it carries; body width; where exactly `base_link`
-  (rotation centre) is relative to the body; the 335 mm conflict.
+- Questions still to ask: rod height and width, rigid or not, what it carries (the coverage sensor?); where
+  exactly `base_link` (rotation centre = centre between the four wheels) is relative to the 415 mm body (is the
+  body still centred on it, or does it now sit further back or forward?).
 - Then: support a non-centred outline (front/back extents, not only length) in `robot.yaml`, `params.py`
   (`robot_footprint`, collision radius), `coverage_tool`, the URDF; new plans. Keep "the outline is configured once".
 
@@ -242,8 +253,10 @@ State: app 3 (coverage) runs on the robot and covered 98.9 % of the room "Test" 
 
 Two problems to solve now, in this order:
 1. The robot dimensions changed (handover section A): body 415 mm long, a 235 mm rod in front (650 mm total),
-   the turning centre is no longer the centre of the outline. Ask me the open questions of section A first
-   (the "335 mm" conflict, body width, rod height/width, whether the rod carries the coverage sensor), then make
+   the turning centre is no longer the centre of the outline; the wheelbase is now 335 mm (config/firmware still
+   260 mm: fix base.yaml + firmware config.h together, then repeat the 360 deg turn test). Ask me the open questions
+   of section A first (rod height/width, whether the rod carries the coverage sensor, where the body sits relative
+   to the wheel centre), then make
    robot.yaml, nala_coverage (params.py footprint and collision radius), coverage_tool and the URDF support a
    non-centred outline, configured once. New plans are needed afterwards.
 2. Long stops at every corner (section B): Nav2's Regulated Pure Pursuit limits turn-in-place to
