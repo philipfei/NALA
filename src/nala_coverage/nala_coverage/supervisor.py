@@ -45,6 +45,7 @@ class Supervisor(Node):
         self.plan_file=self.declare_parameter('plan_file','').value
         self.map_frame=cfg['runtime']['map_frame'];self.odom_frame=cfg['runtime']['odom_frame'];self.base_frame=cfg['runtime']['base_frame']
         self.base=Grid.load(cfg['runtime']['map_yaml']);self.grid=self.base
+        self.trust_stamp=0.  # time of the last trust check's pose (s)
         # Wall cell centres for the scan check, as a KD-tree: the old loop over all walls per scan point took
         # 55 ms per scan on the Pi 4 (half a core at 10 Hz) and starved the node (robot, 2026-10-16).
         walls=self.base.world(np.argwhere(self.base.cells==100))
@@ -156,7 +157,14 @@ class Supervisor(Node):
         try:
             # A short interpolation delay prevents testing against a TF not yet received.
             stamp=Time(nanoseconds=self.get_clock().now().nanoseconds-int(self.settings['localization']['tf_delay_s']*1e9)).to_msg()
-            pose=transform3(self.inputs.lookup(self.map_frame,self.base_frame,stamp))
+            try:pose=transform3(self.inputs.lookup(self.map_frame,self.base_frame,stamp))
+            except ExtrapolationException:
+                # On the Pi 4 under load the EKF's odom TF is sometimes >100 ms old (robot, 2026-10-16): use the
+                # newest TF if it is not older than odom_age_s; pose and odom below use that same time.
+                newest=self.inputs.lookup(self.map_frame,self.base_frame)
+                if ros_now(self)-stamp_seconds(newest.header.stamp)>self.settings['health']['odom_age_s']:raise
+                stamp=newest.header.stamp;pose=transform3(newest)
+            self.trust_stamp=stamp_seconds(stamp)
             odom=transform3(self.inputs.lookup(self.odom_frame,self.base_frame,stamp))
             scan=self.inputs.messages.get('scan')
             if scan is not None and self.scan_stamp!=stamp_seconds(scan.header.stamp):
@@ -189,7 +197,7 @@ class Supervisor(Node):
         self.trust_pub.publish(json_msg({'trusted':self.trusted,'reason':reason}))
         if self.mission.generation:
             self.sample_seq+=1
-            self.sample_pub.publish(json_msg({'generation':self.mission.generation,'sample_seq':self.sample_seq,'stamp':ros_now(self)-self.settings['localization']['tf_delay_s'],
+            self.sample_pub.publish(json_msg({'generation':self.mission.generation,'sample_seq':self.sample_seq,'stamp':self.trust_stamp,
                 'pose':pose or [0.,0.,0.],'trusted':self.trusted,'active':self.mission.state in ('CONNECT','SWEEP','DWELL','PHASE_WAIT') and not self.manual}))
 
     def check_nav_active(self):

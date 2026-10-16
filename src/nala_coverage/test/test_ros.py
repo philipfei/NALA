@@ -68,7 +68,7 @@ class FakeInputs(Node):
         super().__init__('isolated_fake_robot')
         self.settings=node_settings(self)
         self.battery=.8;self.x=2.;self.y=2.;self.yaw=0.;self.pose_bad=False
-        self.publish_scan=True;self.scan_ahead=0.;self.battery_enabled=True;self.publish_trust=True;self.request_owner='NONE';self.epoch='test'
+        self.publish_scan=True;self.scan_ahead=0.;self.tf_lag=0.;self.battery_enabled=True;self.publish_trust=True;self.request_owner='NONE';self.epoch='test'
         self.outputs=[];self.final=(0.,0.)
         types={'scan':LaserScan,'odom':Odometry,'battery_state':BatteryState,'tf':TFMessage,'amcl_pose':PoseWithCovarianceStamped}
         self.pubs={name:self.create_publisher(typ,'/'+name,10) for name,typ in types.items()}
@@ -103,7 +103,9 @@ class FakeInputs(Node):
             scan.ranges=dist.min(axis=0).astype(float).tolist();self.pubs['scan'].publish(scan)
         transforms=[]
         for parent,child,x,y in [('map','odom',0.,0.),('odom','base_footprint',self.x,self.y),('base_footprint','base_link',0.,0.),('base_link','laser',0.,0.)]:
-            t=TransformStamped();t.header.stamp=stamp;t.header.frame_id=parent;t.child_frame_id=child
+            # tf_lag > 0: the TF is older than the other messages (on the robot the EKF lags under load).
+            t=TransformStamped();t.header.stamp=Time(nanoseconds=self.get_clock().now().nanoseconds-int(self.tf_lag*1e9)).to_msg()
+            t.header.frame_id=parent;t.child_frame_id=child
             t.transform.translation.x=x;t.transform.translation.y=y;t.transform.rotation.w=1.;transforms.append(t)
         self.pubs['tf'].publish(TFMessage(transforms=transforms))
         am=PoseWithCovarianceStamped();am.header.stamp=stamp;am.header.frame_id='map';am.pose.pose=od.pose.pose
@@ -165,6 +167,18 @@ def test_trust_with_scans_newer_than_the_odom_tf(ros):
     while not sup.trusted and time.monotonic()<end:pump(.2)
     assert sup.trusted,sup.trust.reason
     assert sup.scan_score[0]>0
+
+
+def test_trust_with_an_odom_tf_older_than_the_tf_delay(ros):
+    # Robot 2026-10-16: under load the EKF's TF was sometimes >100 ms old; every such check was TF_UNAVAILABLE.
+    add,pump,_,_=ros;sup=add(Supervisor());fake=add(FakeInputs())
+    fake.request_owner=None;fake.publish_trust=False;fake.tf_lag=.15;fake.publish_map(sup.base)
+    end=time.monotonic()+10.
+    while not sup.trusted and time.monotonic()<end:pump(.2)
+    assert sup.trusted,sup.trust.reason
+    trusted=0
+    for _ in range(10):pump(.2);trusted+=sup.trusted
+    assert trusted==10
 
 
 def test_supervisor_launch_no_motion_and_continuous_trust(ros):
