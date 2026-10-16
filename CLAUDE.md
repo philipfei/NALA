@@ -234,9 +234,10 @@ Everything below is project-specific and must be kept up to date.
 | 2 | Mapping | Teleop + real-time LiDAR SLAM + RViz on the PC + save the map and copy it back to the PC | Code done. IMU + EKF checked (2026-10-09, 360 deg turn 2026-10-16). First map of one room 2026-10-16: clean. SLAM in the real house pending |
 | 3 | Coverage | On the robot screen: choose a map from app 2, set the base station, plan a path (start at the base station or at another start point; optionally only an area), choose a saved plan and drive it. The robot starts at the base station, covers, then returns to it | Code done 2026-10-08 (coverage stack from a teammate's PC, adapted to this repo). Tested in simulation only (`tools/sim`, panel end to end). Merged into main 2026-10-16. Not tested on the robot |
 
-**Current stage: 3** (coverage; user, 2026-10-16). App 3 is merged but not tested on the robot.
+**Current stage: 3** (coverage; user, 2026-10-16). App 3 is merged and set up on the Pi. First robot tests
+2026-10-16 (room "Test"): it starts to drive, then pauses after ~30 cm (`SAFETY_GATE_STALE`): the app 3 Python
+nodes handle messages too late on the Pi 4. Next steps, data and test history: `docs/handover.md`.
 App 2 is still open in the real house (SLAM with several similar rooms, EKF check while driving).
-Next steps: `docs/handover.md`.
 
 Stage 2 special requirement: the house has many very similar rooms.
 SLAM must not jump to a wrong but similar-looking place.

@@ -1,227 +1,145 @@
-# Handover (2026-10-16)
+# Handover (2026-10-16, evening): app 3 merged, first robot tests
 
-For the next Claude Code session, after the Pi is reinstalled. Read `CLAUDE.md` first: it has the rules,
-the hardware facts and the open questions. This file says where the work stopped and what to do next.
+For the next person and their Claude Code session. Read `CLAUDE.md` first (rules, hardware facts, decisions,
+open questions), then this file. It says what the session of 2026-10-16 did, where the work stopped, and what
+to do next. Older handover text (Pi reinstall, phase A/B, firmware tuning) is in the git history:
+`git log -p -- docs/handover.md`. Everything in it is done or copied into `CLAUDE.md`.
 
 ## Where we are
 
-- App 1 (teleop) was driven on the robot on 2026-10-07 (firmware v1.1.1, UART text protocol).
-- App 2 (mapping): code done. IMU driver and EKF were checked on the Pi on 2026-10-09
-  (gyro sign, 50 Hz, EKF at 30 Hz, 360 deg turns by hand). No driving test and no SLAM tuning yet.
-- App 3 (coverage) was merged into main on 2026-10-16 (simulation only, not run on the robot yet):
-  see "2026-10-16: app 3 merged" below.
-- 2026-10-09: the MCU link was moved to I2C (firmware v2.0.0). It never worked. Cause found on 2026-10-12:
-  the level shifter on the board is a **TXB** type (the schematic says TXS0104E). A TXB cannot do I2C.
-- 2026-10-12 (this session, **code only, nothing was tested on hardware**): the MCU link is UART again,
-  with new binary frames (firmware v2.1.0); the IMU moves to a CH340G USB adapter; new battery monitor node.
+- Apps 1 and 2 work on the robot (driving test and a first SLAM map of the room "Test", 2026-10-16).
+- App 3 (coverage) is merged into `main` and set up on the Pi. On the robot it **starts to drive, but pauses
+  after about 30 cm** because messages arrive too late on the busy Pi 4 (details below). This is the open problem.
+- Current stage: 3 (user decision).
 
-## Hardware now (user, 2026-10-12)
+## What the session of 2026-10-16 did (all on `main`, pushed)
 
-| Part | Connection |
+In order (`git log --oneline c2417cf..HEAD`):
+
+| Commit | What |
 |---|---|
-| MCU (ATmega328PB, 5 V) | UART PD0 RX / PD1 TX <-> level shifter (TXB) <-> Pi GPIO14 TX / GPIO15 RX = `/dev/ttyAMA0`, 38400 baud |
-| IMU (WT901C-TTL, 3.3 V) | CH340G USB-to-TTL adapter -> Pi USB = `/dev/ttyIMU` (udev rule). Already set to 115200 baud, 50 Hz |
-| Battery monitor (INA260) | Pi I2C bus 1 (GPIO2 SDA / GPIO3 SCL), address not checked (0x40 expected) |
-| Battery | 4S2P Li-ion 18650, 3300 mAh per cell (16.8 V full, alarm at 14.0 V, 6.6 Ah) |
-| LiDAR (RPLIDAR A2M8) | CP2102 USB adapter, unchanged |
-| Xbox controller | Bluetooth to the Pi (Bluetooth on the mini UART) |
+| `de8480a` | Merge of `stage3-coverage` (teammate's app 3, made 2026-10-08 against an old main). Git conflicts only in docs |
+| `c54dd96` | App 3 adapted to the current main: IMU + EKF + battery_node in `app3_coverage_pi.launch.py` (base_node `publish_tf: False`, like app 2); accel limits 0.1 m/s^2 / 0.35 rad/s^2 from the floor test (`config/coverage.yaml`, RPP `max_angular_accel` in `config/nav2_params.yaml`); `tools/sim/fake_nala.py` uses `to_int16` (protocol is 1 mm/s now); `setup_pi_screen.sh` keeps GNOME (no Xfce/LightDM), GNOME autostart for the panel and `screen_always_on.sh`; `start_panel.sh` runs PyQt5 on XWayland and waits for the display |
+| `573110f` | Own Xbox node `nala_teleop xbox_teleop` replaces `teleop_twist_joy` (apps 1, 2): after an LB press the robot only drives after both sticks were centred once; LB release = one zero; no `/joy` for 0.2 s = stop |
+| `0909bb8` | App 3: Xbox **B** pauses the task (`joy_node` + `nala_coverage xbox_pause` -> `/coverage/pause`). The controller cannot drive in app 3 |
+| `7dd8c5a` | Simulation (`tools/sim/env.sh`) on Cyclone DDS (was Fast DDS), loopback only (`tools/sim/cyclonedds_sim.xml`), domain 77 |
+| `ea5ad61` | `start_panel.sh` over SSH: uses the GNOME session's DISPLAY (the Pi has X0 and X1, the session is :0) |
+| `060de61` | joy deadzone 0.15: the left stick rests at up to ~0.12 (measured); 0.05 made the robot creep |
+| `27e6817` | Docs: Pi set up for app 3 (panel autostart, touch and controller checked) |
+| `71afd5d` | Supervisor fix 1: a scan newer than the odom TF is not a TF error (use the newest TF) |
+| `4349c15` | Supervisor fix 2: `main()` spins a `MultiThreadedExecutor(2)` so TF (reentrant group) is received while slow callbacks run |
+| `2aff7fe` | Supervisor fix 3: scan-to-map check with a `cKDTree` (55 ms -> 1 ms per scan on the Pi; it used half a core) |
+| `79bd5b8` | Supervisor fix 4: pose lookup at `now - tf_delay_s` falls back to the newest TF if it is not older than `health.odom_age_s` |
+| (this commit) | This handover; `tools/debug/` (diagnosis scripts); docs |
 
-Do not put pull-up resistors on lines that go through the TXB level shifter.
-The I2C pull-ups for the INA260 must go to 3.3 V (the Pi has 1.8 kOhm on GPIO2/3 already).
+Verification of the merge (before the robot tests):
+- PC: build OK; `nala_base` + `nala_teleop` tests 55/55; app 3 tests now 115/115 (run in `tools/sim/env.sh`);
+  coverage_tool `test_sensor.py` 8/8; closed-loop simulation `run_sim.py room`: `RETURNED_TO_BASE`, 99.3 % covered,
+  0 contacts (also after fix 2).
+- Known failures that are **not** from this session (same on the original branch, teammate's code, not changed):
+  `coverage_tool/tests/regression.py --quick`: map `bumpy` misses 2 cells. On the Pi 4 two `test_ros.py` tests
+  with fixed waits fail every time (`test_supervisor_launch_no_motion_and_continuous_trust`,
+  `test_older_plan_is_split_at_corners_and_followed_exactly`); on the PC the second one fails now and then.
+- Pi: `setup_pi_screen.sh` ran (Nav2, PyQt5, scipy, matplotlib installed). After a reboot the panel starts
+  full-screen by itself; picture, touch and "screen stays on" checked by the user. Xbox checked without base_node:
+  LB with a held stick = 0, after centring 0.45 m/s, B = button 1.
 
-## What this session changed (all pushed to GitHub, branch main)
+## Robot tests of app 3 (2026-10-16, room "Test", map `maps/Test/` on the Pi)
 
-- `firmware/` **v2.1.0**: UART binary frames `0xA5, id, data, crc8`. Compile-checked 2026-10-12, **not flashed.**
-- `nala_base`: `mcu_protocol.py` and `base_node.py` for the UART frames (reader thread); new `ina260.py`,
-  `battery_node.py` (`/battery_state`, `/battery_low`), `config/battery.yaml`.
-- `config/imu.yaml`: port `/dev/ttyIMU`. `config/base.yaml`: `/dev/ttyAMA0`, 38400 baud.
-- `scripts/setup_pi.sh` for a fresh Ubuntu Desktop: `openssh-server`, removes `brltty`, stops ModemManager,
-  udev rule for `/dev/ttyIMU`. **These new lines were never run.**
-- `CLAUDE.md` is tracked in git again. `JY901 uno r3/` is ignored.
+Base station `maps/Test/base_station.yaml` (x 0.183, y -0.468, yaw -0.118), plan
+`maps/Test/plans/2026-10-16_131806.yaml`. Each run has a log and a task report in `maps/Test/runs/<time>/`
+(`launch.log`, `task_*.json` with events and root cause). Recordings of the drives (`tools/debug/record_drive.py`
+format) are on the Pi in `~/nala_debug/drive_1..4_*.csv`.
 
-Tested on the PC only: unit tests (35), `firmware/tests/uart_frame_model_test.py` (12), `base_node` with a fake
-MCU on a pty (garbage bytes, CRC error, dropped frame), `battery_node` with a fake INA260.
+1. **Never trusted (TF_UNAVAILABLE, POSITION_UNCERTAIN).** The trust check looked up the laser pose at the scan's
+   stamp; the scan arrives ~30 ms after its stamp, often before the EKF's TF for that time. -> fix 1.
+2. **TF_UNAVAILABLE again, buffer up to 0.5 s behind.** The supervisor received TF only between its other
+   callbacks (single-threaded spin; the tests use a MultiThreadedExecutor, so they never showed it). -> fix 2.
+3. **Drove a few cm, paused: Nav2 "collision ahead", NO_MOVEMENT.** The user thought the speed (0.12 m/s) was too
+   low. The recording showed the motors do follow; the stops came from the supervisor (stale data). Speed was
+   **not** changed (0.3 m/s would need ~0.45 m to slow down at the measured 0.1 m/s^2; plan pieces are ~0.5 m).
+4. **SCAN_MAP_MISMATCH, Start never active.** Caused by Claude: a test left a second `rplidar_composition` running;
+   two drivers on one serial port gave a curved, broken scan (see `tools/debug/scan_on_map.py`). Killed;
+   the LiDAR motor then needed an app 3 restart.
+5. **Jolt, then pause (SENSOR_STALE, TF_UNAVAILABLE).** The scan check took 55 ms per scan. -> fix 3.
+6. **Instant pause (TF_UNAVAILABLE).** Under load the EKF TF is sometimes >100 ms old (measured: median 22 ms,
+   max 106 ms during app 3; 8 ms / 25 ms alone). -> fix 4.
+7. **Last run (`runs/2026-10-16_144126`, `~/nala_debug/drive_4_after_79bd5b8.csv`): drives ~30 cm at
+   0.12-0.15 m/s, then pauses.** Timeline: Start, the gate ramps 0 -> 0.12 m/s in 1.2 s, the wheels follow (odom up
+   to 0.15 m/s), trust OK. After ~2.5 s the supervisor cancels the FollowPath goal: root cause
+   **`SAFETY_GATE_STALE`** (the supervisor did not get `/safety/state` from the velocity gate within
+   `health.gate_age_s` = 0.5 s). Later events: `SCAN_STALE`, `ODOM_STALE`. The trust check still reports
+   `TF_UNAVAILABLE` sometimes (124 times in 6 min, mostly right after start-up).
 
-## Steps for the user after installing Ubuntu Desktop 24.04 on the Pi
+## The open problem: late messages on the Pi 4
 
-1. At the installation: user name **nala**, computer name **NALA** (so `nala@nala.local` works).
-2. Join the WiFi of the PC's shared network (10.42.0.x).
-3. In a terminal on the Pi: `sudo apt update && sudo apt install -y openssh-server git`.
-4. On the PC: `ssh-keygen -R nala.local`, then `ssh-copy-id nala@nala.local`.
-5. Give the Pi sudo password to Claude in the chat (it is never written to a file).
+All remaining pauses are "data too old" checks of the app 3 nodes (supervisor, velocity gate, meter: Python,
+`nala_coverage`). They were tuned in simulation on a fast PC. CPU on the Pi during app 3 (top, 4 cores):
+panel ~57 % (map redraw while driving), supervisor ~52-80 %, AMCL ~33 %, velocity gate ~33 %, base_node ~14 %,
+controller ~14 %, EKF ~10 %. `ekf_filter_node` once "Failed to meet update rate" (36 ms).
 
-## Phase A: the Pi alone (no MCU, no IMU, no LiDAR, no chassis connected)
+Suggested order (measure first with `tools/debug/`, change one thing at a time, ask the user before the robot moves):
+1. Find out which messages are late and why: the gate publishes `/safety/state` at 20 Hz; record its arrival
+   times at the supervisor side (add `/safety/state` to `record_drive.py`) and the CPU per process while driving.
+   Check whether the gate (`gate_node.py`: `check_graph()` every 0.5 s calls `get_publishers_info_by_topic` and
+   `get_node_names_and_namespaces`, 20 Hz tick) or the supervisor (single-threaded callbacks, the planning worker)
+   is the slow one. The gate spins with `rclpy.spin_once` in its own loop.
+2. Reduce load: panel `update_period` (0.3 s) in `config/panel.yaml`; AMCL particles (`max_particles: 2000`,
+   `config/localization.yaml`); supervisor work per tick.
+3. Only if the nodes are fast enough and messages are still a bit late: the limits in `config/coverage.yaml`
+   `health` (`gate_age_s`, `scan_age_s`, `odom_age_s`, `lease_age_s`, all 0.5 s) may be too strict for the Pi.
+   They are safety limits: raise them only with a reason, and keep the robot stopping fast when data stops.
+4. Then the rest of "First run on the robot" in the README (a short plan, an obstacle, the return).
 
-**Done 2026-10-12.** `setup_pi.sh` ran without changes; all checks of step 2 passed; build and 35 unit tests
-passed; firmware v2.1.0 compiles with 0 errors and 0 warnings (7.0 KB flash, 374 B RAM); RViz runs on the Pi
-desktop and the PC receives the Pi's TF. Notes:
-- That day the PC and the Pi were on a WiFi 192.168.200.0/24, not on 10.42.0.0/24. The tests used a temporary
-  copy of `cyclonedds.xml` with that address (`CYCLONEDDS_URI`); the repo config was not changed (user decision).
-- GUI programs started over SSH on the Pi desktop (Wayland): `DISPLAY=:0` and
-  `XAUTHORITY=/run/user/1000/.mutter-Xwaylandauth.*`.
-- `git`, `curl` and `tmux` were missing on the fresh Pi (`sudo apt install -y git curl tmux` first).
+Other points seen during the tests:
+- Turning margin is small: plans keep the centre 0.33 m from walls, the robot corner is 0.273 m from the centre,
+  so a turn on the spot leaves ~6 cm. With AMCL error of 5-10 cm the controller may see a collision. A larger plan
+  robot radius (e.g. 0.38 m) gives 11 cm but less coverage in narrow places (not changed; ask the user).
+- AMCL put the robot ~3-10 cm from the tapped base station. Fine (limit 10 cm), but tap the base station carefully.
+- The battery check stays off (`battery.enabled: false`): the INA260 does not answer on I2C.
+- Shutdown of app 3 prints tracebacks (base_node "publisher's context is invalid", supervisor/meter
+  KeyboardInterrupt during destroy). They were there before the fixes; harmless.
 
-Goal: everything installed and built, and RViz works on the Pi desktop. Claude does this over SSH:
+## Debug tools and data
 
-1. `git clone https://github.com/philipfei/NALA.git ~/NALA`, `bash ~/NALA/scripts/setup_pi.sh`
-   (about 15 minutes; installs ROS, RViz and all tools), then reboot.
-   If the script fails on Ubuntu Desktop: fix it on the PC, push, pull, run again.
-2. Pi system: `/dev/ttyAMA0` exists; `sudo vcgencmd measure_clock core` = 250 MHz; `hciconfig` shows hci0;
-   `id` has dialout, input, i2c; `/etc/udev/rules.d/99-nala.rules` exists; `dpkg -l brltty` = not installed.
-3. Build: `cd ~/NALA && colcon build --symlink-install --base-paths src`; the unit tests pass
-   (`python3 -m pytest -p no:cacheprovider src/nala_base/test src/nala_teleop/test`).
-4. Firmware v2.1.0: compile-check on the Pi (command in `firmware/README.md` section 5; it needs the ATmega DFP
-   download). Fix errors and warnings, push. The teammate can flash it later.
-5. **RViz test** on the Pi screen (the user looks at the screen): on the Pi desktop (`DISPLAY=:0`, user logged in),
-   start the robot model (`ros2 launch nala_description description.launch.py robot_config:=$HOME/NALA/config/robot.yaml`)
-   and RViz with the mapping layout (`ros2 launch nala_bringup app2_slam_pc.launch.py`).
-   Without sensors there is no map or scan: set the fixed frame to `base_footprint` and check that the robot outline
-   and the frames `base_footprint`, `base_link`, `laser`, `imu_link` are shown. Also check RViz on the PC
-   (`app2_slam_pc.launch.py` on the PC) sees the Pi's topics over the network.
-6. **Stop here and wait for the user's "ok"** before anything is connected.
+- `tools/debug/record_drive.py`: records Nav2 command, gate output, odom, EKF, AMCL pose, trust state and all
+  warnings to CSV while the panel runs app 3 (only listens).
+- `tools/debug/scan_on_map.py`: PNG of the live scan on the map at the AMCL pose (broken scan / wrong pose).
+- `tools/debug/tf_lag.py`: age of TF odom -> base_footprint, `/odom`, `/imu` when they arrive.
+- Run them on the Pi after `source ~/NALA/config/ros_env.sh` (the panel's ROS network), from a separate SSH
+  session; start long ones with `setsid nohup ... &` and check afterwards that they ended.
+- Run logs: `~/NALA/maps/Test/runs/*/`. Recordings: `~/nala_debug/` on the Pi (not in git).
 
-## Phase B: after the user's "ok": connect the hardware one part at a time
+## Lessons from this session (for Claude on this project)
 
-Status 2026-10-14 (network back on 10.42.0.0/24, the Pi is 10.42.0.154):
-- IMU: done. `/dev/ttyIMU` OK; 0x51 + 0x52 at 50 Hz, no bad frames (read only, `setup_imu.py` not run again);
-  `/imu` 50 Hz; turned 90 deg counter-clockwise by hand -> gyro z positive, integral +90 deg.
-- LiDAR: done. `/scan` 13.7 Hz, 720 points; an object behind the robot shows at laser angle 0 deg (mount yaw
-  180 deg OK); the PC receives `/scan`. Closest range about 0.18 m (A2M8 minimum about 0.15 m).
-- Battery (INA260): **on hold** (user). Address 0x4F (A0, A1 to SCL), set in `config/battery.yaml`. Nothing
-  answers on I2C bus 1, though GPIO2/3 are in I2C mode and idle high; the IC may be broken.
-  `battery_node` only warns when it cannot read, so app 1 still starts.
-- MCU link: done (2026-10-14, firmware v2.1.0 flashed, motor power and encoders disconnected).
-  100 state frames in 5 s, 0 CRC errors, seq steps of 1; zero commands clear the boot flag; `app1_teleop_pi`
-  runs, `/odom` 20.0 Hz, no warnings (only the INA260 one). Before it worked: a loose UART cable, and pull-up
-  resistors on the TXB lines (removed; a TXB cannot pull a line low against them). With v1.1.1 and later
-  v2.1.0 frames then arrived; the exact last fix was not confirmed.
-- Motors + encoders: done (2026-10-15, motor power on, wheels in the air, v2.1.0). Forward, back, strafe left
-  and turn counter-clockwise at 0.05 m/s: every wheel has the right sign (M1..M4 = + + + +, - - - -, - + - +,
-  - - + +). Speed control: at 0.15 m/s good enough (target in ~0.5 s, 25-30 % overshoot); at 0.05 m/s bad
-  (0.6-1 s late start, 2-3x overshoot, stick-slip, once all wheels stopped for 0.6 s while commanded).
-  Raw test with a pyserial script, base_node stopped. Not confirmed yet by the user: that the wheels turned the
-  right way physically (the encoders only show their own sign).
-- Xbox: not paired yet (fresh Pi). A scan for 3 min found nothing; the user pairs it later.
-- Boot splash: `scripts/setup_splash.sh` ran (theme `nala` in the initramfs). Not seen yet (no display).
-- Open: firmware v2.2.0 (flash, then tune), Xbox, chassis on the floor, app 2.
-
-## 2026-10-15: firmware v2.2.0 setting mode (code done, **not flashed**)
-
-- The controller parameters (kp, ki, i_limit, accel_limit = new target ramp, feed-forward table) can be read and
-  set over the UART while stopped, and saved in the MCU EEPROM (user decision: EEPROM, not `config/`).
-  Protocol: `firmware/README.md` section 1. Pi tool: `scripts/tune_motors.py` (README, "Tune the wheel speed controller").
-- Tested on the PC: unit tests (48), firmware model tests (uart 22, timeout 13, param 37), the tool against a fake
-  MCU on a pty (show/set/save/reload/defaults, NaN/Inf rejected, busy while driving, slow save, Ctrl+C restore,
-  restore failure exits in 0.4 s, sweep --floor, ff), base_node with the v2.2.0 frames (`/odom` 20 Hz).
-  Compile check on the Pi: 0 errors, 0 warnings.
-- Defaults = the v2.1.0 values, so the behaviour is the same until parameters are set (only: a command starts
-  at the next control step, <= 50 ms later).
-
-### Status 2026-10-15 afternoon
-
-- v2.2.0 flashed: `tune_motors.py show` works (defaults, EEPROM empty). Nothing saved yet.
-- First measurements (in the air): dead zone 11.6-13.6 % PWM, big differences between the wheels (front M1/M4 need
-  more power at low speed). Best so far with the shared table: kp 4, ki 20, accel_limit 20 (overshoot 6-24 % at
-  0.20 m/s, 30-57 % on the rear wheels at 0.05-0.10 m/s). Higher kp (8) makes the start overshoot worse.
-- The user fixed a mechanical problem at M2. After that **M3 sticks**: no motion at 15 and 21.5 % PWM, then
-  0.7 s late start and 73 % overshoot. Waiting for a mechanical check of M3.
-- Without wheels (all 4 removed): M3 is normal (its wheel was the problem). The motors differ in gain up to 2x at
-  low PWM (M4 weakest, M3 strongest), so one shared FF table overshoots on M2/M3 (40-83 % at 0.05 m/s). Next:
-  firmware v2.3.0 (one ff_pwm row per motor) is built (2026-10-15), waiting for the flash; then tune again with the wheels on.
-  Steady-state check (3 s settle, 2 s measured per PWM): same differences, so they are not a transient.
-  For 5 rad/s: M1 17.3 %, M2 14.5 %, M3 13.6 %, M4 19.9 % PWM.
-  The MCU runs the defaults (nothing saved in the EEPROM).
-- SD card full from vc4 kernel warnings (core_freq=250): fixed with core_freq=500 (CLAUDE.md open questions).
-
-### Next steps (in this order)
-
-1. (Done 2026-10-15) v2.3.0 flashed (second try; the first flash still had v2.2.0). Test without wheels:
-   speed points 0, 1, 2, 3.5, 5, 6.6, 8.1, 9.4, 11.5, 13 rad/s (better than the default points at the low end),
-   two `ff --apply` rounds -> all motors within ~6 % of the table from 2 rad/s up, dead zones 7.2-7.9 %.
-   Open loop the motors then reach the target WITHOUT overshoot; closed loop the overshoot comes from the
-   integral during the rise (0.3-0.7 s) and the ~50-75 ms measurement delay. Best without wheels: kp 2, ki 8,
-   i_limit 3, accel_limit 0 (overshoot 7-9 % at 0.30 m/s, 13-18 % at 0.20, 15-31 % at 0.05-0.10; steady error <= 3 %).
-   Not saved (wheels and floor change friction and load). The MCU runs the defaults again.
-2. (Done 2026-10-15) Tuned on the floor and saved in the EEPROM: kp 2, ki 8, i_limit 10, accel_limit 0, new speed
-   points, per-motor rows (values and method: `firmware/README.md` section 6, v2.3.1). Open-loop `ff --floor` is not
-   usable on its own: the robot turns. Overshoot at 0.05-0.10 m/s is still 18-50 % (whole-robot stick-slip).
-3. Optional later: firmware change against the windup during the rise (integrate only near the target), if the
-   driving (app 1/2, Nav2) needs a smoother start.
-4. (Done 2026-10-16) Driving test on the floor: forward and strafe odometry exact; turn in place: wheel odometry
-   360 deg, real ~315-330 deg (so the turn comes only from the IMU, as designed). Stop accuracy 3 mm with a planned
-   deceleration of 0.1 m/s^2 (details: CLAUDE.md open questions). Next: the IMU yaw in a 360 deg turn (app 2).
-5. (Done) The final values are in `config.h` (v2.3.1) and the docs.
-6. Xbox pairing (README "Setup, Pi"), drive with the controller, then app 2 (SLAM test).
-
-The user connects the parts. Claude tests each one before the next:
-
-1. IMU (CH340G): `ls -l /dev/ttyIMU`; `python3 scripts/setup_imu.py --from 115200` must report 50 Hz, 0x51 + 0x52.
-   If `/dev/ttyIMU` is missing: `lsusb` (CH340 = 1a86:7523?), `dpkg -l brltty`.
-2. Battery: `i2cdetect -y 1` (the INA260 should be the only device, at 0x40; else change `config/battery.yaml`).
-   `ros2 run nala_base battery_node --ros-args --params-file config/battery.yaml`, `ros2 topic echo /battery_state`:
-   plausible voltage (12-16.8 V); the current must be negative while the robot runs (else `current_sign: -1.0`).
-3. Pair the Xbox controller again (README, "Setup, Pi").
-4. MCU (after the teammate flashed v2.1.0): `ros2 launch nala_bringup app1_teleop_pi.launch.py log_level:=debug`:
-   no "No valid state" and no CRC warnings; `wheels M1..M4` lines at 20 Hz; turn a wheel forward by hand: positive.
-   If nothing arrives: check the wiring (Pi TX GPIO14 -> MCU PD0 RX, MCU PD1 TX -> Pi RX GPIO15) with pyserial
-   on `/dev/ttyAMA0` at 38400: the MCU sends `a5 02 ...` 21-byte frames every 50 ms.
-5. LiDAR: `rplidar_node` gives `/scan` at about 14 Hz.
-6. Chassis with motors: Xbox drive, strafe + turn; a 1 m drive against a tape measure (odometry scale);
-   step tests if the speed control looks different.
-7. App 2: `app2_slam_pi.launch.py` + RViz; EKF without TF warnings; 360 deg turn; map a room;
-   `scripts/save_map.sh`. Then SLAM tuning in the real house.
-
-Tricks that worked before:
-- sudo over non-interactive SSH: send the password on stdin (`read -r PW`), export it in that one remote shell,
-  and use a temporary `sudo -A` wrapper with an askpass script that prints the variable. Remove them afterwards.
-- `git push` from the PC: HTTPS has no saved login; use `git push git@github.com:philipfei/NALA.git main`.
-- Long-running launch on the Pi for tests: start it in `tmux` (Ctrl+C then works like in a terminal).
-- The user moves the robot or connects the motors when asked. Ask before anything moves.
-
-## Known open points
-
-- Firmware v2.1.0 was written without a compiler. Expect small compile errors.
-- Gyro bias: about -5 deg/min of yaw drift at rest, not compensated (the user said: leave it for now).
-- EKF variances (`odom_twist_variance`, `angular_velocity_variance`) are start values.
-- LiDAR height and IMU mount position are placeholders in `config/robot.yaml`.
-- Battery percentage is a rough linear value; INA260 address and current sign are not checked.
-- Feed-forward table: 20-27 % overshoot at 0.10-0.15 m/s (lower two table points when the firmware is touched).
-- App 3: AMCL values were tuned in simulation only; the coverage sensor values are placeholders.
-- `firmware/docs/state_machine.svg` still shows the old text protocol.
-
-## 2026-10-16: app 3 merged
-
-`stage3-coverage` is merged into main and adapted to the current main:
-- `app3_coverage_pi.launch.py` starts base_node (`publish_tf: False`), battery_node, imu_node and the EKF like app 2.
-- Acceleration limits from the floor test: 0.1 m/s^2 and 0.35 rad/s^2 (`config/coverage.yaml`, `nav2_params.yaml`).
-- `scripts/setup_pi_screen.sh` keeps GNOME: it only installs the app 3 packages and adds two autostart entries
-  (`start_panel.sh`, `screen_always_on.sh`).
-
-Next steps on the Pi (in this order; ask before anything moves):
-
-1. (Done 2026-10-16) `setup_pi_screen.sh` ran, build, app 3 tests on the Pi: 111/113 (two timing tests in
-   test_ros.py, the same before the merge; CLAUDE.md open questions). Simulation on the PC: RETURNED_TO_BASE, 99.3 %.
-2. (Done 2026-10-16) Reboot: the panel comes up full-screen on the Waveshare (C), touch and picture OK (user), the
-   screen stays on. If it ever does not come up: `journalctl --user -b | grep -i start_panel` (the script names
-   the failed display check). Xbox checked without base_node (LB + centring, B = button 1; deadzone now 0.15).
-3. App 2: map the real test area, `save_map.sh`. On the screen: base station, a short plan.
-4. Robot on the floor (user present): "First run on the robot" in the README (localization, costmaps, a short
-   plan, an obstacle, the return).
+- Never run ROS tests in domain 0 (`config/ros_env.sh`): a test velocity gate could drive a running robot.
+  Use `source tools/sim/env.sh` (domain 77, localhost). The app 3 test files also set their own domains.
+- `pgrep -f`/`pkill -f` over SSH match the SSH command itself. `pkill -x` fails for names > 15 characters
+  (`rplidar_composition`). Background jobs in a non-interactive shell ignore SIGINT: stop them with SIGTERM by
+  PID or process group, then check with `ps` that they are gone. **Never leave a second LiDAR driver running.**
+- In a test, never start `base_node` without the user's permission; joy/xbox tests run without base_node.
+- sudo on the Pi over SSH: the user gives the password in the chat; send it on stdin to a temporary
+  `SUDO_ASKPASS` script (see the old handover in git), remove the script afterwards. Never write it to a file in git.
+- The panel starts app 3 with `ros2 launch nala_bringup app3_coverage_pi.launch.py ...` (`nala_panel/drive.py`);
+  after a code change the user must tap **Finish** and **Drive** again to load the new code.
+- `git push git@github.com:philipfei/NALA.git main` (HTTPS has no saved login on the PC).
 
 ## Prompt for the next conversation
 
-Copy this into a new Claude Code session in the repo folder:
+Copy this into a new Claude Code session in the repo folder (PC, `/home/philip/Documents/NALA` or your clone):
 
 ```
-Read CLAUDE.md and docs/handover.md first.
+Read CLAUDE.md and docs/handover.md first, then `git log --oneline c2417cf..HEAD`.
 
-The Pi is reinstalled with Ubuntu Desktop 24.04 (user nala, hostname NALA), it is on the PC's network and
-openssh-server is installed. Right now ONLY the Pi is connected: no MCU, no IMU, no LiDAR, no chassis.
-The Pi sudo password is: <give it here>.
+Context: app 3 (coverage) was merged into main on 2026-10-16 and tested on the robot. After several fixes in
+src/nala_coverage/nala_coverage/supervisor.py the robot starts to drive, but pauses after about 30 cm with
+root cause SAFETY_GATE_STALE (and later SCAN_STALE / ODOM_STALE): on the Pi 4 the app 3 Python nodes handle
+messages too late. Details, data and suggested steps: docs/handover.md, "The open problem".
 
-Do "Phase A" in docs/handover.md: clone the repo on the Pi, run scripts/setup_pi.sh, reboot, check the system,
-build, run the tests, compile-check firmware v2.1.0, then start RViz on the Pi desktop with the robot model so I
-can look at the screen. Then stop and wait for my "ok".
-After my "ok", do "Phase B" one part at a time: tell me which part to connect next, test it, then the next.
-Ask me before anything moves.
+Task: find which node or message is late and why, and fix the cause (prefer less CPU / better threading over
+looser safety limits). Start by measuring on the Pi with tools/debug/ while I run app 3 from the robot screen.
+The Pi is reachable with `ssh nala@nala.local`; I give the sudo password in the chat if needed.
+Rules: change code on the PC and push, the Pi only pulls; run ROS tests only in the isolated environment
+(source tools/sim/env.sh); ask me before anything moves; after each fix run the app 3 tests and the simulation
+before pushing, then tell me exactly what to do on the robot screen.
 ```
