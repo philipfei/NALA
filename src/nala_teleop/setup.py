@@ -14,12 +14,13 @@ setup(
     zip_safe=True,
     maintainer='philipfei',
     maintainer_email='feijinghao2002@gmail.com',
-    description='Keyboard teleop of the NALA robot with fixed speeds',
+    description='Keyboard (PC) and Xbox controller (Pi) teleop of the NALA robot with fixed speeds',
     license='TODO',
     extras_require={'test': ['pytest']},
     entry_points={
         'console_scripts': [
             'keyboard_teleop = nala_teleop.keyboard_node:main',
+            'xbox_teleop = nala_teleop.xbox_node:main',
         ],
     },
 )

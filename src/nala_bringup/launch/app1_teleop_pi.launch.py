@@ -35,7 +35,7 @@ def generate_launch_description():
             parameters=[os.path.join(config_dir, 'battery.yaml')],
             output='screen',
         ),
-        # Xbox controller: hold LB and use the sticks (config/teleop.yaml).
+        # Xbox controller: hold LB, centre the sticks once, then drive (config/teleop.yaml).
         Node(
             package='joy',
             executable='joy_node',
@@ -44,9 +44,8 @@ def generate_launch_description():
             output='screen',
         ),
         Node(
-            package='teleop_twist_joy',
-            executable='teleop_node',
-            name='teleop_twist_joy_node',
+            package='nala_teleop',
+            executable='xbox_teleop',
             parameters=[teleop_config],
             output='screen',
         ),

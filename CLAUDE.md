@@ -242,18 +242,22 @@ SLAM must not jump to a wrong but similar-looking place.
 ## Architecture (current decisions)
 
 - The repo root is the colcon workspace. ROS 2 packages are in `src/`. Our nodes are Python (rclpy).
-- Packages: `nala_description` (URDF), `nala_base` (Pi <-> MCU driver, odometry), `nala_teleop` (PC keyboard teleop),
+- Packages: `nala_description` (URDF), `nala_base` (Pi <-> MCU driver, odometry), `nala_teleop` (PC keyboard teleop, Pi Xbox teleop),
   `nala_bringup` (launch files and RViz layouts for all apps; installs `config/`), `nala_coverage` (app 3 mission,
   velocity gate, coverage meter, base station), `nala_panel` (robot screen for app 3).
   The coverage planner is `coverage_tool/` (Python, no ROS, not a ROS package), run as `plan_cli.py`.
 - A package that is still empty has a `COLCON_IGNORE` file. Remove it in the stage that fills the package.
-- The Pi runs: `nala_base` (`base_node`, `battery_node`, `imu_node`), robot_localization EKF (apps 2 and 3), Xbox controller (`joy` + `teleop_twist_joy`: hold LB, left stick = drive + strafe,
+- The Pi runs: `nala_base` (`base_node`, `battery_node`, `imu_node`), robot_localization EKF (apps 2 and 3), Xbox controller (`joy` + `nala_teleop` `xbox_teleop`: hold LB, left stick = drive + strafe,
   right stick = turn), `rplidar_ros`, `robot_state_publisher`, `slam_toolbox` (app 2), AMCL + Nav2 + coverage
   mission + velocity gate (app 3), the robot screen panel (`nala_panel`, app 3).
 - The PC runs: keyboard teleop (`nala_teleop`, own node: IJKL keys, Shift = strafe, the user chose it over WASD;
   no speed keys, speeds only in `config/teleop.yaml`), RViz, and optionally for app 3 the base station picker and
   `coverage_tool` (planning on the PC).
 - Keyboard and joystick both publish `/cmd_vel` only while used, so they do not fight (no mux).
+- Xbox teleop is our own node `xbox_teleop` (user decision 2026-10-16, replaced `teleop_twist_joy`): after an LB press
+  the command is zero until both sticks were centred once (no jump with a held stick); LB release = one zero;
+  no `/joy` for `joy_timeout` 0.2 s while LB is held = one zero, then LB must be pressed again. joy_node deadzone
+  0.05 (user). Same axes and scales as before. Logic in `xbox.py` (no ROS, unit tests).
 - PC and Pi talk over the LAN with ROS 2 DDS (Cyclone, `ROS_DOMAIN_ID=0`). Their clocks must be in sync (both use NTP).
 - `nala_base` sends the current command to the MCU at a fixed rate (20 Hz), not synced to the MCU feedback (20 Hz)
   (reasons in `docs/mcu_protocol.md`).

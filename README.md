@@ -54,7 +54,7 @@ All dependencies: [requirements.yaml](requirements.yaml).
 ```
 PC                                   Pi (on the robot)                         MCU
 nala_teleop keyboard --/cmd_vel-->   nala_base --UART command frame, 20 Hz-->  motor_driver
-Xbox --Bluetooth--> joy_node -> teleop_twist_joy --/cmd_vel--> nala_base
+Xbox --Bluetooth--> joy_node -> nala_teleop xbox_teleop --/cmd_vel--> nala_base
                                      nala_base <--UART state frame, 20 Hz----  (PI per wheel)
                                      nala_base: wheel odometry (/odom; TF odom->base_footprint in app 1)
 INA260 --I2C--> battery_node (/battery_state, /battery_low)
@@ -230,7 +230,7 @@ NALA/
     │       ├── test_step_metrics.py       [1] Unit tests for step_metrics.py
     │       └── test_wt901.py              [2] Unit tests for wt901.py
     │
-    ├── nala_teleop/                       PC keyboard teleop with fixed speeds (no speed keys)
+    ├── nala_teleop/                       Teleop with fixed speeds: PC keyboard (no speed keys), Pi Xbox controller
     │   ├── package.xml                    [1] Package manifest
     │   ├── setup.py                       [1] Python package setup and node entry points
     │   ├── setup.cfg                      [1] Install paths for ros2 run
@@ -239,15 +239,18 @@ NALA/
     │   ├── nala_teleop/
     │   │   ├── __init__.py                (empty) [1] Python package marker. Stays empty
     │   │   ├── keys.py                    [1] Key layout: key -> drive direction, help text (no ROS)
-    │   │   └── keyboard_node.py           [1] ROS node: read keys in the terminal, publish /cmd_vel
+    │   │   ├── keyboard_node.py           [1] ROS node: read keys in the terminal, publish /cmd_vel
+    │   │   ├── xbox.py                    [1] Xbox rules: hold LB, centre the sticks first, /joy watchdog (no ROS)
+    │   │   └── xbox_node.py               [1] Pi ROS node xbox_teleop: /joy -> /cmd_vel
     │   └── test/
-    │       └── test_keys.py               [1] Unit tests for keys.py
+    │       ├── test_keys.py               [1] Unit tests for keys.py
+    │       └── test_xbox.py               [1] Unit tests for xbox.py
     │
     ├── nala_bringup/                      Launch files and RViz layouts for the 3 apps. Installs config/
     │   ├── CMakeLists.txt                 [1] Install launch/, rviz/ and the repo config/ folder
     │   ├── package.xml                    [1] Package manifest
     │   ├── launch/
-    │   │   ├── app1_teleop_pi.launch.py   [1] Pi: base driver, battery monitor, Xbox controller (joy + teleop_twist_joy)
+    │   │   ├── app1_teleop_pi.launch.py   [1] Pi: base driver, battery monitor, Xbox controller (joy + xbox_teleop)
     │   │   ├── app2_slam_pi.launch.py     [2] Pi: app 1 + robot model + LiDAR + SLAM
     │   │   ├── app2_slam_pc.launch.py     [2] PC: RViz with slam.rviz
     │   │   ├── app3_base_station_pc.launch.py   [3] PC: show a saved map, click the base station in RViz (the robot screen can do this too)
@@ -440,6 +443,9 @@ Shift + U I O J L M < > = drive without turning (J / L = move sideways)
 Xbox controller (switch it on; it connects to the Pi by itself):
 
 - **Hold LB** to drive. Release LB = stop at once.
+- After pressing LB, let both sticks go to the centre once: until then the robot does not move, even if a
+  stick is pushed (so it cannot jump off when LB is pressed with a stick held).
+- If the controller is lost while LB is held (no `/joy` for 0.2 s), the robot stops. Release LB and press it again.
 - Left stick: up / down = forward / backward, left / right = move sideways.
 - Right stick left / right = turn.
 - Full stick = 0.45 m/s and 0.5 rad/s (`config/teleop.yaml`).

@@ -68,8 +68,7 @@ apt:
       - python3-colcon-common-extensions    # build tool
       - git
       - avahi-daemon                        # mDNS: ssh nala@nala.local
-      - ros-jazzy-joy                       # Xbox controller -> /joy (SDL2). User nala must be in group input
-      - ros-jazzy-teleop-twist-joy          # /joy -> /cmd_vel
+      - ros-jazzy-joy                       # Xbox controller -> /joy (SDL2), then nala_teleop xbox_teleop. User nala must be in group input
     stage_2:                                # installed by scripts/setup_pi.sh
       - ros-jazzy-rplidar-ros               # RPLIDAR A2M8 driver
       - ros-jazzy-robot-state-publisher     # publish robot frames from the URDF

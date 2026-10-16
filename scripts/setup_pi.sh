@@ -33,7 +33,7 @@ $APT install ros-jazzy-ros-base python3-serial python3-pytest python3-colcon-com
   openssh-server
 
 echo "== Xbox controller (app 1)"
-$APT install ros-jazzy-joy ros-jazzy-teleop-twist-joy
+$APT install ros-jazzy-joy   # /joy -> /cmd_vel is nala_teleop xbox_teleop (in this repo)
 # joy reads /dev/input/event*, which belongs to the group input.
 sudo usermod -aG input "$USER"
 
