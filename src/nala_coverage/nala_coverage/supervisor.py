@@ -36,6 +36,8 @@ from .plan_file import check_base_station, load_plan
 from .ros_common import (Inputs, ActionSlot, LATCHED, LATEST, decode, json_msg,
                          diagnostic, pose_msg, path_msg, pose3, transform3, yaw, ros_now, stamp_seconds)
 
+# No task holds the robot: it may be moved by hand, and the locator works.
+IDLE_STATES=('IDLE','FINISHED','CANCELED','FAILED')
 ACTIVE={'BACKGROUND','CONNECT_PLAN','CONNECT','SWEEP','DWELL','PHASE_WAIT','RETURN_PLAN','RETURN','TEST_PLAN','TEST'}
 DRIVING=('CONNECT','SWEEP','RETURN','TEST')
 
@@ -102,6 +104,9 @@ class Supervisor(Node):
         self.create_subscription(OccupancyGrid,'/radiation/keepout',self.keepout_received,LATCHED)
         self.background_client=self.create_client(Trigger,'/radiation/measure_background')
         self.create_subscription(PoseStamped,'/coverage/test_goal',self.goal_received,10)
+        # Where the locator finds the robot from the scan (locator_node): Start needs it on the base station.
+        self.located={};self.located_time=0.
+        self.create_subscription(String,'/coverage/located',self.located_received,LATEST)
         self.create_service(SetBool,'/control/manual',self.manual_service)
         for name,fn in [('preview',self.preview_service),('start',self.start),
                         ('pause',self.pause_service),('resume',self.resume),('cancel',self.cancel_service),
@@ -139,6 +144,22 @@ class Supervisor(Node):
         """Tell AMCL the robot is on the base station, until AMCL reports a pose. An operator can still correct
         it with RViz's 2D Pose Estimate."""
         if self.amcl is not None:self.initial_timer.cancel();return
+        self.send_station_pose()
+
+    def located_received(self,msg):
+        """The robot may be put on the base station only after app 3 started (user, 2026-10-19): when the locator
+        finds it there and no task holds it, AMCL starts again from the base station (if not already there)."""
+        try:self.located=decode(msg);self.located_time=time.monotonic()
+        except ValueError:return
+        if self.located.get('status')!='ON_BASE' or self.mission.state not in IDLE_STATES or self.manual:return
+        loc=self.settings['localization'];amcl=pose3(self.amcl.pose.pose) if self.amcl else None
+        if amcl is None or math.dist(amcl[:2],self.station[:2])>loc['base_station_sigma_m'] or \
+                abs(math.remainder(amcl[2]-self.station[2],2*math.pi))>math.radians(loc['base_station_sigma_deg']):
+            self.send_station_pose()
+            # A plan check made at the old, wrong pose is not valid.
+            if self.work is None:self.preview=None
+
+    def send_station_pose(self):
         loc=self.settings['localization'];msg=PoseWithCovarianceStamped()
         msg.header.frame_id=self.map_frame;msg.header.stamp=self.get_clock().now().to_msg()
         msg.pose.pose=pose_msg(self,self.station[:2],self.station[2]).pose
@@ -279,6 +300,7 @@ class Supervisor(Node):
 
     def start(self):
         self.ready(require_nav=True)
+        self.check_located()
         if self.preview is None or self.work is not None:raise ValueError('A completed preview is required')
         if self.preview.get('config_hash')!=self.settings.hash:raise ValueError('PREVIEW_CONFIG_STALE: regenerate preview')
         if not self.config_ready():raise ValueError('CONFIG_HASH_MISMATCH')
@@ -295,6 +317,14 @@ class Supervisor(Node):
         self.phase_since=time.monotonic();self.manual=False;self.background_done=False
         if self.settings['radiation']['enabled']:self.begin_background()
         return 'Task accepted; preparation checks precede motion'
+
+    def check_located(self):
+        """Start only with the robot on the base station, the right way round, as the locator sees it."""
+        status=self.located.get('status')
+        if time.monotonic()-self.located_time>self.settings['locator']['max_age_s']:
+            raise ValueError('LOCATOR_UNAVAILABLE: the robot was not found on the map yet')
+        if status=='BACKWARDS':raise ValueError('ROBOT_BACKWARDS: the robot is on the base station the wrong way round')
+        if status!='ON_BASE':raise ValueError('NOT_ON_BASE_STATION: put the robot on the base station')
 
     def begin_background(self):
         """The robot stands on the base station: the radiation node measures the background first."""
@@ -661,6 +691,7 @@ class Supervisor(Node):
         self.lease_pub.publish(json_msg({'config_hash':self.settings.hash,'owner':owner,'epoch':self.mission.generation+':'+str(self.mission.token)}))
         data={'config_hash':self.settings.hash,'generation':self.mission.generation,'state':phase,'reason':self.mission.reason,'root_cause':self.mission.root_cause,
               'trusted':self.trusted,'trust_reason':self.trust.reason,'preview_ready':self.preview is not None,
+              'located':self.located.get('status','') if now-self.located_time<=self.settings['locator']['max_age_s'] else '',
               'fraction':self.measurement.get('fraction',0.),'owner':owner,'nav_active':self.nav_active,
               'skipped_stretches':sum(b.get('reason')=='PLAN_STRETCH_SKIPPED' for b in self.mission.blocked)}
         self.state_pub.publish(json_msg(data));diagnostic(self,self.diag,'coverage_supervisor',phase,data,int(phase in ('PAUSED','FAILED')))

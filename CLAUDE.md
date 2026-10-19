@@ -312,7 +312,11 @@ SLAM must not jump to a wrong but similar-looking place.
   to the start first (user, 2026-10-08). A plan records its base station; the robot refuses a plan made for
   another one (`PLAN_BASE_MISMATCH`).
 - Localization in app 3: AMCL on `map.yaml` (not slam_toolbox), initial pose = the base station, sent by the
-  supervisor with a spread of 0.1 m / 10 deg. No global relocalization. TF odom -> base_footprint comes from the
+  supervisor with a spread of 0.1 m / 10 deg. AMCL has no global relocalization, but app 3 does not assume the
+  robot starts on the base station (user, 2026-10-19): `locator_node` (`locate.py`) searches the whole map with the
+  scan every 2 s while no task drives -> `/coverage/located` (ON_BASE / BACKWARDS / NOT_ON_BASE + pose). The screen
+  draws the robot there and says "not on the base station" / "the wrong way round"; Start needs ON_BASE; when the
+  robot arrives on the base station the supervisor sends AMCL the base station pose again (settings `locator`). TF odom -> base_footprint comes from the
   EKF (wheel vx, vy + IMU turn rate), as in app 2; `hardware:=false` (tools/sim) leaves out base_node, battery,
   IMU, EKF and LiDAR (fake_nala publishes `/odom` and the TF).
 - Nav2 without BT navigator and behavior server: the supervisor calls `ComputePathToPose` and `FollowPath`

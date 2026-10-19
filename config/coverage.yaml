@@ -149,3 +149,17 @@
       hit_ratio: 0.7                  # ... and at least this share of the scans that saw that cell (people walk by)
       min_passes: 6                   # scans with a beam passing through an occupied map cell before it is a removed object
       publish_period_s: 1.0           # s
+    locator:
+      # Finds the robot on the map from the LiDAR scan while no task drives (locator_node): the screen shows the
+      # actual position, and Start needs the robot on the base station the right way round (user, 2026-10-19).
+      period_s: 2.0                   # s, one search per period (the Pi 4 needs ~0.6-2 s per search)
+      position_step_m: 0.1            # m, grid of the whole-map search (refined to half a map cell afterwards)
+      yaw_step_deg: 4.0               # deg, headings of the whole-map search
+      max_beams: 90                   # scan points used
+      match_distance_m: 0.1           # m, a scan point within this of a map wall counts as fitting
+      min_fit: 0.7                    # share of fitting points for "on the base station" (good fits: 0.94-0.99)
+      base_tolerance_m: 0.15          # m, how far from the base station pose still counts as on it
+      base_tolerance_deg: 15.0        # deg, same for the heading
+      direction_margin: 0.05          # fit difference for "backwards" and for "clearly better elsewhere"
+      ambiguity_margin: 0.05          # another pose within this fit makes the shown pose ambiguous
+      max_age_s: 6.0                  # s, an older locator result does not allow Start

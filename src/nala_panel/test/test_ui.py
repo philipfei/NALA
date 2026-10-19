@@ -15,7 +15,7 @@ from PyQt5.QtTest import QTest
 from nala_panel import ui
 
 PARAMS = {'maps_dir': 'maps', 'fullscreen': False, 'window_width': 1024, 'window_height': 600, 'font_size': 13,
-          'button_height': 52, 'update_period': 0.3, 'manual_period': 0.05, 'heatmap_width_m': 0.15, 'launch_stop_timeout': 5.0,
+          'button_height': 52, 'update_period': 0.3, 'manual_period': 0.05, 'heatmap_width_m': 0.15, 'launch_stop_timeout': 5.0, 'preview_retry': 10.0,
           'hardware': False}
 
 
@@ -166,7 +166,8 @@ def test_scan_screen_shows_progress_heatmap_hotspots_and_controls(panel, monkeyp
     scan.stop_button.clicked.connect(session.emergency_stop)
 
     # Ready: the map view with the side panel; Start only once the plan is checked.
-    session.state = {'state': 'IDLE', 'trusted': True, 'preview_ready': True, 'nav_active': True, 'fraction': 0.}
+    session.state = {'state': 'IDLE', 'trusted': True, 'preview_ready': True, 'nav_active': True, 'fraction': 0.,
+                     'located': 'ON_BASE'}
     scan.refresh()
     app.processEvents()
     assert scan.left.currentIndex() == 0 and scan.start_button.isEnabled() and not scan.pause_button.isEnabled()

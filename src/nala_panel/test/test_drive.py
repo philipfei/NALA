@@ -71,7 +71,7 @@ class FakeSupervisor(Node):
 
 
 def session_with_fake_launch(add, tmp_path):
-    session = add(drive.DriveSession(REPO / 'config', hardware=False, stop_timeout=5.0))
+    session = add(drive.DriveSession(REPO / 'config', hardware=False, stop_timeout=5.0, preview_retry=10.0))
     session.output_dir = tmp_path
     session.process = subprocess.Popen(['sleep', '60'], start_new_session=True)   # stands in for app 3
     return session
@@ -83,7 +83,7 @@ def test_launch_command_passes_map_plan_output_and_hardware():
     assert cmd[4:] == ['map:=/m/map.yaml', 'plan:=/m/plans/p.yaml', 'output_dir:=/m/runs/r', 'hardware:=false']
 
 
-def test_preview_is_asked_once_when_trusted_and_start_only_after_it(ros, tmp_path):
+def test_preview_is_asked_once_when_trusted_on_the_base_station_and_start_only_after_it(ros, tmp_path):
     add, pump = ros
     fake = add(FakeSupervisor())
     session = session_with_fake_launch(add, tmp_path)
@@ -93,13 +93,22 @@ def test_preview_is_asked_once_when_trusted_and_start_only_after_it(ros, tmp_pat
     session.update()
     pump(0.3)
     assert fake.calls == [] and not session.can_start()
-    fake.publish(state='IDLE', trusted=True, preview_ready=False, nav_active=True)
+    # Localized, but the locator does not find the robot on the base station: no plan check, no Start.
+    fake.publish(state='IDLE', trusted=True, preview_ready=False, nav_active=True, located='NOT_ON_BASE')
+    pump(0.5)
+    session.update()
+    pump(0.3)
+    assert fake.calls == [] and not session.can_start()
+    fake.publish(state='IDLE', trusted=True, preview_ready=False, nav_active=True, located='ON_BASE')
     pump(0.5)
     session.update()
     session.update()
     pump(0.5)
     assert fake.calls == ['/coverage/preview'] and not session.can_start()
-    fake.publish(state='IDLE', trusted=True, preview_ready=True, nav_active=True)
+    fake.publish(state='IDLE', trusted=True, preview_ready=True, nav_active=True, located='BACKWARDS')
+    pump(0.5)
+    assert not session.can_start()
+    fake.publish(state='IDLE', trusted=True, preview_ready=True, nav_active=True, located='ON_BASE')
     pump(0.5)
     assert session.can_start()
     session.start()
@@ -131,7 +140,7 @@ def test_hand_control_asks_the_supervisor_and_sends_the_held_key(ros, tmp_path):
     from nala_coverage.keyboard_teleop import KeyboardTeleop
     add, pump = ros
     fake = add(FakeSupervisor())
-    session = add(drive.DriveSession(REPO / 'config', hardware=False, stop_timeout=5.0))
+    session = add(drive.DriveSession(REPO / 'config', hardware=False, stop_timeout=5.0, preview_retry=10.0))
     session.teleop = add(KeyboardTeleop(str(REPO / 'config')))
     pump(1.0)
     session.manual(True)
@@ -151,4 +160,23 @@ def test_report_and_plain_words(tmp_path):
     assert drive.latest_report(tmp_path)['reason'] == 'RETURNED_TO_BASE'
     assert drive.plain_state({}) == 'Starting app 3...'
     assert drive.plain_state({'state': 'IDLE', 'trusted': False}) == 'Finding the robot on the map'
+    assert drive.plain_state({'state': 'IDLE', 'trusted': True, 'located': 'NOT_ON_BASE'}).startswith(
+        'Robot is not on the base station')
+    assert drive.plain_state({'state': 'FINISHED', 'located': 'BACKWARDS'}).startswith(
+        'Robot is on the base station the wrong way round')
+    assert drive.plain_state({'state': 'SWEEP', 'located': 'NOT_ON_BASE'}) == 'Covering'   # a task holds the robot
     assert drive.plain_state({'state': 'RETURN'}) == 'Driving back to the base station'
+
+
+def test_robot_is_drawn_where_the_locator_finds_it_before_a_task(ros):
+    add, pump = ros
+    session = add(drive.DriveSession(REPO / 'config', hardware=False, stop_timeout=5.0, preview_retry=10.0))
+    session.pose = (0.2, -0.5, 0.)                                   # AMCL: still at the base station
+    session.located = {'status': 'NOT_ON_BASE', 'pose': [2.4, 0.0, 0.]}
+    session.state = {'state': 'IDLE', 'trusted': True}
+    assert session.display_pose() == (2.4, 0.0, 0.)                 # the robot stands in a corner
+    session.located = {'status': 'ON_BASE', 'pose': [0.21, -0.5, 0.]}
+    assert session.display_pose() == (0.2, -0.5, 0.)                 # on the base station and localized: AMCL
+    session.state = {'state': 'SWEEP', 'trusted': True}
+    session.located = {'status': 'NOT_ON_BASE', 'pose': [2.4, 0.0, 0.]}
+    assert session.display_pose() == (0.2, -0.5, 0.)                 # while driving always AMCL

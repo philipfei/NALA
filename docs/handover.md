@@ -208,6 +208,16 @@ before; this run's placement matches the base station, so the earlier run(s) lik
 almost symmetric room hides. Fix (user decision): alpha1 and alpha4 0.03. Simulation: sigma median 0.042 m, AMCL
 error median 0.039 m, heading sigma max 8.1 deg, 99.8 %, `RETURNED_TO_BASE`, 0 contacts.
 
+**Robot 2026-10-19 ~12:20:** the user put the robot in a corner; AMCL (started at the base station) still placed
+it near the middle (scan fit 14 %), so `SCAN_MAP_MISMATCH`. User requirement: app 3 must not assume the robot is
+on the base station, must show the real position from the LiDAR, say "Robot is not on the base station", and let
+the user put it there before Start. Done: `locate.py` + `locator_node` (whole-map scan search every 2 s while no
+task drives, base station check incl. backwards), supervisor refuses Start unless ON_BASE and re-sends AMCL the
+base station pose when the robot arrives there, panel draws the located pose and the messages. Checked on room
+Test: the real corner scan -> NOT_ON_BASE at the right pose (fit 99 %); ray-cast scans: on base / 12 cm 10 deg off
+-> ON_BASE, backwards -> BACKWARDS (fit 1.00 vs 0.29), 0.25 / 0.5 m off -> NOT_ON_BASE. Simulation: on base ->
+RETURNED_TO_BASE 99.9 %; 1 m off -> Start refused (NOT_ON_BASE_STATION).
+
 - Regulated Pure Pursuit (`nav2_regulated_pure_pursuit_controller`, Jazzy) clamps the turn-in-place command to
   `measured turn rate +- max_angular_accel * control period` = `0 +- 0.35 * 0.05 = +-0.0175 rad/s` when the robot
   stands. The measured rate comes from `/odom` (`odom_topic` in `nav2_params.yaml`). 0.0175 rad/s is ~5 mm/s at the

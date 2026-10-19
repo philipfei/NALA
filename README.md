@@ -283,6 +283,8 @@ NALA/
     │   │   ├── radiation_node.py          [3] Scintillator readings -> heatmap, hotspots, keepout zone, run folder files
     │   │   ├── mapchange.py               [3] Map changes: new objects and removed objects from LiDAR scans (no ROS)
     │   │   ├── mapchange_node.py          [3] LiDAR scans at trusted poses -> /map_changes, changes.npz in the run folder
+    │   │   ├── locate.py                  [3] Find the robot on the map from one scan; on the base station / backwards (no ROS)
+    │   │   ├── locator_node.py            [3] /scan -> /coverage/located while no task drives (Start needs ON_BASE)
     │   │   ├── plan_file.py               [3] Load and check a coverage_tool plan (map, wall clearance, sensor, base station)
     │   │   ├── planning.py                [3] Plan pieces and path helpers (no ROS)
     │   │   ├── base_station.py            [3] Load, save and check base_station.yaml (no ROS)
@@ -303,6 +305,7 @@ NALA/
     │       ├── test_core.py, test_plan_file.py, test_base_station.py, test_revision.py, test_radiation.py   [3] Unit tests (no ROS)
     │       ├── test_radiation_node.py     [3] Loopback ROS test of radiation_node
     │       ├── test_mapchange.py          [3] Map changes: a moved cabinet, a small pose error, a person walking by
+    │       ├── test_locate.py             [3] Locator: found anywhere, on the base station, backwards, beside it
     │       ├── test_launch_contract.py    [3] Static checks of the app 3 launch files
     │       ├── test_buttons.py            [3] Unit tests for buttons.py
     │       ├── test_xbox_pause.py         [3] Loopback ROS tests of xbox_pause with a fake /coverage/pause service
@@ -580,6 +583,9 @@ The panel starts by itself after the Pi boots (`scripts/setup_pi_screen.sh`). By
 4. **Scan:** put the robot on the base station (within about 10 cm), facing the base station direction
    (within about 10 deg). Tap **Scan** on a plan. The panel starts app 3 and shows the scan screen
    (the design of `Scan_screen_visualiser.html`):
+   - the map shows where the robot really is (found from the LiDAR scan, wherever it stands). If it is not on
+     the base station, the screen says *Robot is not on the base station*, or *... the wrong way round* when
+     it stands there backwards: put it on the base station, the right way round; Start stays off until then;
    - *Finding the robot on the map*, then *Checking the plan* (the preview);
    - **Start** becomes active when the plan is checked. **The robot only moves after Start.** It first measures
      the radiation background on the base station (*Measuring the background*), then drives.

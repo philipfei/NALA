@@ -93,10 +93,10 @@ _REQUIRED = {
                'controller_angular_accel_rad_s2', 'turn_start_rad_s', 'manual_forward_m_s', 'manual_reverse_m_s', 'manual_angular_rad_s'},
     'runtime': {'map_frame', 'odom_frame', 'base_frame', 'map_yaml', 'base_station_yaml', 'output_dir'},
     'coverage': {'planning', 'localization', 'health', 'measurement', 'battery', 'deadlines',
-                 'recovery', 'visualization', 'radiation', 'map_changes'},
+                 'recovery', 'visualization', 'radiation', 'map_changes', 'locator'},
 }
 BEHAVIOR = ('geometry', 'motion', 'planning', 'localization', 'health', 'measurement', 'battery',
-            'deadlines', 'recovery', 'visualization', 'radiation', 'map_changes')
+            'deadlines', 'recovery', 'visualization', 'radiation', 'map_changes', 'locator')
 
 
 def robot_footprint(robot):
@@ -163,7 +163,7 @@ class Settings:
         if not 0 <= geometry['sensor_offset_m'] < geometry['coverage_disk_radius_m']:
             raise ValueError('geometry.sensor_offset_m must be at least 0 and below the coverage disk radius')
         for section in ('motion', 'localization', 'health', 'measurement', 'deadlines',
-                        'recovery', 'visualization', 'radiation', 'map_changes'):
+                        'recovery', 'visualization', 'radiation', 'map_changes', 'locator'):
             _positive_tree(section, values[section])
         if not 0 < values['radiation']['keepout_cost'] < 100:
             raise ValueError('radiation.keepout_cost must be 1..99 (100 is a wall in the Nav2 costmap)')

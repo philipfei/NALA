@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import signal
 import subprocess
+import time
 import numpy as np
 from geometry_msgs.msg import PoseWithCovarianceStamped
 from nav_msgs.msg import OccupancyGrid, Path as PathMsg
@@ -22,6 +23,8 @@ from nala_coverage.ros_common import LATCHED, LATEST, json_msg, pose3
 TRIGGERS = ('/coverage/preview', '/coverage/start', '/coverage/pause', '/coverage/resume', '/coverage/cancel',
             '/coverage/go_home', '/safety/estop', '/safety/reset')
 # Supervisor states in which a task is running (the robot may move).
+# No task holds the robot (it may be moved by hand); the same as the supervisor's IDLE_STATES.
+IDLE_STATES = ('IDLE', 'FINISHED', 'CANCELED', 'FAILED')
 ACTIVE = ('BACKGROUND', 'PREPARING', 'CONNECT_PLAN', 'CONNECT', 'SWEEP', 'DWELL', 'PHASE_WAIT', 'RETURN_PLAN',
           'RETURN')
 STOP_FAULT = 'OPERATOR_OR_ACTION_STOP'   # the velocity gate's latched fault after STOP
@@ -41,9 +44,10 @@ def latest_report(output_dir):
 class DriveSession(Node):
     """App 3 for one map and plan. Data from callbacks is read by the screen with plain attribute reads."""
 
-    def __init__(self, config_dir, hardware, stop_timeout):
+    def __init__(self, config_dir, hardware, stop_timeout, preview_retry):
         super().__init__('nala_panel_drive')
         self.config_dir, self.hardware, self.stop_timeout = str(config_dir), hardware, stop_timeout
+        self.preview_retry = preview_retry
         self.process = None
         self.output_dir = None
         self.state = {}
@@ -59,7 +63,8 @@ class DriveSession(Node):
         self.radiation = {}          # background, threshold, ...
         self.changes = None          # int8 (rows, cols): 100 new object, 50 removed object, 0 unchanged (mapchange_node)
         self.message = ''            # last service reply, for the screen
-        self.preview_requested = False
+        self.located = {}            # locator_node: where the robot is on the map, and whether on the base station
+        self.preview_asked = -math.inf   # time of the last preview request (asked again if it did not come)
         self.create_subscription(String, '/coverage/state', self._state, LATEST)
         self.create_subscription(PoseWithCovarianceStamped, '/amcl_pose', self._pose, 10)
         self.create_subscription(OccupancyGrid, '/coverage/covered', self._covered, LATCHED)
@@ -72,6 +77,7 @@ class DriveSession(Node):
         self.create_subscription(String, '/radiation/hotspots', self._hotspots, LATCHED)
         self.create_subscription(String, '/radiation/state', self._radiation, LATEST)
         self.create_subscription(OccupancyGrid, '/map_changes', self._changes, LATCHED)
+        self.create_subscription(String, '/coverage/located', self._located, LATEST)
         self.checked_pub = self.create_publisher(String, '/radiation/mark_checked', 10)
         self.clients_ = {name: self.create_client(Trigger, name) for name in TRIGGERS}
         self.teleop = None           # created when the launch starts (it reads the config)
@@ -119,12 +125,23 @@ class DriveSession(Node):
         self.changes = np.asarray(msg.data, np.int8).reshape(msg.info.height, msg.info.width)
 
     # ---------------------------------------------------------------- app 3 process
+    def _located(self, msg):
+        self.located = json.loads(msg.data)
+
+    def display_pose(self):
+        """Where to draw the robot: before a task the locator's pose from the scan (the robot may stand anywhere),
+        once it is on the base station and localized, and while a task runs, AMCL's pose."""
+        idle = self.state.get('state') in IDLE_STATES or not self.state
+        if idle and self.located.get('pose') and (self.located.get('status') != 'ON_BASE' or not self.state.get('trusted')):
+            return tuple(self.located['pose'])
+        return self.pose
+
     def start_launch(self, map_yaml, plan_yaml, output_dir):
         self.output_dir = Path(output_dir)
         self.state, self.pose, self.covered, self.route, self.message = {}, None, None, [], ''
         self.trail, self.measurement, self.gate, self.heatmap, self.keepout = [], {}, {}, None, None
-        self.hotspots, self.radiation, self.changes = [], {}, None
-        self.preview_requested = False
+        self.hotspots, self.radiation, self.changes, self.located = [], {}, None, {}
+        self.preview_asked = -math.inf
         log = open(self.output_dir / 'launch.log', 'w')
         self.process = subprocess.Popen(launch_command(map_yaml, plan_yaml, output_dir, self.hardware),
                                         stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
@@ -164,15 +181,17 @@ class DriveSession(Node):
         client.call_async(Trigger.Request()).add_done_callback(done)
 
     def update(self):
-        """Called by the screen: ask for the preview once localization is trusted (no motion)."""
-        if (self.launch_running() and not self.preview_requested and self.state.get('trusted')
-                and not self.state.get('preview_ready') and self.state.get('state') == 'IDLE'):
-            self.preview_requested = True
+        """Called by the screen: ask for the preview once the robot is on the base station and localization is
+        trusted (no motion). Asked again later if none came (the supervisor drops it when AMCL is reset)."""
+        if (self.launch_running() and self.state.get('trusted') and self.state.get('located') == 'ON_BASE'
+                and not self.state.get('preview_ready') and self.state.get('state') == 'IDLE'
+                and time.monotonic() - self.preview_asked > self.preview_retry):
+            self.preview_asked = time.monotonic()
             self.call('/coverage/preview')
 
     def can_start(self):
         s = self.state
-        return bool(s.get('preview_ready') and s.get('trusted') and s.get('nav_active')
+        return bool(s.get('preview_ready') and s.get('trusted') and s.get('nav_active') and s.get('located') == 'ON_BASE'
                     and s.get('state') in ('IDLE', 'CANCELED', 'FINISHED', 'FAILED'))
 
     def start(self):
@@ -249,7 +268,11 @@ def plain_state(state):
     if not s:
         return 'Starting app 3...'
     text = words.get(s, s)
-    if s == 'IDLE' and not state.get('trusted'):
+    if s in IDLE_STATES and state.get('located') == 'NOT_ON_BASE':
+        text = 'Robot is not on the base station. Put it on the base station.'
+    elif s in IDLE_STATES and state.get('located') == 'BACKWARDS':
+        text = 'Robot is on the base station the wrong way round. Turn it around.'
+    elif s == 'IDLE' and not state.get('trusted'):
         text = 'Finding the robot on the map'
     elif s == 'IDLE' and not state.get('preview_ready'):
         text = 'Checking the plan'

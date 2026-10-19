@@ -14,4 +14,5 @@ nala_panel:
     heatmap_width_m: 0.15         # m, readings are drawn this wide around the sensor track (display only; hotspots
                                   # and the keepout zone use the exact cells)
     launch_stop_timeout: 20.0     # s, wait this long for app 3 to stop before it is killed
+    preview_retry: 10.0           # s, ask app 3 for the plan check again if it has not come by then
     hardware: true                # false: app 3 without base_node, battery, IMU, EKF and LiDAR driver (tools/sim)

@@ -77,6 +77,8 @@ class FakeInputs(Node):
         self.battery=.8;self.x=2.;self.y=2.;self.yaw=0.;self.pose_bad=False
         self.publish_scan=True;self.scan_ahead=0.;self.tf_lag=0.;self.battery_enabled=True;self.publish_trust=True;self.request_owner='NONE';self.epoch='test'
         self.outputs=[];self.final=(0.,0.)
+        # Stands in for locator_node: where the robot is found, and whether it is on the base station.
+        self.located='ON_BASE';self.located_pub=self.create_publisher(String,'/coverage/located',LATEST)
         types={'scan':LaserScan,'odom':Odometry,'battery_state':BatteryState,'tf':TFMessage,'amcl_pose':PoseWithCovarianceStamped}
         self.pubs={name:self.create_publisher(typ,'/'+name,10) for name,typ in types.items()}
         self.trust=self.create_publisher(String,'/coverage/trust',LATEST)
@@ -119,6 +121,7 @@ class FakeInputs(Node):
         am.pose.covariance[0]=am.pose.covariance[7]=.0025 if not self.pose_bad else .04
         am.pose.covariance[35]=math.radians(5)**2;self.pubs['amcl_pose'].publish(am)
         if self.publish_trust:self.trust.publish(json_msg({'trusted':True}))
+        if self.located is not None:self.located_pub.publish(json_msg({'status':self.located,'pose':[self.x,self.y,self.yaw]}))
         if self.request_owner is not None:self.lease.publish(json_msg({'config_hash':self.settings.hash,'owner':self.request_owner,'epoch':self.epoch}))
     def publish_map(self,grid):
         m=OccupancyGrid();m.header.frame_id='map';m.info.resolution=grid.resolution
@@ -252,7 +255,7 @@ def test_idle_mapping_requires_explicit_manual_grant(ros):
 
 def test_matching_nodes_still_reject_stale_preview(ros):
     add,_,_,_=ros;sup=add(Supervisor())
-    sup.ready=lambda **_:None
+    sup.ready=lambda **_:None;sup.check_located=lambda:None
     sup.gate={'config_hash':sup.settings.hash};sup.meter_config_hash=sup.settings.hash
     sup.preview={'config_hash':'reviewed-older-config'}
     with pytest.raises(ValueError,match='PREVIEW_CONFIG_STALE'):sup.start()
@@ -362,6 +365,26 @@ def run_plan(ros,poses,drive=None,block_at=None,base_station=None,radiation=None
     for server in servers:server.destroy()
     nav_executor.shutdown();nav.destroy_node()
     return sup,follows,plans,plan
+
+
+def test_start_needs_the_robot_on_the_base_station_and_amcl_restarts_there(ros):
+    add,pump,_,_=ros
+    sup=add(Supervisor());fake=add(FakeInputs());fake.request_owner=None;fake.publish_trust=False
+    starts=[];sup.create_subscription(PoseWithCovarianceStamped,'/initialpose',starts.append,10)
+    fake.located='NOT_ON_BASE';pump(1.)
+    with pytest.raises(ValueError,match='NOT_ON_BASE_STATION'):sup.check_located()
+    fake.located='BACKWARDS';pump(.5)
+    with pytest.raises(ValueError,match='ROBOT_BACKWARDS'):sup.check_located()
+    # The robot is put on the base station while AMCL still has it elsewhere: AMCL starts again there.
+    fake.x,fake.y=3.,3.;pump(.5);starts.clear()
+    fake.located='ON_BASE';fake.x,fake.y=3.,3.;pump(.5)
+    sup.check_located()
+    assert starts and abs(starts[-1].pose.pose.position.x-sup.station[0])<1e-6
+    # AMCL already at the base station: no new initial pose.
+    fake.x,fake.y=sup.station[0],sup.station[1];pump(.5);starts.clear();pump(.5)
+    assert not starts
+    fake.located=None;sup.located_time-=sup.settings['locator']['max_age_s']+1
+    with pytest.raises(ValueError,match='LOCATOR_UNAVAILABLE'):sup.check_located()
 
 
 def test_older_plan_is_split_at_corners_and_followed_exactly(ros):

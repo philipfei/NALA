@@ -107,6 +107,8 @@ def _setup(context):
         _node('nala_coverage', 'radiation_node', 'radiation_node', parameters=[shared]),
         # LiDAR scans at trusted poses -> cells that changed against the saved map (shown on the robot screen).
         _node('nala_coverage', 'mapchange_node', 'map_change_node', parameters=[shared]),
+        # LiDAR scan -> where the robot is on the map while no task drives; Start needs it on the base station.
+        _node('nala_coverage', 'locator_node', 'locator_node', parameters=[shared]),
         _node('nala_coverage', 'velocity_gate', 'velocity_safety_gate',
               parameters=[{**shared, 'mapping_mode': False}]),
     ]

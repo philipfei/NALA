@@ -26,7 +26,7 @@ PARAMS = {'repo_dir': Parameter.Type.STRING, 'maps_dir': Parameter.Type.STRING, 
           'window_width': Parameter.Type.INTEGER, 'window_height': Parameter.Type.INTEGER,
           'font_size': Parameter.Type.INTEGER, 'button_height': Parameter.Type.INTEGER,
           'update_period': Parameter.Type.DOUBLE, 'manual_period': Parameter.Type.DOUBLE,
-          'launch_stop_timeout': Parameter.Type.DOUBLE, 'hardware': Parameter.Type.BOOL,
+          'launch_stop_timeout': Parameter.Type.DOUBLE, 'preview_retry': Parameter.Type.DOUBLE, 'hardware': Parameter.Type.BOOL,
           'heatmap_width_m': Parameter.Type.DOUBLE}
 
 
@@ -834,7 +834,7 @@ class ScanScreen(QtWidgets.QWidget):
         if s.changes is not None and s.changes is not d.get('changes'):
             v.set_changes(s.changes == 100, s.changes == 50)
             d['changes'] = s.changes
-        v.refresh(trail=s.trail, hotspots=s.hotspots, robot=s.pose)
+        v.refresh(trail=s.trail, hotspots=s.hotspots, robot=s.display_pose())
         if v.selected is not None:
             self.select(v.selected)
 
@@ -886,7 +886,8 @@ class Panel(QtWidgets.QMainWindow):
         self.repo_dir = repo
         self.maps_dir = repo / params['maps_dir']
         self.settings = load_settings(repo / 'config')
-        self.session = DriveSession(repo / 'config', params['hardware'], params['launch_stop_timeout'])
+        self.session = DriveSession(repo / 'config', params['hardware'], params['launch_stop_timeout'],
+                                    params['preview_retry'])
         executor.add_node(self.session)
         self.setWindowTitle('NALA')
         self.stack = QtWidgets.QStackedWidget()
