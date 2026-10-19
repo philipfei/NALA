@@ -330,6 +330,12 @@ SLAM must not jump to a wrong but similar-looking place.
 - Planner (coverage_tool, 2026-10-19, user: cover a corner fully when the robot is there): aimed goals are also
   offered at the ends of route pieces (turn on the spot there), and `LocalSearch.reaim` re-places every aimed goal
   after ordering. Room Test plan `2026-10-19_151921`: 77 s planned (was 87 s), each corner visited once.
+- Plan check ("Checking the plan", supervisor.plan_preview), 2026-10-19: reachable floor via connected areas of the
+  safe cells (same result, ~150x faster); the coverable floor is saved next to the plan (`<plan>.check.npz`) with a
+  fingerprint of map, plan, settings, reachable floor and area, and used again while it matches. Pi 4, hospital
+  map (68 m2): first check ~19 s, then ~1 s. AMCL is restarted when the locator's pose and AMCL differ by more than
+  locator.base_tolerance_m/deg (not against the base station pose: that restarted AMCL every 2 s and dropped the
+  plan check when the robot stood 10-15 cm off).
 - Map screen: no zoom buttons (they did not work on the robot screen; pinch and drag do; user 2026-10-19).
 - Auto-resume (user, 2026-10-19: rather localize longer than stop with an error): a pause for a localization or
   late-data reason (`AUTO_RESUME` in supervisor.py) ends by itself once trust is back (settle_s), within

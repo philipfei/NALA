@@ -9,6 +9,7 @@ Contaminated floor (/radiation/keepout) is avoided: plan stretches in it are ski
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 import signal
+import hashlib
 import json
 import math
 import time
@@ -153,21 +154,26 @@ class Supervisor(Node):
 
     def located_received(self,msg):
         """The robot may be put on the base station only after app 3 started (user, 2026-10-19): when the locator
-        finds it there and no task holds it, AMCL starts again from the base station (if not already there)."""
+        finds it there and no task holds it, AMCL starts again where the locator sees it, unless AMCL already
+        agrees. AMCL is compared with the locator's pose, not the base station: a robot put 10-15 cm off (still
+        on the base station) made AMCL restart every 2 s and drop the plan check each time (robot 2026-10-19)."""
         try:self.located=decode(msg);self.located_time=time.monotonic()
         except ValueError:return
         if self.located.get('status')!='ON_BASE' or self.mission.state not in IDLE_STATES or self.manual:return
-        loc=self.settings['localization'];amcl=pose3(self.amcl.pose.pose) if self.amcl else None
-        if amcl is None or math.dist(amcl[:2],self.station[:2])>loc['base_station_sigma_m'] or \
-                abs(math.remainder(amcl[2]-self.station[2],2*math.pi))>math.radians(loc['base_station_sigma_deg']):
-            self.send_station_pose()
+        cfg=self.settings['locator'];amcl=pose3(self.amcl.pose.pose) if self.amcl else None
+        seen=self.located.get('pose') or list(self.station)
+        if amcl is None or math.dist(amcl[:2],seen[:2])>cfg['base_tolerance_m'] or \
+                abs(math.remainder(amcl[2]-seen[2],2*math.pi))>math.radians(cfg['base_tolerance_deg']):
+            self.send_station_pose(seen)
             # A plan check made at the old, wrong pose is not valid.
             if self.work is None:self.preview=None
 
-    def send_station_pose(self):
+    def send_station_pose(self,pose=None):
+        """AMCL's initial pose: the base station, or `pose` (where the locator sees the robot on it)."""
+        pose=pose or self.station
         loc=self.settings['localization'];msg=PoseWithCovarianceStamped()
         msg.header.frame_id=self.map_frame;msg.header.stamp=self.get_clock().now().to_msg()
-        msg.pose.pose=pose_msg(self,self.station[:2],self.station[2]).pose
+        msg.pose.pose=pose_msg(self,pose[:2],pose[2]).pose
         msg.pose.covariance[0]=msg.pose.covariance[7]=loc['base_station_sigma_m']**2
         msg.pose.covariance[35]=math.radians(loc['base_station_sigma_deg'])**2
         self.initial_pub.publish(msg)
@@ -298,10 +304,27 @@ class Supervisor(Node):
         # A plan for an area only counts the floor inside that area.
         if plan['area']:polygon=plan['area']
         basis=reachable if plan_radius<=self.collision else grid.reachable(plan['points'][0],plan_radius,self.settings['recovery']['planner_start_tolerance_m'])
-        return {'reachable':reachable,'denominator':grid.coverable(grid.sensor_reachable(basis,self.offset),polygon,self.radius),
+        return {'reachable':reachable,'denominator':self.coverable_cached(grid,basis,polygon,plan),
                 'targets':plan['targets'],'connections':[[] for _ in plan['targets']],'start':start,
                 'config_hash':self.settings.hash,'plan_file':str(self.plan_file),'plan_sha256':plan['plan_sha256'],
                 'plan_robot_radius_m':plan_radius}
+
+    def coverable_cached(self,grid,basis,polygon,plan):
+        """The floor to cover (the slow part of the plan check: 18 s on the Pi 4 for a 68 m2 map), kept next to the
+        plan file (<plan>.check.npz) and used again while the map, the plan, the settings, the reachable floor and
+        the area are the same (a fingerprint of all of them; anything else is computed again)."""
+        key=hashlib.sha256(json.dumps([grid.identity,plan['plan_sha256'],self.settings.hash,
+                                       hashlib.sha256(np.packbits(basis).tobytes()).hexdigest(),
+                                       [[round(float(v),6) for v in p] for p in polygon]]).encode()).hexdigest()
+        cache=Path(self.plan_file).with_suffix('.check.npz')
+        try:
+            with np.load(cache) as old:
+                if str(old['key'])==key and old['denominator'].shape==basis.shape:return old['denominator'].astype(bool)
+        except (OSError,KeyError,ValueError):pass
+        denominator=grid.coverable(grid.sensor_reachable(basis,self.offset),polygon,self.radius)
+        try:np.savez_compressed(cache,key=np.array(key),denominator=denominator)
+        except OSError as e:self.get_logger().warning('Plan check not saved: '+str(e))
+        return denominator
 
     def start(self):
         self.ready(require_nav=True)

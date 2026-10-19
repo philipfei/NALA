@@ -127,7 +127,8 @@ def new_plan_paths(entry, now=None):
 
 
 def delete_plan(plan):
-    for path in (plan.path, plan.png):
+    # .check.npz: the robot's saved plan check (supervisor.coverable_cached)
+    for path in (plan.path, plan.png, plan.path.with_suffix('.check.npz')):
         path.unlink(missing_ok=True)
 
 

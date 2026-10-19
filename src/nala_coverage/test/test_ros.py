@@ -78,7 +78,7 @@ class FakeInputs(Node):
         self.publish_scan=True;self.scan_ahead=0.;self.tf_lag=0.;self.battery_enabled=True;self.publish_trust=True;self.request_owner='NONE';self.epoch='test'
         self.outputs=[];self.final=(0.,0.)
         # Stands in for locator_node: where the robot is found, and whether it is on the base station.
-        self.located='ON_BASE';self.located_pub=self.create_publisher(String,'/coverage/located',LATEST)
+        self.located='ON_BASE';self.located_pose=None;self.located_pub=self.create_publisher(String,'/coverage/located',LATEST)
         types={'scan':LaserScan,'odom':Odometry,'battery_state':BatteryState,'tf':TFMessage,'amcl_pose':PoseWithCovarianceStamped}
         self.pubs={name:self.create_publisher(typ,'/'+name,10) for name,typ in types.items()}
         self.trust=self.create_publisher(String,'/coverage/trust',LATEST)
@@ -122,7 +122,7 @@ class FakeInputs(Node):
         am.pose.covariance[0]=am.pose.covariance[7]=.0025 if not self.pose_bad else .0625
         am.pose.covariance[35]=math.radians(5)**2;self.pubs['amcl_pose'].publish(am)
         if self.publish_trust:self.trust.publish(json_msg({'trusted':True}))
-        if self.located is not None:self.located_pub.publish(json_msg({'status':self.located,'pose':[self.x,self.y,self.yaw]}))
+        if self.located is not None:self.located_pub.publish(json_msg({'status':self.located,'pose':self.located_pose or [self.x,self.y,self.yaw]}))
         if self.request_owner is not None:self.lease.publish(json_msg({'config_hash':self.settings.hash,'owner':self.request_owner,'epoch':self.epoch}))
     def publish_map(self,grid):
         m=OccupancyGrid();m.header.frame_id='map';m.info.resolution=grid.resolution
@@ -405,6 +405,25 @@ def test_pause_while_recalculating_is_a_real_pause(ros):
     assert sup.mission.state=='PAUSED' and sup.mission.reason=='OPERATOR_PAUSE' and not sup.auto_resumable(time.monotonic())
 
 
+def test_plan_check_is_saved_and_used_again_until_the_plan_changes(ros):
+    import yaml
+    add,pump,_,tmp_path=ros
+    sup=add(Supervisor())
+    plan=tmp_path/'plan.yaml'
+    data={'frame_id':'map','poses':[{'x':x,'y':y,'orientation':{'z':0.,'w':1.}} for x,y in [[2.,2.],[2.6,2.]]],
+          'settings':{'geometry':{'sensor_offset_m':.26,'coverage_disk_radius_m':.6}}}
+    plan.write_text(yaml.safe_dump(data));sup.plan_file=str(plan)
+    calls=[];real=sup.base.coverable
+    sup.base.coverable=lambda *a:calls.append(1) or real(*a)
+    first=sup.plan_preview(sup.base,[2.,2.],sup.region)
+    assert len(calls)==1 and plan.with_suffix('.check.npz').is_file()
+    again=sup.plan_preview(sup.base,[2.,2.],sup.region)
+    assert len(calls)==1 and np.array_equal(first['denominator'],again['denominator'])   # saved result used
+    data['poses'].append({'x':2.6,'y':2.6,'orientation':{'z':0.,'w':1.}});plan.write_text(yaml.safe_dump(data))
+    sup.plan_preview(sup.base,[2.,2.],sup.region)
+    assert len(calls)==2                                                                   # changed plan: computed again
+
+
 def test_start_needs_the_robot_on_the_base_station_and_amcl_restarts_there(ros):
     add,pump,_,_=ros
     sup=add(Supervisor());fake=add(FakeInputs());fake.request_owner=None;fake.publish_trust=False
@@ -415,13 +434,14 @@ def test_start_needs_the_robot_on_the_base_station_and_amcl_restarts_there(ros):
     with pytest.raises(ValueError,match='ROBOT_BACKWARDS'):sup.check_located()
     fake.located='TURNED';pump(.5)
     with pytest.raises(ValueError,match='ROBOT_TURNED'):sup.check_located()
-    # The robot is put on the base station while AMCL still has it elsewhere: AMCL starts again there.
+    # The robot is put on the base station while AMCL still has it elsewhere: AMCL starts again where the
+    # locator sees it (12 cm off the base station pose, still on it).
     fake.x,fake.y=3.,3.;pump(.5);starts.clear()
-    fake.located='ON_BASE';fake.x,fake.y=3.,3.;pump(.5)
+    fake.located='ON_BASE';fake.located_pose=[sup.station[0]+.12,sup.station[1],sup.station[2]];pump(.5)
     sup.check_located()
-    assert starts and abs(starts[-1].pose.pose.position.x-sup.station[0])<1e-6
-    # AMCL already at the base station: no new initial pose.
-    fake.x,fake.y=sup.station[0],sup.station[1];pump(.5);starts.clear();pump(.5)
+    assert starts and abs(starts[-1].pose.pose.position.x-(sup.station[0]+.12))<1e-6
+    # AMCL agrees with the locator (12 cm off the base station pose): no new initial pose, no new plan check.
+    fake.x,fake.y=sup.station[0]+.12,sup.station[1];pump(.5);starts.clear();pump(1.)
     assert not starts
     fake.located=None;sup.located_time-=sup.settings['locator']['max_age_s']+1
     with pytest.raises(ValueError,match='LOCATOR_UNAVAILABLE'):sup.check_located()
