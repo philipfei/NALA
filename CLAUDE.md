@@ -327,6 +327,10 @@ SLAM must not jump to a wrong but similar-looking place.
 - Xbox B pauses the task (user decision 2026-10-16): app 3 starts `joy_node` + `xbox_pause` (nala_coverage);
   on the B rising edge (`pause_button: 1`, `config/teleop.yaml`, checked 2026-10-16) it calls
   `/coverage/pause` with `call_async` (no waiting in callbacks; no service = warning only; one open request).
+- Planner (coverage_tool, 2026-10-19, user: cover a corner fully when the robot is there): aimed goals are also
+  offered at the ends of route pieces (turn on the spot there), and `LocalSearch.reaim` re-places every aimed goal
+  after ordering. Room Test plan `2026-10-19_151921`: 77 s planned (was 87 s), each corner visited once.
+- Map screen: no zoom buttons (they did not work on the robot screen; pinch and drag do; user 2026-10-19).
 - Auto-resume (user, 2026-10-19: rather localize longer than stop with an error): a pause for a localization or
   late-data reason (`AUTO_RESUME` in supervisor.py) ends by itself once trust is back (settle_s), within
   `recovery.auto_resume_s` (60 s); the screen says "Finding the position again - continues by itself". Not for STOP,

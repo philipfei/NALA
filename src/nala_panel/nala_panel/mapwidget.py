@@ -85,12 +85,7 @@ class MapWidget(QtWidgets.QWidget):
         self.scale, self.tx, self.ty = 1., 0., 0.
         self.press = None
         self.pinch = None
-        for i, (text, slot) in enumerate((('+', lambda: self.zoom(1.4)), ('-', lambda: self.zoom(1 / 1.4)),
-                                          ('o', self.fit))):
-            b = style.set_kind(QtWidgets.QPushButton(text, self), 'round')
-            b.clicked.connect(slot)
-            b.setFocusPolicy(QtCore.Qt.NoFocus)
-            setattr(self, f'_zoom{i}', b)
+        # No zoom buttons: they did not work on the robot screen, the touch gestures do (user, 2026-10-19).
 
     # ---------------------------------------------------------------- data
     def set_grid(self, grid):
@@ -170,8 +165,6 @@ class MapWidget(QtWidgets.QWidget):
         return (px - self.tx) / self.scale, (self.ty - py) / self.scale
 
     def resizeEvent(self, event):
-        for i in range(3):
-            getattr(self, f'_zoom{i}').move(self.width() - 64, self.height() // 2 - 90 + i * 62)
         if self.grid is not None and event.oldSize().width() <= 0:
             self.fit()
 

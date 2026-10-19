@@ -31,6 +31,10 @@ from . import sensor
 from .planning import poly_target, split_path, stroke_union, visible_many
 
 AIM_RUN_M = 0.05   # an aimed goal is reached with a short straight forward move, so the robot faces its aim
+# An aimed goal at a piece end where the route already is: the robot turns on the spot there and moves this far
+# (the same as AIM_RUN_M; on the robot it is a turn on the spot: Nav2's goal tolerance is 0.05 m). Room Test:
+# 0.05 m from the north-west lane end covers the whole corner patch, 0.01 m not (sensor sight past wall bumps).
+AIM_AT_ROUTE_RUN_M = AIM_RUN_M
 EPS = 1e-6
 
 
@@ -61,6 +65,7 @@ class Piece:
         self.h1 = None if self.point else _last_heading(self.pts)
         self.h = None     # single goal: the heading the robot has while passing it (set by orient())
         self.aim = None   # aimed goal: a fixed heading that points the sensor (ahead of the robot) at missed floor
+        self.run = AIM_RUN_M   # aimed goal: length of its short forward move
         self.covs = None  # (cells covered driven forwards, cells covered driven backwards), set by _measure
 
     def cells(self, rev):
@@ -93,17 +98,18 @@ class Piece:
 
 
 
-def aimed(xy, heading):
-    """A single goal the robot passes facing `heading`: driven as a short forward move ending at xy."""
+def aimed(xy, heading, run=AIM_RUN_M):
+    """A single goal the robot passes facing `heading`: driven as a short forward move (run) ending at xy."""
     p = Piece([xy], 'aim')
     p.aim = p.h = float(heading)
+    p.run = float(run)
     return p
 
 
 def aim_line(p):
     """The short forward move of an aimed goal (AIM_RUN_M long, ending at the goal)."""
     x, y = p.pts[0]
-    return [[x - AIM_RUN_M * math.cos(p.aim), y - AIM_RUN_M * math.sin(p.aim)], [x, y]]
+    return [[x - p.run * math.cos(p.aim), y - p.run * math.sin(p.aim)], [x, y]]
 
 
 def pieces_from_targets(targets):
@@ -116,7 +122,8 @@ def pieces_from_targets(targets):
             if cur:
                 pieces.append(Piece(cur, kind))
                 cur = None
-            pieces.append(aimed(pts[1], math.atan2(pts[1][1] - pts[0][1], pts[1][0] - pts[0][0])))
+            pieces.append(aimed(pts[1], math.atan2(pts[1][1] - pts[0][1], pts[1][0] - pts[0][0]),
+                                math.dist(pts[0], pts[1])))
             continue
         is_point = len(pts) < 2 or math.dist(pts[0], pts[-1]) < EPS and len(pts) <= 2
         if cur and not is_point and k == kind and math.dist(cur[-1], pts[0]) < EPS:
@@ -688,6 +695,30 @@ class RouteOptimizer:
             if n == 0:
                 break
 
+    def reaim(self, deadline, step):
+        """Take out each aimed goal and cover its floor again from the route as it is now ordered: an aim can
+        then become a turn on the spot at a lane end (_aims_at_route) instead of a drive back to a corner.
+        Kept only when the total cost drops."""
+        improved = 0
+        k = 0
+        while k < len(self.seq) and time.monotonic() < deadline:
+            if self.pieces[self.seq[k][0]].aim is None:
+                k += 1
+                continue
+            saved = ([list(x) for x in self.seq], self.count.copy(), len(self.pieces), self.cov_ok.copy())
+            before = self.total()[0]
+            self._drop(k)
+            self.detours(deadline)
+            self.local_optimum(deadline, step)
+            if self.total()[0] < before - 1e-6:
+                improved += 1
+                k = 0                            # the route changed: look at every aim again
+            else:
+                self.seq, self.count, self.cov_ok = saved[0], saved[1], saved[3]
+                del self.pieces[saved[2]:]
+                k += 1
+        return improved
+
     def perturb(self, rng):
         """Random 2-opt reversal plus a random relocation (the caller keeps it only if the total is cheaper)."""
         n = len(self.seq)
@@ -729,13 +760,15 @@ class RouteOptimizer:
                 if m in set(open_idx[vis]) and (best is None or len(vis) > best[1]):
                     best = (q, len(vis))
             aim = self._aim_at(p, open_xy, reach_xy) if off > 0 else None
-            if best is None and aim is None:   # no safe pose can see this cell: not reachable
+            ends = np.array([self.start] + [self.pieces[i].state(rv)[2] for i, rv in self.seq])
+            at_route = self._aims_at_route(p, open_xy, ends) if off > 0 else []
+            if best is None and aim is None and not at_route:   # no safe pose can see this cell: not reachable
                 self.cov_ok[m] = False
                 continue
             options = ([Piece([best[0].tolist()], 'gap')] if best is not None else []) + \
-                ([aimed(*aim)] if aim is not None else []) + self._strip_lines(m, open_idx)
+                ([aimed(*aim)] if aim is not None else []) + \
+                [aimed(xy, h, AIM_AT_ROUTE_RUN_M) for xy, h in at_route] + self._strip_lines(m, open_idx)
             choice = None
-            ends = np.array([self.start] + [self.pieces[i].state(rv)[2] for i, rv in self.seq])
             for piece in options:
                 self._measure(piece)                 # evaluated before it is counted
                 self.pieces.append(piece)
@@ -787,6 +820,37 @@ class RouteOptimizer:
                 best = (n, q.tolist(), math.atan2(u[1], u[0]))
         return None if best is None else (best[1], best[2])
 
+    def _aims_at_route(self, p, open_xy, ends, max_aims=2):
+        """Aimed goals where the route already is: at a piece end the robot turns on the spot towards missed
+        cell p (and moves AIM_AT_ROUTE_RUN_M). Without them an aimed goal chosen only by "most missed cells in
+        sight" lay just behind a lane end, and the cheapest order was to come back to that corner later (room
+        Test, 2026-10-19). [(xy, heading), ...] for the ends that see the most missed cells."""
+        g, off = self.g, sensor.offset(self.s)
+        found = []
+        for e in ends:
+            e = np.asarray(e, float)
+            if not 1e-9 < np.linalg.norm(p - e) <= self.r + off + AIM_AT_ROUTE_RUN_M + 1e-9:
+                continue
+            # Every heading in 5 deg steps, not only straight at p: in a corner the cell can be hidden behind the
+            # wall corner from that one sensor position, but seen from a slightly different heading.
+            best = None
+            for h in np.radians(np.arange(0., 360., 5.)):
+                u = np.array([math.cos(h), math.sin(h)])
+                q = e + AIM_AT_ROUTE_RUN_M * u
+                sensor_xy = q + off * u
+                if np.linalg.norm(p - sensor_xy) > self.r + 1e-9 or not visible_many(g, sensor_xy[None], p[None])[0]:
+                    continue
+                if not g.segment_safe(e.tolist(), q.tolist(), self.collision):
+                    continue
+                near = np.flatnonzero(np.linalg.norm(open_xy - sensor_xy, axis=1) <= self.r + 1e-9)
+                n = int(visible_many(g, np.tile(sensor_xy, (len(near), 1)), open_xy[near]).sum()) if len(near) else 0
+                if best is None or n > best[0]:
+                    best = (n, q.tolist(), float(h))
+            if best is not None:
+                found.append(best)
+        found.sort(key=lambda item: -item[0])
+        return [(xy, h) for _, xy, h in found[:max_aims]]
+
     def _strip_lines(self, m, open_idx, max_lines=3):
         """Line detours for the strip of missed cells around cell m: centre lines of
         the robot positions that can reach it (a row of point detours along a strip
@@ -837,6 +901,7 @@ class RouteOptimizer:
             self.local_optimum(deadline, step)
             if n == 0 and self.total()[0] >= before - 1e-6 or time.monotonic() > deadline:
                 break
+        self.reaim(deadline, step)
         # use the remaining time: perturb, re-optimise, keep only improvements
         if not self.local_optimum_done(deadline, step):
             return self

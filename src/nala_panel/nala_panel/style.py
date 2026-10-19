@@ -40,7 +40,6 @@ QPushButton[kind="primary"]:disabled, QPushButton[kind="dark"]:disabled {{ backg
 QPushButton[kind="toggle"] {{ border: 2px solid {LINE}; color: {MUTE}; padding: 0 1px; font-size: {font_pt - 4}pt;
               min-height: {big - 12}px; }}
 QPushButton[kind="toggle"]:checked {{ border-color: {BLUE}; color: {BLUE}; background: #EAF3F8; }}
-QPushButton[kind="round"] {{ min-height: 52px; min-width: 52px; max-width: 52px; border-radius: 26px; padding: 0; }}
 QListWidget {{ background: {PANEL}; border: 1px solid {LINE}; border-radius: 10px; }}
 QListWidget::item {{ padding: 8px; border-bottom: 1px solid {LINE}; }}
 QListWidget::item:selected {{ background: #EAF3F8; color: {INK}; }}
@@ -63,7 +62,7 @@ QLabel#chip[on="true"] {{ background: #D3ECEA; color: #0E5A56; }}
 
 
 def set_kind(button, kind):
-    """Give a button its look (primary, dark, stop, toggle, round)."""
+    """Give a button its look (primary, dark, stop, toggle)."""
     button.setProperty('kind', kind)
     button.style().unpolish(button)
     button.style().polish(button)

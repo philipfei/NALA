@@ -48,7 +48,7 @@ The planned path is the path of the robot's **centre** (`base_link`): that is wh
 
 **Single goals** (detours to missed spots) come in two kinds:
 - **Plain goal:** the heading is unknown in advance, so only `coverage radius − sensor offset` (0.34 m) around it counts.
-- **Aimed goal** (kind `aim`): a 5 cm straight forward move that ends facing the missed spot, so the sensor reaches it. The optimiser uses an aimed goal where only the sensor, pointed that way, can reach a cell.
+- **Aimed goal** (kind `aim`): a 5 cm straight forward move that ends facing the missed spot, so the sensor reaches it. The optimiser uses an aimed goal where only the sensor, pointed that way, can reach a cell. Aimed goals are also offered **at the ends of the route's pieces** (any heading in 5 deg steps): there the robot only turns on the spot (Nav2's goal tolerance is 5 cm), so a corner is covered when the robot is there, not by coming back later. After the route is ordered, each aimed goal is taken out and re-placed if that is cheaper (`LocalSearch.reaim`). Room Test, 2026-10-19: planned time 87 -> 77 s, every corner covered once.
 
 **Reachable floor:** the sensor can be anywhere within 0.26 m of a position the robot centre can reach, because the robot can turn on the spot there. Floor within the coverage radius of such a point, with a clear line of sight, counts as reachable (`pipeline.sensor_reachable`).
 

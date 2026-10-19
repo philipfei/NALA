@@ -240,6 +240,15 @@ POSITION_UNCERTAIN in the north-east corner turn (sigma 0.21-0.23 m, just over t
 west end is covered with a diagonal back and a second visit to the corner; a planner search 8x longer gives the
 identical route (so it is the planner's route, not the search time). New: auto-resume after localization pauses.
 
+**Robot run 2026-10-19 14:37 (box test, `runs/2026-10-19_143659`, `~/nala_debug/drive_11_autoresume.csv`):** driving
+around a box worked; 2 POSITION_UNCERTAIN pauses resumed by themselves after ~2.5 s. Then EXECUTION_CHECK: after the
+detour the robot stood 2-3 cm closer to a wall than the collision radius; the start check needed a safe straight
+line from an unsafe start, and NavFn cannot plan from inside its band (14x NAVIGATION_FAILED -> BLOCKED_IN_PLACE).
+Fixed: `Grid.escape_start` (plan from the nearest safe point, drive the short way out). Also: "Recalculating..." on
+the driving screen during auto-resume pauses; zoom buttons removed; planner covers corners at lane ends (new plan
+`maps/Test/plans/2026-10-19_151921`, 77 s planned instead of 87 s). The teammate set the wheelbase to 340 mm and
+flashed firmware v2.3.3 (commit 2415f32).
+
 - Regulated Pure Pursuit (`nav2_regulated_pure_pursuit_controller`, Jazzy) clamps the turn-in-place command to
   `measured turn rate +- max_angular_accel * control period` = `0 +- 0.35 * 0.05 = +-0.0175 rad/s` when the robot
   stands. The measured rate comes from `/odom` (`odom_topic` in `nav2_params.yaml`). 0.0175 rad/s is ~5 mm/s at the
