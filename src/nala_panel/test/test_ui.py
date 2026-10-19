@@ -208,7 +208,9 @@ def test_scan_screen_shows_progress_heatmap_hotspots_and_controls(panel, monkeyp
     scan.refresh()
     app.processEvents()
     assert scan.banner.isVisible() and scan.start_button.text() == 'Resume' and scan.manual_box.isVisible()
-    assert scan.minimumSizeHint().height() <= 600, scan.minimumSizeHint().height()   # with the hand control arrows
+    # With the hand control arrows. 30 px below the 600 px screen: the Pi's fonts make it ~20 px taller than here
+    # (2026-10-19: 576 px on the Pi, 557 px here); it must fit without scrolling.
+    assert scan.minimumSizeHint().height() <= 570, scan.minimumSizeHint().height()
     shot(window, '9_scan_stopped')
     scan.start_button.click()
     assert calls[-1] == ('resume',)

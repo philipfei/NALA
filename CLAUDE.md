@@ -331,9 +331,10 @@ SLAM must not jump to a wrong but similar-looking place.
   name as the system package `python3-coverage`.
 - Speeds (`motion` in `config/coverage.yaml`): 0.12 m/s, 0.4 rad/s (start values), slowest 0.04 m/s near a goal
   (the MCU protocol has 1 mm/s steps). Acceleration limits = floor test 2026-10-16 (user decision): 0.1 m/s^2
-  (velocity gate) and 0.35 rad/s^2 (velocity gate). Nav2 RPP `max_angular_accel` is its own value,
-  `controller_angular_accel_rad_s2: 3.0` (user decision 2026-10-19, handover section B): from standstill RPP allows
-  only measured rate + accel x 0.05 s, and 0.35 gave 0.0175 rad/s, below the wheels' breakaway.
+  (velocity gate) and 0.35 rad/s^2 (gate + RPP `max_angular_accel`, from `controller_angular_accel_rad_s2`).
+  From standstill RPP asks only measured rate + accel x 0.05 s = 0.0175 rad/s, below the wheels' breakaway, so the
+  gate lifts a Nav2 turn on the spot to `turn_start_rad_s: 0.3` (still ramped at 0.35 rad/s^2; user decision
+  2026-10-19, handover section B; RPP 3.0 was tried first: 0.15 rad/s still stalled once for 14 s).
   RPP has no `acc_lim_*`/`decel_lim_*` (DWB parameters): not added (user decision 2026-10-16).
 - Global costmap robot_radius = collision radius + half a cell: NavFn measures from obstacle cell centres, the
   supervisor checks planner paths exactly against cell edges (else detours and the way back can be refused).
@@ -424,9 +425,10 @@ SLAM must not jump to a wrong but similar-looking place.
   `maps/Test/plans/2026-10-19_104154` (the old plans are refused). Open: flash v2.3.2, then the 360 deg turn test.
 - [3] Long stops at corners: Nav2 RPP turn-in-place from standstill is limited to 0.0175 rad/s (measured rate +
   max_angular_accel x 0.05 s), below the breakaway -> deadlock until the progress checker gives up (15 s).
-  Fix 2026-10-19 (user chose option A): RPP max_angular_accel 3.0 (first step 0.15 rad/s), the gate keeps 0.35.
-  Simulation OK (no stiction there, so it cannot show the deadlock); check on the robot (`docs/handover.md` B).
-  Robot 2026-10-19: the robot turns at corners now, but AMCL position sigma passed 0.10 m while turning on the spot
-  (POSITION_UNCERTAIN pauses): AMCL alpha4 0.05 -> 0.01 (user decision; `config/localization.yaml`).
+  2026-10-19: RPP max_angular_accel 3.0 helped but 0.15 rad/s still stalled once; now the velocity gate lifts a
+  Nav2 turn on the spot to turn_start_rad_s 0.3 and RPP is back at 0.35 (user decisions). AMCL alpha4 0.05 -> 0.01
+  (POSITION_UNCERTAIN while turning) and alpha1 0.05 -> 0.02 (HEADING_UNCERTAIN after turns). Map changes node
+  slowed (scan_period_s 2.0, beam_step 4): Nav2's controller and the EKF missed their rates (CPU). Turns can still
+  overshoot ~20 deg: the gate's 0.35 rad/s^2 slow-down after RPP hands over to driving (not changed).
 - [3] DDS on the Pi uses only the 10.42.0.0/24 network (`config/cyclonedds.xml`). Check that app 3 and the
   panel also work when the PC network is not there.

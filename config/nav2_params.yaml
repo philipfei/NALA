@@ -46,10 +46,11 @@ controller_server:
       use_rotate_to_heading: true
       rotate_to_heading_min_angle: 0.35
       # = motion.controller_angular_accel_rad_s2 in coverage.yaml (params.render_nav2 writes it from there at
-      # launch). Not the gate's 0.35: from standstill RPP allows only measured rate + this x 0.05 s (section B).
+      # launch). From standstill RPP allows only measured rate + this x 0.05 s: the velocity gate lifts a turn on
+      # the spot to motion.turn_start_rad_s, so the wheels break away (handover section B).
       # The linear acceleration limit (0.1 m/s^2) is applied by the velocity gate (coverage.yaml motion);
       # Regulated Pure Pursuit has no acc_lim_* / decel_lim_* parameters (those belong to DWB).
-      max_angular_accel: 3.0
+      max_angular_accel: 0.35
       allow_reversing: false
       use_collision_detection: true
       max_allowed_time_to_collision_up_to_carrot: 1.0

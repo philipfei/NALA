@@ -17,7 +17,9 @@ amcl:
     max_particles: 2000
     update_min_d: 0.025
     update_min_a: 0.05
-    alpha1: 0.05
+    # Heading noise from turning. 0.02, was 0.05 (user decision 2026-10-19): the heading comes from the IMU gyro;
+    # with 0.05 the heading sigma passed the 10 deg trust limit after turns on the spot (HEADING_UNCERTAIN, robot).
+    alpha1: 0.02
     alpha2: 0.05
     alpha3: 0.05
     # Position noise from turning (differential model). 0.01, was 0.05 (user decision 2026-10-19): the LiDAR is at

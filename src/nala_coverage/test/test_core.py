@@ -113,6 +113,28 @@ def test_autodrive_is_forward_only_and_manual_may_reverse():
     assert v[0]<0                           # manual driving may reverse
 
 
+def test_turn_on_the_spot_is_lifted_to_the_start_rate_and_still_ramped():
+    p=Ownership(angular=.4,angular_acceleration=.35,turn_start=.3);p.lease('NAV','a',0)
+    out=[]
+    for i in range(40):
+        p.lease('NAV','a',i*.05);p.receive('NAV',(0.,-.0175),i*.05);out.append(p.tick(i*.05,True,False)[1])
+    assert out[0]==pytest.approx(-.35*.05)                      # ramped, no jump
+    assert out[-1]==pytest.approx(-.3)                          # Nav2's -0.0175 rad/s lifted to the start rate
+    p.lease('NAV','a',2);p.receive('NAV',(0.,-.4),2)
+    assert p.tick(2,True,False)[1]<out[-1]                      # larger requests pass (ramped)
+
+
+def test_turn_start_only_for_nav_turns_on_the_spot():
+    p=Ownership(turn_start=.3);p.lease('NAV','a',0)
+    for i in range(40):
+        p.lease('NAV','a',i*.05);p.receive('NAV',(.1,.02),i*.05);v=p.tick(i*.05,True,False)
+    assert v[1]==pytest.approx(.02)                             # driving forward: the curve stays as asked
+    p.lease('MANUAL','b',3)
+    for i in range(40):
+        p.lease('MANUAL','b',3+i*.05);p.receive('MANUAL',(0.,.05),3+i*.05);v=p.tick(3+i*.05,True,False)
+    assert v[1]==pytest.approx(.05)                             # manual turns are not lifted
+
+
 def test_command_timeout_stops():
     p=Ownership();p.lease('NAV','a',0);p.receive('NAV',(.12,0),0)
     assert p.tick(0,True,False)[0]>0

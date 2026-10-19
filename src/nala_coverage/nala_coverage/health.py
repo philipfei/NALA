@@ -53,9 +53,10 @@ class Trust:
 
 class Ownership:
     """One grant epoch; no cached command survives a source hand-off."""
-    def __init__(self, linear=.12, angular=.40, acceleration=.15, angular_acceleration=.60, settings=None):
+    def __init__(self, linear=.12, angular=.40, acceleration=.15, angular_acceleration=.60, settings=None, turn_start=0.):
         self.cfg=settings or load_settings()
         self.linear=linear;self.angular=angular;self.acceleration=acceleration;self.angular_acceleration=angular_acceleration
+        self.turn_start=turn_start
         self.owner='NONE';self.epoch='';self.command=None;self.command_time=-math.inf
         self.lease_time=-math.inf;self.output=(0.,0.);self.stopping=False
         self.stop_at=0.;self.fault='';self.events=[]
@@ -81,7 +82,12 @@ class Ownership:
         if valid:
             v,w=self.command
             # Autodrive (Nav2) only drives forwards and turns; only manual driving may reverse.
-            if self.owner=='NAV':v=min(self.linear,max(0.,v));w=min(self.angular,max(-self.angular,w))
+            if self.owner=='NAV':
+                v=min(self.linear,max(0.,v))
+                # A turn on the spot asks at least turn_start: Nav2 (RPP) asks only measured rate + a small step,
+                # which from standstill stays below the wheels' breakaway (robot, 2026-10-16/19). Still ramped below.
+                if v==0. and w!=0.:w=math.copysign(max(abs(w),self.turn_start),w)
+                w=min(self.angular,max(-self.angular,w))
             else:v=min(self.cfg['motion']['manual_forward_m_s'],max(-self.cfg['motion']['manual_reverse_m_s'],v));w=min(self.cfg['motion']['manual_angular_rad_s'],max(-self.cfg['motion']['manual_angular_rad_s'],w))
             # Idle keyboard zeros do not create a permanent zero stream.
             if abs(v)+abs(w)<1e-9:

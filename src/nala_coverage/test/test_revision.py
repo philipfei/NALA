@@ -81,12 +81,9 @@ def test_controller_turn_acceleration_is_the_coverage_motion_value(tmp_path):
     # The file itself holds the same value, so reading nav2_params.yaml alone is not misleading.
     assert s['nav2']['controller_server']['ros__parameters']['FollowPath']['max_angular_accel'] == \
         s['motion']['controller_angular_accel_rad_s2']
-    # From standstill RPP allows measured rate (0) + accel x control period: that first step must be a real
-    # turn command, not the 0.0175 rad/s of 0.35 rad/s^2 that never broke the wheels away (handover B).
-    period = 1 / s['nav2']['controller_server']['ros__parameters']['controller_frequency']
-    assert rpp['max_angular_accel'] * period >= 0.1
-    # The gate keeps its own, smooth ramp.
-    assert s['motion']['angular_accel_rad_s2'] < rpp['max_angular_accel']
+    # From standstill RPP allows only measured rate (0) + accel x control period; the gate lifts a turn on the
+    # spot to turn_start, a real turn rate within the gate's limit (handover B).
+    assert 0.15 < s['motion']['turn_start_rad_s'] <= s['motion']['angular_rad_s']
 
 
 def test_rendered_nav2_uses_turning_circle_for_planning_and_box_for_the_controller(tmp_path):

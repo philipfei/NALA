@@ -191,6 +191,15 @@ turned at the corners (fix A works), but paused 4 times in ~60 s with `POSITION_
 Cause: AMCL `alpha4` (position noise from turning) 0.05. Fix (user decision): `alpha4: 0.01` in
 `config/localization.yaml`; simulation: sigma median 0.038 m, AMCL error 0.039 m (was 0.047), 99.8 %, 0 contacts.
 
+**Robot run 2026-10-19 11:21 (`runs/2026-10-19_112103`, `~/nala_debug/drive_7_alpha4.csv`):** position sigma median
+0.032 m (fixed), 14 turns on the spot. New: `HEADING_UNCERTAIN` right after turns; one turn stalled 14 s at
+0.15 rad/s (RPP 3.0 x 0.05 s is still below the breakaway there); one turn overshot ~19 deg (the gate's 0.35 rad/s^2
+slow-down after RPP hands over to driving at 20 deg); Nav2 "Control loop missed its desired rate" 32x and EKF
+"Failed to meet update rate" 27x (run 8: 0x) = CPU. Fixes (user decisions): the velocity gate lifts a Nav2 turn on
+the spot to `motion.turn_start_rad_s: 0.3` (ramped), RPP back to 0.35; AMCL `alpha1` 0.05 -> 0.02; map changes
+node `scan_period_s` 2.0, `beam_step` 4. Scan screen side panel fits 600 px again without scrolling (576 px on the
+Pi). Simulation: 99.9 %, `RETURNED_TO_BASE`, 0 contacts, heading sigma max 8 deg. Overshoot not changed yet.
+
 - Regulated Pure Pursuit (`nav2_regulated_pure_pursuit_controller`, Jazzy) clamps the turn-in-place command to
   `measured turn rate +- max_angular_accel * control period` = `0 +- 0.35 * 0.05 = +-0.0175 rad/s` when the robot
   stands. The measured rate comes from `/odom` (`odom_topic` in `nav2_params.yaml`). 0.0175 rad/s is ~5 mm/s at the

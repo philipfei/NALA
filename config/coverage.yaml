@@ -24,11 +24,13 @@
       # goal, 0.3 deg with 0.35 rad/s^2.
       linear_accel_m_s2: 0.1
       angular_accel_rad_s2: 0.35
-      # Nav2's controller only (RPP max_angular_accel), NOT the gate. RPP limits its turn command to the MEASURED
-      # turn rate +- this x 0.05 s: with 0.35 a standing robot got 0.0175 rad/s, below the wheels' breakaway, and
-      # waited ~15 s at every corner (run 8, 2026-10-16). 3.0: first step 0.15 rad/s. The gate still ramps the
-      # real command at angular_accel_rad_s2 (user decision 2026-10-19, handover section B).
-      controller_angular_accel_rad_s2: 3.0
+      # Nav2's controller (RPP max_angular_accel). RPP limits its turn command to the MEASURED turn rate +- this
+      # x 0.05 s: from standstill 0.0175 rad/s, below the wheels' breakaway (~15 s waits at corners, run 8). 3.0
+      # (first step 0.15) still stalled once for 14 s (robot 2026-10-19), so the gate lifts instead (turn_start).
+      controller_angular_accel_rad_s2: 0.35
+      # Velocity gate, Nav2 only: a turn on the spot (no forward speed) asks at least this, ramped at
+      # angular_accel_rad_s2 (user decision 2026-10-19). 0.15 did not break away once; 0.35-0.4 always did.
+      turn_start_rad_s: 0.3
       manual_forward_m_s: 0.25
       manual_reverse_m_s: 0.15
       manual_angular_rad_s: 0.5
@@ -139,8 +141,8 @@
     map_changes:
       # Cells that changed against the saved map (mapchange_node), from LiDAR scans at trusted poses.
       # Shown on the robot screen: new objects and removed objects. Start values: tune on the robot.
-      scan_period_s: 0.5              # s, use at most one scan per this time (CPU on the Pi)
-      beam_step: 2                    # use every 2nd beam
+      scan_period_s: 2.0              # s, use at most one scan per this time (CPU on the Pi; 0.5 overloaded it, 2026-10-19)
+      beam_step: 4                    # use every 4th beam (CPU on the Pi; was 2)
       max_range_m: 6.0                # m, longer beams are cut here (small heading errors move far points a lot)
       wall_margin_m: 0.10             # m, a few cm of localisation error must not make the walls look changed
       min_hits: 4                     # scans with a beam ending in a free map cell before it is a new object

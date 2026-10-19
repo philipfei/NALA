@@ -19,7 +19,7 @@ class SafetyGate(Node):
         self.mapping=parameter(self,'mapping_mode',False)
         self.external_leases=not self.mapping
         self.settings=node_settings(self);m=self.settings['motion']
-        self.inputs=Inputs(self,tf=False);self.policy=Ownership(m['linear_m_s'],m['angular_rad_s'],m['linear_accel_m_s2'],m['angular_accel_rad_s2'],self.settings)
+        self.inputs=Inputs(self,tf=False);self.policy=Ownership(m['linear_m_s'],m['angular_rad_s'],m['linear_accel_m_s2'],m['angular_accel_rad_s2'],self.settings,m['turn_start_rad_s'])
         self.last_trust=0.;self.trusted=False;self.peer_hash=''
         self.last_lease=0.;self.last_manual_heartbeat=0.;self.graph_ok=False;self.graph_reason='GRAPH_NOT_CHECKED';self.graph_conflicts=[]
         self.graph_started=time.monotonic()

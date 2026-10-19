@@ -90,7 +90,7 @@ def file_hash(path):
 _REQUIRED = {
     'geometry': {'planning_padding_m', 'coverage_disk_radius_m', 'sensor_offset_m'},
     'motion': {'linear_m_s', 'angular_rad_s', 'linear_accel_m_s2', 'angular_accel_rad_s2',
-               'controller_angular_accel_rad_s2', 'manual_forward_m_s', 'manual_reverse_m_s', 'manual_angular_rad_s'},
+               'controller_angular_accel_rad_s2', 'turn_start_rad_s', 'manual_forward_m_s', 'manual_reverse_m_s', 'manual_angular_rad_s'},
     'runtime': {'map_frame', 'odom_frame', 'base_frame', 'map_yaml', 'base_station_yaml', 'output_dir'},
     'coverage': {'planning', 'localization', 'health', 'measurement', 'battery', 'deadlines',
                  'recovery', 'visualization', 'radiation', 'map_changes'},
