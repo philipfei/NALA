@@ -40,7 +40,8 @@ class MapChangeNode(Node):
         self.generation = None
         self.last_scan = 0.
         self.tf = Buffer(cache_time=Duration(seconds=10.))
-        self.listener = TransformListener(self.tf, self)
+        # Own small TF node and thread, like the supervisor (ros_common.Inputs): /tf (~45/s) does not wake this node.
+        self.listener = TransformListener(self.tf, None, spin_thread=True)
         self.pub = self.create_publisher(OccupancyGrid, '/map_changes', LATCHED)
         self.create_subscription(LaserScan, '/scan', self.scan, qos_profile_sensor_data)
         self.create_subscription(String, '/coverage/trust', self.trust, LATEST)
@@ -105,5 +106,8 @@ def main(args=None):
     except KeyboardInterrupt:
         pass
     finally:
+        # Stop the TF listener's thread: it is not a daemon thread, so the process cannot exit while it runs.
+        node.listener.executor.shutdown()
+        node.listener.dedicated_listener_thread.join()
         node.destroy_node()
         rclpy.try_shutdown()
