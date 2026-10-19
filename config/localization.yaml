@@ -20,7 +20,10 @@ amcl:
     alpha1: 0.05
     alpha2: 0.05
     alpha3: 0.05
-    alpha4: 0.05
+    # Position noise from turning (differential model). 0.01, was 0.05 (user decision 2026-10-19): the LiDAR is at
+    # the turning centre and the heading comes from the IMU, so a turn on the spot does not move the robot. With
+    # 0.05 the position sigma grew ~1 cm per second of turning and passed the 0.10 m trust limit (robot, 2026-10-19).
+    alpha4: 0.01
     alpha5: 0.05
     transform_tolerance: 0.5
     tf_broadcast: true

@@ -184,6 +184,13 @@ before the target heading, the gate's slower ramp can then overshoot by up to ~1
 (rod outline, new plan): 99.9 % covered, `RETURNED_TO_BASE`, 0 contacts, no more turn reversals than without the
 fix; the simulated robot has no stiction, so the deadlock itself can only be checked on the robot.
 
+**Robot run 2026-10-19 11:06 (`runs/2026-10-19_110654`, recording `~/nala_debug/drive_6_rod_fixA.csv`):** the robot
+turned at the corners (fix A works), but paused 4 times in ~60 s with `POSITION_UNCERTAIN`: AMCL position sigma median
+0.093 m (run 8: 0.042), above the 0.10 m limit 42 % of the time. It grew ~1 cm per second of turning on the spot
+(4x faster than driving). Not the rod (no LiDAR points < 0.65 m), not CPU (AMCL 19 %, 4 dropped scans at start).
+Cause: AMCL `alpha4` (position noise from turning) 0.05. Fix (user decision): `alpha4: 0.01` in
+`config/localization.yaml`; simulation: sigma median 0.038 m, AMCL error 0.039 m (was 0.047), 99.8 %, 0 contacts.
+
 - Regulated Pure Pursuit (`nav2_regulated_pure_pursuit_controller`, Jazzy) clamps the turn-in-place command to
   `measured turn rate +- max_angular_accel * control period` = `0 +- 0.35 * 0.05 = +-0.0175 rad/s` when the robot
   stands. The measured rate comes from `/odom` (`odom_topic` in `nav2_params.yaml`). 0.0175 rad/s is ~5 mm/s at the

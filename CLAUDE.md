@@ -426,5 +426,7 @@ SLAM must not jump to a wrong but similar-looking place.
   max_angular_accel x 0.05 s), below the breakaway -> deadlock until the progress checker gives up (15 s).
   Fix 2026-10-19 (user chose option A): RPP max_angular_accel 3.0 (first step 0.15 rad/s), the gate keeps 0.35.
   Simulation OK (no stiction there, so it cannot show the deadlock); check on the robot (`docs/handover.md` B).
+  Robot 2026-10-19: the robot turns at corners now, but AMCL position sigma passed 0.10 m while turning on the spot
+  (POSITION_UNCERTAIN pauses): AMCL alpha4 0.05 -> 0.01 (user decision; `config/localization.yaml`).
 - [3] DDS on the Pi uses only the 10.42.0.0/24 network (`config/cyclonedds.xml`). Check that app 3 and the
   panel also work when the PC network is not there.
