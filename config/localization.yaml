@@ -17,15 +17,15 @@ amcl:
     max_particles: 2000
     update_min_d: 0.025
     update_min_a: 0.05
-    # Heading noise from turning. 0.02, was 0.05 (user decision 2026-10-19): the heading comes from the IMU gyro;
-    # with 0.05 the heading sigma passed the 10 deg trust limit after turns on the spot (HEADING_UNCERTAIN, robot).
-    alpha1: 0.02
+    # Heading noise from turning. 0.03 (user decision 2026-10-19; was 0.05): the heading comes from the IMU gyro.
+    # 0.02 together with alpha4 0.01 made AMCL too sure: it kept a pose 0.6 m off (sigma 0.017 m, robot 2026-10-19).
+    alpha1: 0.03
     alpha2: 0.05
     alpha3: 0.05
-    # Position noise from turning (differential model). 0.01, was 0.05 (user decision 2026-10-19): the LiDAR is at
-    # the turning centre and the heading comes from the IMU, so a turn on the spot does not move the robot. With
-    # 0.05 the position sigma grew ~1 cm per second of turning and passed the 0.10 m trust limit (robot, 2026-10-19).
-    alpha4: 0.01
+    # Position noise from turning (differential model). 0.03 (user decision 2026-10-19; was 0.05): the LiDAR is at
+    # the turning centre. With 0.05 the position sigma passed the 0.10 m trust limit in turns, with 0.01 AMCL was too
+    # sure to correct itself (both robot, 2026-10-19; the first run may also have started with the robot backwards).
+    alpha4: 0.03
     alpha5: 0.05
     transform_tolerance: 0.5
     tf_broadcast: true

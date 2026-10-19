@@ -426,9 +426,13 @@ SLAM must not jump to a wrong but similar-looking place.
 - [3] Long stops at corners: Nav2 RPP turn-in-place from standstill is limited to 0.0175 rad/s (measured rate +
   max_angular_accel x 0.05 s), below the breakaway -> deadlock until the progress checker gives up (15 s).
   2026-10-19: RPP max_angular_accel 3.0 helped but 0.15 rad/s still stalled once; now the velocity gate lifts a
-  Nav2 turn on the spot to turn_start_rad_s 0.3 and RPP is back at 0.35 (user decisions). AMCL alpha4 0.05 -> 0.01
-  (POSITION_UNCERTAIN while turning) and alpha1 0.05 -> 0.02 (HEADING_UNCERTAIN after turns). Map changes node
+  Nav2 turn on the spot to turn_start_rad_s 0.3 and RPP is back at 0.35 (user decisions). AMCL alpha1 and alpha4
+  0.05 -> 0.03 (user decision; 0.02/0.01 made AMCL keep a pose 0.6 m off with sigma 0.017 m). Map changes node
   slowed (scan_period_s 2.0, beam_step 4): Nav2's controller and the EKF missed their rates (CPU). Turns can still
   overshoot ~20 deg: the gate's 0.35 rad/s^2 slow-down after RPP hands over to driving (not changed).
+- [3] Robot placement at the base station (2026-10-19): room Test is almost symmetric under a 180 deg turn around
+  the base station, so a robot put on it backwards is only partly caught (AMCL starts at the base station heading
+  +-10 deg, no global relocalization). The user placed it backwards at least once. Open: mark the base station
+  direction on the floor; maybe a start check that the scan fits much better at the base heading than turned 180 deg.
 - [3] DDS on the Pi uses only the 10.42.0.0/24 network (`config/cyclonedds.xml`). Check that app 3 and the
   panel also work when the PC network is not there.

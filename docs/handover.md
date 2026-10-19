@@ -200,6 +200,14 @@ the spot to `motion.turn_start_rad_s: 0.3` (ramped), RPP back to 0.35; AMCL `alp
 node `scan_period_s` 2.0, `beam_step` 4. Scan screen side panel fits 600 px again without scrolling (576 px on the
 Pi). Simulation: 99.9 %, `RETURNED_TO_BASE`, 0 contacts, heading sigma max 8 deg. Overshoot not changed yet.
 
+**Robot run 2026-10-19 ~11:55 (`~/nala_debug/drive_8_turnstart.csv`):** turns started without stalls (0 stalls > 1 s),
+but `SCAN_MAP_MISMATCH` 244x. A search of the whole map with a live scan put the robot at x 1.79 (fit 94 %) while
+AMCL said x 2.40 with sigma 0.017 m: AMCL was too sure to correct itself (alpha1 0.02 / alpha4 0.01). Heading was
+right (the 180 deg mirrored pose fits only 80 %). The user had placed the robot the other way round than in the run
+before; this run's placement matches the base station, so the earlier run(s) likely started backwards, which the
+almost symmetric room hides. Fix (user decision): alpha1 and alpha4 0.03. Simulation: sigma median 0.042 m, AMCL
+error median 0.039 m, heading sigma max 8.1 deg, 99.8 %, `RETURNED_TO_BASE`, 0 contacts.
+
 - Regulated Pure Pursuit (`nav2_regulated_pure_pursuit_controller`, Jazzy) clamps the turn-in-place command to
   `measured turn rate +- max_angular_accel * control period` = `0 +- 0.35 * 0.05 = +-0.0175 rad/s` when the robot
   stands. The measured rate comes from `/odom` (`odom_topic` in `nav2_params.yaml`). 0.0175 rad/s is ~5 mm/s at the
