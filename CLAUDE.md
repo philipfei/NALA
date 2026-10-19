@@ -327,6 +327,10 @@ SLAM must not jump to a wrong but similar-looking place.
 - Xbox B pauses the task (user decision 2026-10-16): app 3 starts `joy_node` + `xbox_pause` (nala_coverage);
   on the B rising edge (`pause_button: 1`, `config/teleop.yaml`, checked 2026-10-16) it calls
   `/coverage/pause` with `call_async` (no waiting in callbacks; no service = warning only; one open request).
+- Auto-resume (user, 2026-10-19: rather localize longer than stop with an error): a pause for a localization or
+  late-data reason (`AUTO_RESUME` in supervisor.py) ends by itself once trust is back (settle_s), within
+  `recovery.auto_resume_s` (60 s); the screen says "Finding the position again - continues by itself". Not for STOP,
+  operator pause, blocked paths or LOCALIZATION_JUMP (mirror image risk in symmetric rooms).
 - Localization trust (user decision 2026-10-19): AMCL sigma above position_sigma_m / heading_sigma_deg stops the
   robot only if the live scan does not fit the map (matched_ratio) or the sigma is `uncertain_hard_factor` (2) x the
   limit. AMCL's sigma was wrong both ways on the robot; the scan check caught every real error.

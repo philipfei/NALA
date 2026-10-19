@@ -36,6 +36,11 @@ from .plan_file import check_base_station, load_plan
 from .ros_common import (Inputs, ActionSlot, LATCHED, LATEST, decode, json_msg,
                          diagnostic, pose_msg, path_msg, pose3, transform3, yaw, ros_now, stamp_seconds)
 
+# Pauses that end by themselves once localization is trusted again (recovery.auto_resume_s). Not: operator
+# STOP/pause, blocked paths, LOCALIZATION_JUMP (in an almost symmetric room a jump can be to the mirror image).
+AUTO_RESUME=('POSITION_UNCERTAIN','HEADING_UNCERTAIN','SCAN_MAP_MISMATCH','LOCALIZATION_SETTLING','TOO_FEW_SCAN_ENDPOINTS',
+             'AMCL_STALE','AMCL_INVALID','TF_UNAVAILABLE','SENSOR_STALE','SCAN_STALE','ODOM_STALE','SAFETY_GATE_STALE',
+             'COVERAGE_METER_STALE')
 # No task holds the robot: it may be moved by hand, and the locator works.
 IDLE_STATES=('IDLE','FINISHED','CANCELED','FAILED')
 ACTIVE={'BACKGROUND','CONNECT_PLAN','CONNECT','SWEEP','DWELL','PHASE_WAIT','RETURN_PLAN','RETURN','TEST_PLAN','TEST'}
@@ -105,7 +110,7 @@ class Supervisor(Node):
         self.background_client=self.create_client(Trigger,'/radiation/measure_background')
         self.create_subscription(PoseStamped,'/coverage/test_goal',self.goal_received,10)
         # Where the locator finds the robot from the scan (locator_node): Start needs it on the base station.
-        self.located={};self.located_time=0.
+        self.located={};self.located_time=0.;self.paused_at=0.
         self.create_subscription(String,'/coverage/located',self.located_received,LATEST)
         self.create_service(SetBool,'/control/manual',self.manual_service)
         for name,fn in [('preview',self.preview_service),('start',self.start),
@@ -355,7 +360,19 @@ class Supervisor(Node):
             rest=poly_target(self.plan_remainder(),'plan');rest.end_yaw=getattr(self.current,'end_yaw',None)
             self.current=rest;self.sweep_points=None
         self.slot.cancel();self.pending_phase=None;self.mission.pause(reason,time.monotonic())
+        self.paused_at=time.monotonic()
         self.save_report()
+
+    def auto_resumable(self,now):
+        """Paused for a localization or late-data reason, recently: it continues by itself once trusted again."""
+        return (self.mission.state=='PAUSED' and self.mission.reason in AUTO_RESUME and not self.manual
+                and now-self.paused_at<=self.settings['recovery']['auto_resume_s'])
+
+    def try_auto_resume(self,now):
+        reason=self.mission.reason
+        try:self.resume()
+        except ValueError:return   # not yet: still localizing (resume checks trust, the gate and the robot)
+        self.mission.events.append({'time':now,'reason':'AUTO_RESUMED','after':reason})
 
     def pause_service(self):self.pause('OPERATOR_PAUSE');return 'Paused; stopping/cancellation is checked independently'
 
@@ -669,6 +686,7 @@ class Supervisor(Node):
                     if now-self.last_motion>=self.settings['deadlines']['no_motion_s']:
                         if phase in ('CONNECT','SWEEP','RETURN'):self.target_failure('NO_MOVEMENT')
                         else:self.pause('NO_MOVEMENT')
+            if self.auto_resumable(now):self.try_auto_resume(now)
             # Actions can complete during a pause: token filtering prevents state resurrection.
             while self.slot.events:
                 self.action_result(*self.slot.events.pop(0))
@@ -693,7 +711,7 @@ class Supervisor(Node):
         data={'config_hash':self.settings.hash,'generation':self.mission.generation,'state':phase,'reason':self.mission.reason,'root_cause':self.mission.root_cause,
               'trusted':self.trusted,'trust_reason':self.trust.reason,'preview_ready':self.preview is not None,
               'located':self.located.get('status','') if now-self.located_time<=self.settings['locator']['max_age_s'] else '',
-              'turn_deg':self.located.get('turn_deg'),
+              'turn_deg':self.located.get('turn_deg'),'auto_resume':self.auto_resumable(now),
               'fraction':self.measurement.get('fraction',0.),'owner':owner,'nav_active':self.nav_active,
               'skipped_stretches':sum(b.get('reason')=='PLAN_STRETCH_SKIPPED' for b in self.mission.blocked)}
         self.state_pub.publish(json_msg(data));diagnostic(self,self.diag,'coverage_supervisor',phase,data,int(phase in ('PAUSED','FAILED')))

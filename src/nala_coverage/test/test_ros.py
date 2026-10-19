@@ -360,12 +360,22 @@ def run_plan(ros,poses,drive=None,block_at=None,base_station=None,radiation=None
     while radiation is not None and not sup.background_client.service_is_ready() and time.monotonic()<end:pump(.2)
     sup.start()
     end=time.monotonic()+30.
-    while sup.mission.state not in ('FINISHED','FAILED','PAUSED') and time.monotonic()<end:
+    # A pause that ends by itself (localization) does not end the test drive.
+    while (sup.mission.state not in ('FINISHED','FAILED','PAUSED') or sup.auto_resumable(time.monotonic())) and time.monotonic()<end:
         pump(.2)
         if during:during(sup)
     for server in servers:server.destroy()
     nav_executor.shutdown();nav.destroy_node()
     return sup,follows,plans,plan
+
+
+def test_a_localization_pause_resumes_by_itself_once_trusted_again(ros):
+    paused=[]
+    def lose_position_once(sup):
+        if sup.mission.state=='SWEEP' and not paused:paused.append(1);sup.pause('POSITION_UNCERTAIN')
+    sup,follows,_,_=run_plan(ros,[[2.,2.],[3.,2.]],during=lose_position_once)
+    assert paused and sup.mission.state=='FINISHED' and sup.mission.reason=='RETURNED_TO_BASE',(sup.mission.state,sup.mission.events)
+    assert any(e.get('reason')=='AUTO_RESUMED' and e.get('after')=='POSITION_UNCERTAIN' for e in sup.mission.events)
 
 
 def test_start_needs_the_robot_on_the_base_station_and_amcl_restarts_there(ros):

@@ -112,6 +112,10 @@
       prepare_s: 15.0
       dwell_s: 0.7
     recovery:
+      # A pause for a localization or late-data reason (AUTO_RESUME in supervisor.py) ends by itself once the
+      # position is trusted again (settle_s of steady trust), within this time; after it the task stays paused
+      # for the operator (user, 2026-10-19: rather localize longer than stop with an error).
+      auto_resume_s: 60.0
       endpoint_tolerance_m: 0.1
       plan_endpoint_tolerance_m: 0.05
       short_test_max_m: 2.0

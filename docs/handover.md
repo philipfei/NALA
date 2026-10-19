@@ -232,6 +232,14 @@ the lift only from standstill, RPP max_angular_accel back to 3.0, and the trust 
 sigma over the limit pauses only with a poorly fitting scan or over 2x the limit). Not simulated again (user: test
 on the robot).
 
+**Robot run 2026-10-19 13:56 (`runs/2026-10-19_135600`, `~/nala_debug/drive_10_scantrust.csv`): 98 % covered, 19
+turns, 1 reversal, no stalls.** The missed floor south of the base station: at Start the user stood at the screen
+(within the 0.5 m collision radius): "collision ahead" and "failed to plan" from the base station, and the first 3
+plan pieces (1.6 m) were skipped within 0.8 s. User: step back after Start (no code change asked). 2
+POSITION_UNCERTAIN in the north-east corner turn (sigma 0.21-0.23 m, just over the 2x hard limit). Plan order: the
+west end is covered with a diagonal back and a second visit to the corner; a planner search 8x longer gives the
+identical route (so it is the planner's route, not the search time). New: auto-resume after localization pauses.
+
 - Regulated Pure Pursuit (`nav2_regulated_pure_pursuit_controller`, Jazzy) clamps the turn-in-place command to
   `measured turn rate +- max_angular_accel * control period` = `0 +- 0.35 * 0.05 = +-0.0175 rad/s` when the robot
   stands. The measured rate comes from `/odom` (`odom_topic` in `nav2_params.yaml`). 0.0175 rad/s is ~5 mm/s at the
