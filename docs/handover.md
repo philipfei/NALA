@@ -128,10 +128,10 @@ placeholders). `config/robot.yaml` has `outline` (front 0.4425, back 0.2075, lef
 `params.py`, `coverage_tool/settings.py`, the URDF and `tools/sim/fake_nala.py`. Farthest corner 0.478 m ->
 collision radius 0.498 m, plan robot radius 0.53 m (was 0.293 / 0.33). New plan for room Test:
 `maps/Test/plans/2026-10-19_104154` (100 % of the reachable floor in the plan, 10 stops); the old plan is refused
-(`PLAN_TOO_CLOSE_TO_OBSTACLES`). Wheelbase: `half_wheelbase: 0.1675` in `config/base.yaml` and firmware v2.3.2
-(compile-checked on the Pi, **not flashed yet**). Until the flash the Pi already turns the wheel counts into the
-right turn rate, but the MCU still drives commanded turns ~11 % too slow (as on 2026-10-16). Flash, then the
-360 deg turn test. The app 3 tests use a fixed test robot (the old centred box).
+(`PLAN_TOO_CLOSE_TO_OBSTACLES`). Wheelbase: measured again by the user on 2026-10-19: **340 mm**, so
+`half_wheelbase: 0.170` (k = 0.330 m) in `config/base.yaml` and firmware v2.3.3, **flashed by the user**
+(v2.3.2 had 335 mm / 0.1675 and was never flashed; the 0.335 / 0.1675 values below are the state of 2026-10-16).
+Next: the 360 deg turn test with the wheels and the IMU. The app 3 tests use a fixed test robot (the old centred box).
 The text below is the state of 2026-10-16.
 
 What the user said (verbatim facts):

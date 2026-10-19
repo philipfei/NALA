@@ -3,7 +3,7 @@
  *
  * Project  : NALA (ATmega328PB, 4 mecanum wheels, 4 quadrature encoders)
  * Author   : HY / Claude (NALA v1 revision)
- * Version  : v2.3.2
+ * Version  : v2.3.3
  * Date     : 2026-10-19
  *
  * v1 vs v0: 20 Hz control loop; speed controller replaced by a positional PI with
