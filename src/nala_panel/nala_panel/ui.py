@@ -525,7 +525,6 @@ class ScanScreen(QtWidgets.QWidget):
         # Right: the side panel.
         side = QtWidgets.QFrame()
         side.setObjectName('side')
-        side.setFixedWidth(330)
         sl = QtWidgets.QVBoxLayout(side)
         head = QtWidgets.QHBoxLayout()
         self.title = label('<b>NALA</b>', wrap=False)
@@ -575,8 +574,17 @@ class ScanScreen(QtWidgets.QWidget):
         sl.addWidget(self.manual_box)
         self.side_controls = QtWidgets.QGridLayout()
         sl.addLayout(self.side_controls)
-        body.addWidget(side)
-        self.side = side
+        # In a scroll area: with the Pi's fonts the side panel needed 615 px, more than the 600 px screen, so the
+        # window could not go full screen (robot, 2026-10-19). Now it scrolls if it is ever too tall.
+        scroll = QtWidgets.QScrollArea()
+        scroll.setObjectName('sidescroll')
+        scroll.setWidget(side)
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
+        scroll.setFixedWidth(330)
+        body.addWidget(scroll)
+        self.side = scroll
 
         self.start_button = button('Start', self.start, 'primary')
         self.pause_button = button('Pause', self.session.pause)

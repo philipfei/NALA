@@ -22,6 +22,7 @@ def stylesheet(font_pt, button_px):
 QWidget {{ background: {BG}; color: {INK}; font-size: {font_pt}pt; }}
 QLabel {{ background: transparent; }}
 QFrame#side {{ background: {PANEL}; border-left: 1px solid {LINE}; }}
+QScrollArea#sidescroll {{ background: {PANEL}; border: none; }}
 QFrame#sheet {{ background: {PANEL}; border: 3px solid {MAG}; border-radius: 14px; }}
 QFrame#alert {{ background: {PANEL}; border: 2px solid {LINE}; border-radius: 12px; }}
 QFrame#alert[hot="true"] {{ background: {MAG}; border-color: {MAG}; }}
