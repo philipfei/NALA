@@ -76,9 +76,10 @@ class Locator:
                 best = (float(f[i]), (float(xy[i, 0]), float(xy[i, 1]), yaw))
         return best
 
-    def search(self, points):
+    def search(self, points, previous=None):
         """Search the whole map. Returns (fit, pose) of the best pose and of the best clearly different one
-        (more than 0.5 m or 30 deg away), or None when there are no points or no free cells."""
+        (more than 0.5 m or 30 deg away), or None when there are no points or no free cells. Poses that fit
+        within ambiguity_margin of the best are a tie: then the one nearest to previous (x, y, yaw) wins."""
         if not len(points) or not len(self.positions):
             return None
         found = []
@@ -87,10 +88,25 @@ class Locator:
             for i in np.argsort(f)[-5:]:
                 found.append((float(f[i]), (float(self.positions[i, 0]), float(self.positions[i, 1]), float(yaw))))
         found.sort(key=lambda item: -item[0])
-        best = self.refine(points, found[0][1], self.cfg['position_step_m'], self.cfg['yaw_step_deg'])
-        other = next((item for item in found if math.dist(item[1][:2], best[1][:2]) > .5
-                      or abs(_wrap(item[1][2] - best[1][2])) > math.radians(30)), None)
-        return best, other
+        # Refine the best few clearly different candidates, then choose: on the coarse grid the true pose can
+        # score a little below its mirror image in an almost symmetric room (room Test, a corner).
+        distinct = []
+        for item in found:
+            if all(math.dist(item[1][:2], d[1][:2]) > .5 or abs(_wrap(item[1][2] - d[1][2])) > math.radians(30)
+                   for d in distinct):
+                distinct.append(item)
+            if len(distinct) == 6:
+                break
+        refined = sorted((self.refine(points, d[1], self.cfg['position_step_m'], self.cfg['yaw_step_deg'])
+                          for d in distinct), key=lambda item: -item[0])
+        if previous is not None:
+            # A robot carried by hand moves continuously: of tied poses (mirror images in a symmetric room) keep
+            # the one near where it was found last.
+            ties = [item for item in refined if item[0] >= refined[0][0] - self.cfg['ambiguity_margin']]
+            near = min(ties, key=lambda item: math.dist(item[1][:2], previous[:2]))
+            refined.remove(near)
+            refined.insert(0, near)
+        return refined[0], (refined[1] if len(refined) > 1 else None)
 
     def base_check(self, points, station):
         """ON_BASE, BACKWARDS or NOT_ON_BASE for a robot that should stand on station (x, y, yaw), with the
@@ -104,12 +120,15 @@ class Locator:
             return ON_BASE, forward
         return NOT_ON_BASE, forward
 
-    def locate(self, points, station):
-        """Everything the screen and the supervisor need, as a JSON-ready dict."""
+    def locate(self, points, station, previous=None):
+        """Everything the screen and the supervisor need, as a JSON-ready dict. previous: the pose found
+        last (or None), to choose between poses that fit equally well."""
         if not len(points):
             return {'status': NOT_ON_BASE, 'pose': None, 'fit': 0., 'base_fit': 0., 'ambiguous': False, 'points': 0}
         status, (base_fit, base_pose) = self.base_check(points, station)
-        found = self.search(points)
+        # On the base station with a fit no other pose can beat by direction_margin: no whole-map search
+        # (it takes most of the time, ~3 s on the Pi 4 with the first settings).
+        found = None if status != NOT_ON_BASE and base_fit >= 1 - self.cfg['direction_margin'] else self.search(points, previous)
         # A partial fit near the base station is not enough when the scan fits clearly better somewhere else
         # (0.5 m beside the base station still fits ~78 % there, map of room Test).
         if (status != NOT_ON_BASE and found is not None and found[0][0] > base_fit + self.cfg['direction_margin']
@@ -122,7 +141,7 @@ class Locator:
         else:
             pose, fit = None, 0.
         other = found[1] if found is not None else None
-        ambiguous = other is not None and other[0] > fit - self.cfg['ambiguity_margin']
+        ambiguous = other is not None and other[0] >= fit - self.cfg['ambiguity_margin']
         return {'status': status, 'pose': [round(v, 4) for v in pose] if pose is not None else None,
                 'fit': round(fit, 3), 'base_fit': round(base_fit, 3), 'ambiguous': bool(ambiguous),
                 'points': int(len(points))}

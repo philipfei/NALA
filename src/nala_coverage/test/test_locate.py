@@ -69,3 +69,15 @@ def test_no_scan_points_is_not_on_base():
     g = room()
     r = Locator(g, CFG).locate(np.zeros((0, 2)), (1.5, 1.25, 0.))
     assert r['status'] == NOT_ON_BASE and r['pose'] is None and r['fit'] == 0.
+
+
+def test_mirror_images_are_told_apart_by_where_the_robot_was_last():
+    # In a symmetric room a corner and the opposite corner turned 180 deg give the same scan.
+    g = room(asymmetric=False)
+    loc = Locator(g, CFG)
+    truth = (4.2, 2.0, .6)
+    mirror = (5. - truth[0], 2.5 - truth[1], truth[2] + math.pi)
+    points = scan_from(g, truth)
+    for previous in (truth, mirror):
+        r = loc.locate(points, (2.5, 1.25, 0.), previous)
+        assert r['ambiguous'] and math.dist(r['pose'][:2], previous[:2]) < .15

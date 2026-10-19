@@ -217,6 +217,11 @@ base station pose when the robot arrives there, panel draws the located pose and
 Test: the real corner scan -> NOT_ON_BASE at the right pose (fit 99 %); ray-cast scans: on base / 12 cm 10 deg off
 -> ON_BASE, backwards -> BACKWARDS (fit 1.00 vs 0.29), 0.25 / 0.5 m off -> NOT_ON_BASE. Simulation: on base ->
 RETURNED_TO_BASE 99.9 %; 1 m off -> Start refused (NOT_ON_BASE_STATION).
+Speed: the first settings took 3 s per search on the Pi 4; now 0.15 m / 6 deg / 60 beams, 6 candidates refined,
+and no whole-map search when the base station fit is >= 0.95. Room Test, 20 ray-cast poses: base station verdict
+20/20 right; pose right 20/20 when the robot is carried (ties go to the pose nearest the last one), 19/20 right
+after a fresh start: one corner looks exactly like the opposite corner turned 180 deg (both fit 100 %), so right
+after app 3 starts with the robot there it can be drawn in the mirrored corner (status still NOT_ON_BASE).
 
 - Regulated Pure Pursuit (`nav2_regulated_pure_pursuit_controller`, Jazzy) clamps the turn-in-place command to
   `measured turn rate +- max_angular_accel * control period` = `0 +- 0.35 * 0.05 = +-0.0175 rad/s` when the robot

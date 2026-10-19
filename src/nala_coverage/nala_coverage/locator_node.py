@@ -35,6 +35,7 @@ class LocatorNode(Node):
         self.locator = Locator(grid, self.cfg)
         self.scan = None
         self.state = ''
+        self.previous = None      # pose found last: chooses between poses that fit equally well
         self.tf = Buffer(cache_time=Duration(seconds=10.))
         # Own small TF node and thread, like the supervisor (ros_common.Inputs): /tf (~45/s) does not wake this node.
         self.listener = TransformListener(self.tf, None, spin_thread=True)
@@ -63,7 +64,10 @@ class LocatorNode(Node):
             return
         points = endpoints(scan.ranges, scan.angle_min, scan.angle_increment, scan.range_min, scan.range_max,
                            laser, self.cfg['max_beams'])
-        self.pub.publish(json_msg(self.locator.locate(points, self.station)))
+        result = self.locator.locate(points, self.station, self.previous)
+        if result['pose'] is not None:
+            self.previous = result['pose']
+        self.pub.publish(json_msg(result))
 
 
 def main(args=None):
