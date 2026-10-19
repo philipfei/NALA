@@ -22,7 +22,7 @@ base_node:
     # Must match the robot (and the firmware config.h). Careful: radius, not diameter; half, not full.
     wheel_radius: 0.040         # m (diameter 0.080)
     half_track_width: 0.160     # m, half of the left-right wheel distance (full 0.320)
-    half_wheelbase: 0.130       # m, half of the front-rear axle distance (full 0.260)
+    half_wheelbase: 0.1675      # m, half of the front-rear axle distance (full 0.335; user, 2026-10-16)
     encoder_counts_per_rev: 1536   # encoder counts per wheel turn (checked: 1.17 m driven = 1.17 m odometry)
     feedback_period: 0.05       # s, MCU control period (firmware CONTROL_PERIOD_MS): one state frame per period,
                                 # time base of the odometry speeds

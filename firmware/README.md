@@ -1,6 +1,6 @@
 # NALA firmware (ATmega328PB motor driver)
 
-Firmware for the NALA base. It receives body-velocity commands from the Pi over UART, runs a speed controller on four mecanum wheels and sends the cumulative encoder counts back. Current version: **v2.3.1**. Toolchain: Atmel/Microchip Studio 7 (avr-gcc 5.4.0, ATmega_DFP 1.7.374), 16 MHz external crystal.
+Firmware for the NALA base. It receives body-velocity commands from the Pi over UART, runs a speed controller on four mecanum wheels and sends the cumulative encoder counts back. Current version: **v2.3.2**. Toolchain: Atmel/Microchip Studio 7 (avr-gcc 5.4.0, ATmega_DFP 1.7.374), 16 MHz external crystal.
 
 > ### HARDWARE POLARITY NOTE (read before touching the motor wiring)
 >
@@ -109,7 +109,7 @@ MCU -> Pi, **parameter reply, 10 bytes**:
 | M3 | PB1 (OC1A) | PE2 | E3: PD4 / PD7 | +1 | + / - / + |
 | M4 | PB2 (OC1B) | PE3 | E4: PC2 / PC3 | +1 | + / + / + |
 
-- Wheel target: `M1 = (Vx - Vy - k*w)/R`, `M2 = (Vx + Vy - k*w)/R`, `M3 = (Vx - Vy + k*w)/R`, `M4 = (Vx + Vy + k*w)/R`, with `k = half track + half wheelbase = 0.290 m`, `R = 0.040 m`.
+- Wheel target: `M1 = (Vx - Vy - k*w)/R`, `M2 = (Vx + Vy - k*w)/R`, `M3 = (Vx - Vy + k*w)/R`, `M4 = (Vx + Vy + k*w)/R`, with `k = half track + half wheelbase = 0.3275 m`, `R = 0.040 m`.
 - Layout: M1 front-left, M2 rear-left, M3 rear-right, M4 front-right. Forward driving and the odometry scale were verified on the robot (2026-10-07: 1.17 m driven = 1.17 m odometry); strafe and turn worked as expected in the teleop test.
 - Motor input polarity: **no motor is inverted in software** (`MOTORn_DIR_INVERT` = 0 for all four). The M2/M3 supply cables are wired opposite to M1/M4 in the hardware; see the **hardware polarity note** at the top.
 - Encoders: only the A pins raise pin-change interrupts; B is sampled in the interrupt. Every A edge counts, direction from B.
@@ -119,7 +119,7 @@ MCU -> Pi, **parameter reply, 10 bytes**:
 
 | Parameter | Value |
 |---|---|
-| Wheel radius / half track / half wheelbase | 0.040 / 0.160 / 0.130 m |
+| Wheel radius / half track / half wheelbase | 0.040 / 0.160 / 0.1675 m (v2.3.2; 0.130 before) |
 | Encoder counts per wheel revolution | 1536 (verified on the robot, 2026-10-07) |
 | Control period (Timer3, `OCR3A = 12499`) | 50 ms (20 Hz); one encoder count = 0.082 rad/s |
 | State frame | sent every period (20 Hz), cumulative encoder counts |
@@ -234,6 +234,8 @@ Main loop: check (CRC) and apply a new command; check (CRC) and answer a paramet
 
 **v2.3.1 (2026-10-15)** - new defaults only (no code change): the values tuned on the floor.
 
+**v2.3.2 (2026-10-19)** - half wheelbase 0.1675 m (wheelbase 335 mm, measured by the user 2026-10-16; was 0.130 m). **Needs the matching Pi code** (`half_wheelbase` in `config/base.yaml`, same commit) **and a reflash**: the geometry is compiled in, not an EEPROM parameter. The rotation arm k goes from 0.290 to 0.3275 m: commanded turns were ~11 % too slow, the wheel odometry turn ~12.9 % too high. The EEPROM controller values stay valid (they are per wheel, in rad/s).
+
 | Parameter | Value (saved in the MCU EEPROM 2026-10-15 = `config.h` defaults since v2.3.1) |
 |---|---|
 | kp / ki / i_limit / accel_limit | 2.0 / 8.0 / 10 % / 0 (off) |
@@ -263,9 +265,10 @@ How they were found (`scripts/tune_motors.py`, robot on the floor, 2 m free, a p
 - **v2.1.0**: on the MCU 2026-10-14/15: state frames at 20 Hz without CRC errors; motors, encoders and kinematics signs correct (wheels in the air).
 - **v2.2.0**: flashed 2026-10-15, setting mode works on the robot.
 - **v2.3.0**: flashed 2026-10-15. Tuned on the floor and saved in the EEPROM (section 6, v2.3.1). v2.3.1 only changes the defaults: no reflash needed.
+- **v2.3.2**: compile-checked 2026-10-19, not flashed yet. After the flash: repeat the 360 deg turn test (wheels and IMU).
 - The speed controller is tuned on the floor (section 6, v2.3.1), but the overshoot at low speed is still high.
 - The motors reach only ~13 rad/s (0.50-0.52 m/s). Faster targets saturate at 100 % PWM; the Pi limits every wheel to 0.45 m/s (`max_wheel_speed` in `config/base.yaml`).
 - Stopping is by coasting, so the stopping distance depends on friction.
 
 ---
-Last updated: 2026-10-15 (v2.3.1) · Stiffeel :octocat: · Claude
+Last updated: 2026-10-19 (v2.3.2) · Stiffeel :octocat: · Claude

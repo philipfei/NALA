@@ -122,6 +122,18 @@ Measured on the Pi with app 3 running but not started (robot standing):
 
 ### A. Robot dimensions changed (user, 2026-10-16) - needs answers first
 
+**Status 2026-10-19 (done in code, not driven yet):** answers (user): the rod is as wide as the body (360 mm) and
+below the LiDAR (no scan filter); whether it carries the scintillator is not known yet (sensor values stay
+placeholders). `config/robot.yaml` has `outline` (front 0.4425, back 0.2075, left/right 0.18 m), read by
+`params.py`, `coverage_tool/settings.py`, the URDF and `tools/sim/fake_nala.py`. Farthest corner 0.478 m ->
+collision radius 0.498 m, plan robot radius 0.53 m (was 0.293 / 0.33). New plan for room Test:
+`maps/Test/plans/2026-10-19_104154` (100 % of the reachable floor in the plan, 10 stops); the old plan is refused
+(`PLAN_TOO_CLOSE_TO_OBSTACLES`). Wheelbase: `half_wheelbase: 0.1675` in `config/base.yaml` and firmware v2.3.2
+(compile-checked on the Pi, **not flashed yet**). Until the flash the Pi already turns the wheel counts into the
+right turn rate, but the MCU still drives commanded turns ~11 % too slow (as on 2026-10-16). Flash, then the
+360 deg turn test. The app 3 tests use a fixed test robot (the old centred box).
+The text below is the state of 2026-10-16.
+
 What the user said (verbatim facts):
 - **Wheelbase (front-rear axle distance) is 335 mm** (user, 2026-10-16; half 0.1675 m). The config still has
   0.260 m: `config/base.yaml` `half_wheelbase: 0.130`, firmware `config.h` `HALF_WHEELBASE_M 0.130f`
@@ -165,6 +177,13 @@ Why it matters (everything assumes a centred box today):
 
 ### B. Long stops at corners (turn on the spot) - root cause known
 
+**Status 2026-10-19 (done in code, not driven yet):** the user chose the fix idea below: RPP gets its own
+`motion.controller_angular_accel_rad_s2: 3.0` in `config/coverage.yaml` (rendered into `max_angular_accel`; first
+step from standstill 0.15 rad/s), the velocity gate keeps `angular_accel_rad_s2: 0.35`. Risk: RPP brakes later
+before the target heading, the gate's slower ramp can then overshoot by up to ~13 deg. Simulation in room Test
+(rod outline, new plan): 99.9 % covered, `RETURNED_TO_BASE`, 0 contacts, no more turn reversals than without the
+fix; the simulated robot has no stiction, so the deadlock itself can only be checked on the robot.
+
 - Regulated Pure Pursuit (`nav2_regulated_pure_pursuit_controller`, Jazzy) clamps the turn-in-place command to
   `measured turn rate +- max_angular_accel * control period` = `0 +- 0.35 * 0.05 = +-0.0175 rad/s` when the robot
   stands. The measured rate comes from `/odom` (`odom_topic` in `nav2_params.yaml`). 0.0175 rad/s is ~5 mm/s at the
@@ -182,6 +201,10 @@ Why it matters (everything assumes a centred box today):
   Alternative: feed RPP the EKF odometry (`/odometry/filtered`) - does not help, it is also 0 at standstill.
 
 ### C. Unreachable plan target and other run 8 events
+
+**2026-10-19:** the old plan is refused for the new outline anyway. With the new plan the simulation reached every
+target. The margin is small, though: the plan keeps 0.53 m, the global costmap needs 0.498 + 0.025 = 0.523 m, and
+coverage_tool's per-cell check can be up to half a cell (0.025 m) more lenient than NavFn. See the robot run.
 
 - `plan:1.34,-1.33`: NavFn could not plan to it from (0.74, -1.29) / (1.20, -1.16) ("tolerance 0.05"): the target is
   probably inside the global costmap's inflated area (robot_radius = 0.293 + half a cell) near a wall, or it was

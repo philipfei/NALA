@@ -3,7 +3,7 @@
  *
  * Project : NALA motor driver (ATmega328PB, 4x mecanum wheels, 4x quadrature encoders)
  * Author  : HY (NALA v1 revision)
- * Version : v2.3.1
+ * Version : v2.3.2
  * Date    : 2026-10-15
  *
  * v1 changes vs v0: 20 Hz control/feedback (50 ms period), speed controller
@@ -24,6 +24,7 @@
  * v2.3.0: one feed-forward PWM row per motor (FF_M1_PWM_PCT .. FF_M4_PWM_PCT), the speed points
  * stay shared. The motors differ: for the same speed M4 needs ~1.5x the PWM of M3.
  * v2.3.1: the defaults are the values tuned on the floor (2026-10-15), the same as saved in the EEPROM.
+ * v2.3.2: half wheelbase 0.1675 m (wheelbase 335 mm, user 2026-10-16; was 0.130). Same in config/base.yaml.
  *
  * Everything that is "a number you may want to change" or "a wire you may want to
  * re-assign" lives in this file. The .c files contain no magic numbers for these.
@@ -50,7 +51,7 @@
 /* ------------------------------------------------------------------------- */
 #define WHEEL_RADIUS_M      0.040f   /* wheel radius R              : 40 mm  */
 #define HALF_TRACK_M        0.160f   /* W: half left-right distance : 160 mm (track 320 mm)     */
-#define HALF_WHEELBASE_M    0.130f   /* H: half front-rear distance : 130 mm (wheelbase 260 mm) */
+#define HALF_WHEELBASE_M    0.1675f  /* H: half front-rear distance : 167.5 mm (wheelbase 335 mm) */
 
 /* Lever arm used in the mecanum yaw term: (W + H). */
 #define ROT_ARM_M           (HALF_TRACK_M + HALF_WHEELBASE_M)

@@ -8,16 +8,17 @@
   <xacro:property name="cfg" value="${xacro.load_yaml('$(arg robot_config)')}"/>
   <xacro:property name="laser" value="${cfg['laser']}"/>
   <xacro:property name="imu" value="${cfg['imu']}"/>
+  <xacro:property name="outline" value="${cfg['outline']}"/>
 
   <!-- On the floor, under the chassis center. Odometry moves this frame. -->
   <link name="base_footprint"/>
 
-  <!-- Same pose as base_footprint. The flat plate shows the outer size in RViz. -->
+  <!-- Same pose as base_footprint. The flat plate shows the outer outline in RViz (not centred: rod in front). -->
   <link name="base_link">
     <visual>
-      <origin xyz="0 0 0.005"/>
+      <origin xyz="${(outline['front'] - outline['back']) / 2} ${(outline['left'] - outline['right']) / 2} 0.005"/>
       <geometry>
-        <box size="${cfg['body_length']} ${cfg['body_width']} 0.01"/>
+        <box size="${outline['front'] + outline['back']} ${outline['left'] + outline['right']} 0.01"/>
       </geometry>
       <material name="grey">
         <color rgba="0.6 0.6 0.6 1.0"/>

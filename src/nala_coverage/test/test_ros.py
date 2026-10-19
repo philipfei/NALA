@@ -46,6 +46,11 @@ def ros(tmp_path):
     # All nodes of a test share one Python process (one GIL), so a busy node can delay the others by about a
     # second; on the robot each node is its own process. Allow that here with longer message ages.
     config=tmp_path/'config';shutil.copytree(default_config_dir(),config)
+    # The test plans and the 4 x 4 m map are made for the centred 410 x 360 mm robot (until 2026-10-16), not for
+    # the real outline in robot.yaml: the tests check the logic, not this robot's size.
+    robot=yaml.safe_load((config/'robot.yaml').read_text())
+    robot['outline']={'front':0.205,'back':0.205,'left':0.18,'right':0.18}
+    (config/'robot.yaml').write_text(yaml.safe_dump(robot))
     raw=yaml.safe_load((config/'coverage.yaml').read_text())
     raw['/coverage_config']['ros__parameters']['health'].update(scan_age_s=3.,odom_age_s=3.,gate_age_s=3.,meter_age_s=3.,lease_age_s=3.)
     # Plan driving without a scintillator; the radiation tests switch it on for their supervisor.

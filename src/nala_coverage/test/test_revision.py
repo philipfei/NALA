@@ -34,12 +34,12 @@ def test_config_hash_ignores_comments_order_and_numeric_spelling(tmp_path):
 
 def test_outline_is_the_robot_repo_box_and_collision_radius_its_turning_circle():
     s = load_settings()
-    robot = yaml.safe_load(resource('robot.yaml').read_text())
-    hx, hy = robot['body_length']/2, robot['body_width']/2
-    assert s['geometry']['footprint_m'] == [[hx, hy], [hx, -hy], [-hx, -hy], [-hx, hy]]
-    corner = max(math.hypot(x, y) for x, y in s['geometry']['footprint_m'])
-    assert s.circumscribed == pytest.approx(corner) == pytest.approx(math.hypot(hx, hy))
-    assert s.collision == pytest.approx(corner + s['geometry']['planning_padding_m'])
+    o = yaml.safe_load(resource('robot.yaml').read_text())['outline']
+    assert s['geometry']['footprint_m'] == [[o['front'], o['left']], [o['front'], -o['right']],
+                                            [-o['back'], -o['right']], [-o['back'], o['left']]]
+    # Not centred: the farthest corner is at the front (rod), so the turning circle comes from front, not length/2.
+    assert s.circumscribed == pytest.approx(math.hypot(max(o['front'], o['back']), max(o['left'], o['right'])))
+    assert s.collision == pytest.approx(s.circumscribed + s['geometry']['planning_padding_m'])
 
 
 def test_outline_is_not_configured_twice(tmp_path):
@@ -49,10 +49,10 @@ def test_outline_is_not_configured_twice(tmp_path):
         load_settings(config)
 
 
-@pytest.mark.parametrize('key,value', [('body_length', 0.0), ('body_width', -0.3), ('body_length', None)])
-def test_invalid_robot_body_rejected(tmp_path, key, value):
+@pytest.mark.parametrize('key,value', [('front', 0.0), ('right', -0.3), ('back', None), ('left', 'wide')])
+def test_invalid_robot_outline_rejected(tmp_path, key, value):
     config = copy_config(tmp_path)
-    robot = yaml.safe_load((config/'robot.yaml').read_text()); robot[key] = value
+    robot = yaml.safe_load((config/'robot.yaml').read_text()); robot['outline'][key] = value
     (config/'robot.yaml').write_text(yaml.safe_dump(robot))
     with pytest.raises(ValueError):
         load_settings(config)
@@ -77,10 +77,16 @@ def test_controller_turn_acceleration_is_the_coverage_motion_value(tmp_path):
     s = load_settings()
     rendered = yaml.safe_load(s.render_nav2('/tmp/map.yaml', tmp_path).read_text())
     rpp = rendered['controller_server']['ros__parameters']['FollowPath']
-    assert rpp['max_angular_accel'] == s['motion']['angular_accel_rad_s2']
+    assert rpp['max_angular_accel'] == s['motion']['controller_angular_accel_rad_s2']
     # The file itself holds the same value, so reading nav2_params.yaml alone is not misleading.
     assert s['nav2']['controller_server']['ros__parameters']['FollowPath']['max_angular_accel'] == \
-        s['motion']['angular_accel_rad_s2']
+        s['motion']['controller_angular_accel_rad_s2']
+    # From standstill RPP allows measured rate (0) + accel x control period: that first step must be a real
+    # turn command, not the 0.0175 rad/s of 0.35 rad/s^2 that never broke the wheels away (handover B).
+    period = 1 / s['nav2']['controller_server']['ros__parameters']['controller_frequency']
+    assert rpp['max_angular_accel'] * period >= 0.1
+    # The gate keeps its own, smooth ramp.
+    assert s['motion']['angular_accel_rad_s2'] < rpp['max_angular_accel']
 
 
 def test_rendered_nav2_uses_turning_circle_for_planning_and_box_for_the_controller(tmp_path):

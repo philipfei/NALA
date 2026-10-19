@@ -3,7 +3,7 @@
 A desktop tool that plans a full-coverage path on a ROS lidar map and exports it as Nav2 waypoints.
 
 This copy is set up for **NALA**:
-- **Robot:** a 410 × 360 mm box that only drives forwards and turns on the spot. The outline comes from `config/robot.yaml` (`body_length` × `body_width`).
+- **Robot:** a 650 × 360 mm box (body + rod in front, not centred on the turning centre) that only drives forwards and turns on the spot. The outline comes from `config/robot.yaml` (`outline`: front, back, left, right).
 - **Sensor:** a scintillator 0.26 m ahead of its centre, covering a 0.6 m radius around that point. These two values are **placeholders** (the real position and size are not known yet); they come from `config/coverage.yaml`.
 
 `coverage_tool/` sits next to the repo's `config/` folder; the tool reads the robot geometry from there (`plan_cli.py --config-dir` for another folder). Without it, the built-in values above are used.
@@ -52,9 +52,9 @@ The planned path is the path of the robot's **centre** (`base_link`): that is wh
 
 **Reachable floor:** the sensor can be anywhere within 0.26 m of a position the robot centre can reach, because the robot can turn on the spot there. Floor within the coverage radius of such a point, with a clear line of sight, counts as reachable (`pipeline.sensor_reachable`).
 
-**Robot outline.** The robot radius (0.33 m) is the circle the 410 × 360 mm box turns in (its farthest corner is 0.273 m from the centre), plus 2 cm padding and a 3 cm localisation margin, rounded up to 1 cm (`settings.robot_config`). So every collision check stays a simple circle check.
+**Robot outline.** The robot radius (0.53 m) is the circle the 650 × 360 mm box turns in (its farthest corner, at the rod, is 0.478 m from the turning centre), plus 2 cm padding and a 3 cm localisation margin, rounded up to 1 cm (`settings.robot_config`). So every collision check stays a simple circle check.
 - **Independent check:** at the end, `coverage/footprint.py` moves the real box along the drivable path, forwards along every segment and turning on the spot at every corner. It counts the poses where the box overlaps anything that is not known-free (`footprint_hits`, must be 0).
-- **Narrowest passage:** the planner can only use passages of at least 2 × 0.33 m.
+- **Narrowest passage:** the planner can only use passages of at least 2 × 0.53 m.
 
 ## The cost function
 
@@ -134,7 +134,7 @@ In the test runs, different candidates win on different maps: straight lanes on 
 
 | Setting | What it does |
 |---|---|
-| Robot radius | Keeps the robot's centre at least this far from walls and obstacles. Every path segment and connection is collision-checked with it. For NALA at least the turning circle of its box (0.273 m) + 0.02 m; the default 0.33 m adds a localisation margin. |
+| Robot radius | Keeps the robot's centre at least this far from walls and obstacles. Every path segment and connection is collision-checked with it. For NALA at least the turning circle of its box (0.478 m) + 0.02 m; the default 0.53 m adds a localisation margin. |
 | Coverage radius | Radius of the area the sensor covers (0.6 m for NALA's scintillator). |
 | Sensor ahead of centre | How far the centre of the covered disk lies straight ahead of the robot centre (0.26 m for NALA; 0 for a centred brush). |
 | Overlap (0–50 %) | Loop spacing is computed automatically: **spacing = 2 × coverage radius × (1 − overlap)**. The computed value is shown under the slider. |
@@ -215,8 +215,8 @@ The planner's stats report:
 
 The export's `settings.geometry` holds `robot_radius_m`, `coverage_disk_radius_m`, `sensor_offset_m` and `footprint_m`. The robot uses them to refuse a plan made for another sensor.
 
-**On the NALA robot**, run the plan with `app3_coverage_pi.launch.py plan:=FILE`; see *App 3* in the repository README. Plan with **robot radius 0.33 m** (the default):
-- NALA refuses a path that comes within 0.293 m of a wall, and this tool's per-cell clearance check is up to half a cell more lenient than NALA's exact one;
+**On the NALA robot**, run the plan with `app3_coverage_pi.launch.py plan:=FILE`; see *App 3* in the repository README. Plan with **robot radius 0.53 m** (the default):
+- NALA refuses a path that comes within 0.498 m of a wall, and this tool's per-cell clearance check is up to half a cell more lenient than NALA's exact one;
 - NALA refuses a plan made for another base station (`PLAN_BASE_MISMATCH`);
 - NALA refuses a plan made with another `sensor_offset_m` or `coverage_disk_radius_m` (`PLAN_ROBOT_MISMATCH`).
 

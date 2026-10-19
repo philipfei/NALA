@@ -13,7 +13,6 @@ from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from PyQt5.QtTest import QTest
 from nala_panel import ui
-from conftest import REPO
 
 PARAMS = {'maps_dir': 'maps', 'fullscreen': False, 'window_width': 1024, 'window_height': 600, 'font_size': 13,
           'button_height': 52, 'update_period': 0.3, 'manual_period': 0.05, 'heatmap_width_m': 0.15, 'launch_stop_timeout': 5.0,
@@ -56,9 +55,9 @@ class FakeRun:
 
 
 @pytest.fixture
-def panel(maps_dir):
+def panel(maps_dir, config_dir):
     repo = maps_dir.parent
-    (repo / 'config').symlink_to(REPO / 'config')
+    assert config_dir == repo / 'config'      # the test robot outline (conftest.py)
     rclpy.init()
     node = Node('nala_panel_test')
     executor = MultiThreadedExecutor()

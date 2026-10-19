@@ -103,7 +103,7 @@ Used only by `scripts/tune_motors.py` (with `base_node` stopped). Details and th
   The supply cables of M2 and M3 are wired with opposite polarity to M1 and M4 in the hardware, and the firmware relies on that: do not invert M2/M3 in software.
   A positive command turns all four wheels the same way. The encoder signs did not change.
 - Encoder: 1536 counts per wheel revolution (checked 2026-10-07: 1.17 m driven = 1.17 m odometry).
-- Firmware geometry: R = 0.040 m, half track 0.160 m, half wheelbase 0.130 m (k = 0.290 m).
+- Firmware geometry: R = 0.040 m, half track 0.160 m, half wheelbase 0.1675 m (k = 0.3275 m; firmware v2.3.2, 0.130 / 0.290 before).
 
 Firmware inverse kinematics (rad/s):
 

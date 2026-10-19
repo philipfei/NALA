@@ -9,7 +9,7 @@ the 'laser' frame. base_footprint->base_link->laser comes from the robot repo's 
 started by app3_coverage_pi.launch.py): the LiDAR faces backward, so the scan is cast with the laser yaw
 from robot.yaml.
 Walls come from the map image; extra round obstacles (--obstacle x,y,r) exist only in the simulated world,
-not in the map that Nav2 loads. NALA's outer box (body_length x body_width in robot.yaml) is checked against
+not in the map that Nav2 loads. NALA's outer box (outline in robot.yaml) is checked against
 walls and obstacles at every step: a move that would make it touch something is not made and counts as a
 contact. The true pose and velocity are logged to a CSV file.
 
@@ -111,8 +111,9 @@ class FakeNala(Node):
         super().__init__('fake_nala')
         self.world = World(a.map, a.obstacle)
         robot = yaml.safe_load(open(a.config))
-        hx, hy = robot['body_length'] / 2, robot['body_width'] / 2
-        self.body = box_points([[hx, hy], [hx, -hy], [-hx, -hy], [-hx, hy]])
+        o = robot['outline']
+        self.body = box_points([[o['front'], o['left']], [o['front'], -o['right']],
+                                [-o['back'], -o['right']], [-o['back'], o['left']]])
         self.laser = (robot['laser']['x'], robot['laser']['y'], robot['laser']['yaw'])
         # nala_base settings next to robot.yaml (config/base.yaml).
         self.base = yaml.safe_load(open(Path(a.config).with_name('base.yaml')))['base_node']['ros__parameters']

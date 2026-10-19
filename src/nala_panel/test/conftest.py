@@ -23,7 +23,23 @@ def maps_dir(tmp_path):
     return tmp_path / 'maps'
 
 
+# The example room, its base station and plan were made for this outline (the robot until 2026-10-16, centred
+# 410 x 360 mm). The tests use it, so they do not depend on the real robot's outline in config/robot.yaml.
+TEST_OUTLINE = {'front': 0.205, 'back': 0.205, 'left': 0.18, 'right': 0.18}
+
+
 @pytest.fixture
-def settings():
+def config_dir(tmp_path):
+    """A copy of the repo config/ with the test robot outline."""
+    config = tmp_path / 'config'
+    shutil.copytree(REPO / 'config', config)
+    robot = yaml.safe_load((config / 'robot.yaml').read_text())
+    robot['outline'] = dict(TEST_OUTLINE)
+    (config / 'robot.yaml').write_text(yaml.safe_dump(robot))
+    return config
+
+
+@pytest.fixture
+def settings(config_dir):
     from nala_coverage.params import load_settings
-    return load_settings(REPO / 'config')
+    return load_settings(config_dir)

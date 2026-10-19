@@ -33,7 +33,8 @@ All dependencies: [requirements.yaml](requirements.yaml).
 
 ## Hardware
 
-- Chassis: 4 mecanum wheels. Outer size 410 x 360 mm (length x width).
+- Chassis: 4 mecanum wheels. Body 415 x 360 mm (length x width) centred on the wheel centre, plus a rod 235 mm in front
+  as wide as the body: outer size 650 x 360 mm, not centred on the turning centre.
   Track width 320 mm (half: 160 mm). Wheelbase 260 mm (half: 130 mm). Wheel radius 40 mm (diameter: 80 mm).
 - Motors: M1 front-left, M2 rear-left, M3 rear-right, M4 front-right. Encoders: 1536 counts per wheel revolution.
 - LiDAR: RPLIDAR A2M8 (USB, CP2102 adapter, 115200 baud), at the chassis center, facing backward. Height not measured yet.
@@ -565,7 +566,7 @@ The panel starts by itself after the Pi boots (`scripts/setup_pi_screen.sh`). By
 1. **Maps:** tap the map (every folder in `maps/` with a `map.yaml` from app 2).
 2. **New plan** tab:
    - **Set base station:** tap where the robot stands, then tap the direction it faces. It is saved as
-     `maps/<name>/base_station.yaml`. The robot needs room to turn there (0.293 m from walls), else the panel refuses.
+     `maps/<name>/base_station.yaml`. The robot needs room to turn there (0.498 m from walls), else the panel refuses.
    - **Coverage starts at:** *Base station*, or *Start point* + **Set start point** (tap). With a start point the
      robot still stands on the base station: Nav2 first drives it to the start point.
    - **Area** (optional): **Draw area**, tap the corners, **Close area**. Only the floor inside is covered.
@@ -658,16 +659,16 @@ All values in `base_footprint`/`base_link` (on the floor under the chassis centr
 
 | What | Value | From |
 |---|---|---|
-| Outer box (must never touch anything) | x +-0.205 m, y +-0.18 m | `config/robot.yaml` (`body_length` x `body_width`) |
-| Farthest corner from the centre | 0.273 m | derived |
-| Collision radius | 0.273 + 0.02 padding = **0.293 m** | `planning_padding_m` in `config/coverage.yaml` |
-| Plan robot radius (coverage_tool) | **0.33 m** | + 3 cm for localization, rounded up to 1 cm |
+| Outer box (must never touch anything) | x -0.2075 .. +0.4425 m (rod in front), y +-0.18 m | `config/robot.yaml` (`outline`: front, back, left, right) |
+| Farthest corner from the centre | 0.478 m (front corners, rod) | derived |
+| Collision radius | 0.478 + 0.02 padding = **0.498 m** | `planning_padding_m` in `config/coverage.yaml` |
+| Plan robot radius (coverage_tool) | **0.53 m** | + 3 cm for localization, rounded up to 1 cm |
 | Coverage sensor (scintillator) point | (+0.26, 0) m, static TF `scintillator_link` | `config/coverage.yaml` (**placeholder**) |
 | Sensor coverage | disk of 0.6 m radius around that point | `config/coverage.yaml` (**placeholder**) |
 
 The outline is configured once, in `robot.yaml`; `nala_coverage/params.py` and `coverage_tool` derive the rest.
-The robot turns on the spot anywhere on its path, so plans keep its centre 0.33 m from walls: the narrowest
-passage it uses is about 0.66 m. When the sensor position and size are known, change them in
+The robot turns on the spot anywhere on its path, so plans keep its centre 0.53 m from walls: the narrowest
+passage it uses is about 1.06 m. When the sensor position and size are known, change them in
 `config/coverage.yaml` and plan again: the robot refuses plans made for other sensor values.
 
 #### How the plan is driven
@@ -697,8 +698,8 @@ passage it uses is about 0.66 m. When the sensor position and size are known, ch
   command is above 0). A stop command makes the wheels coast (about 0.38 m/s^2).
 - **Heading:** like app 2, the EKF takes the turn rate only from the IMU gyro (the wheels show 10-14 % too much
   turn). AMCL corrects the remaining drift against the map.
-- **Refused:** plans closer than 0.293 m to a wall, made on another map image, for other sensor values or for
-  another base station; a base station closer than 0.293 m to a wall.
+- **Refused:** plans closer than 0.498 m to a wall, made on another map image, for other sensor values or for
+  another base station; a base station closer than 0.498 m to a wall.
 - **Obstacles the LiDAR cannot see** (lower or higher than its scan plane) are not avoided. NALA has no bumper.
 
 #### First run on the robot

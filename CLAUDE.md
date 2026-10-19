@@ -156,11 +156,11 @@ Everything below is project-specific and must be kept up to date.
 | Drive | 4 mecanum wheels |
 | Track width (left-right wheel centers, full) | 0.320 m |
 | Half track width | 0.160 m |
-| Wheelbase (front-rear axles, full) | **0.335 m** (user, 2026-10-16). Config and firmware still use 0.260 m (`base.yaml`, `config.h`): to fix together, see `docs/handover.md` section A |
-| Half wheelbase | **0.1675 m** (config still 0.130 m) |
+| Wheelbase (front-rear axles, full) | **0.335 m** (user, 2026-10-16). In `base.yaml` and firmware v2.3.2 `config.h` since 2026-10-19 (v2.3.2 not flashed yet; until then the MCU still uses 0.260 m) |
+| Half wheelbase | **0.1675 m** |
 | Wheel **radius** | 0.040 m (diameter 0.080 m) |
-| Mecanum rotation term = half track + half wheelbase | **0.3275 m** with the 335 mm wheelbase (code still 0.290 m: wheel odometry turn +12.9 %, commanded turns ~11 % slow; likely the main cause of the "10-14 % too high" wheel turn rate of 2026-10-16) |
-| Robot outer size (length x width) | 0.410 m x 0.360 m (still in `config/robot.yaml`). **Changed (user, 2026-10-16), config not updated yet:** body 0.415 m x 0.360 m, **centred on the wheel centre** (turning centre), plus a rod 0.235 m forward (tip at x = +0.4425 m) = 0.650 m total length; so the turning centre is no longer the centre of the whole outline. Track width still 0.320 m. See `docs/handover.md` section A |
+| Mecanum rotation term = half track + half wheelbase | **0.3275 m** with the 335 mm wheelbase (0.290 m before 2026-10-19: wheel odometry turn +12.9 %, commanded turns ~11 % slow; likely the main cause of the "10-14 % too high" wheel turn rate of 2026-10-16) |
+| Robot outer size (length x width) | **0.650 m x 0.360 m, not centred** (`config/robot.yaml` `outline`: front 0.4425, back 0.2075, left/right 0.18 m; since 2026-10-19). User, 2026-10-16/19: body 0.415 m x 0.360 m, **centred on the wheel centre** (turning centre), plus a rod 0.235 m forward (tip at x = +0.4425 m) = 0.650 m total length; so the turning centre is no longer the centre of the whole outline. Track width still 0.320 m. See `docs/handover.md` section A |
 | Motors | M1 front-left, M2 rear-left, M3 rear-right, M4 front-right |
 | Encoder | 1536 counts per wheel revolution (confirmed: 1.17 m driven = 1.17 m odometry, 2026-10-07) |
 | Teleop speeds | 0.45 m/s linear (= motor limit), 0.5 rad/s angular (keys and full stick; `config/teleop.yaml`; 1.0 until 2026-10-16, slower is better for SLAM) |
@@ -323,13 +323,17 @@ SLAM must not jump to a wrong but similar-looking place.
 - Xbox B pauses the task (user decision 2026-10-16): app 3 starts `joy_node` + `xbox_pause` (nala_coverage);
   on the B rising edge (`pause_button: 1`, `config/teleop.yaml`, checked 2026-10-16) it calls
   `/coverage/pause` with `call_async` (no waiting in callbacks; no service = warning only; one open request).
-- Robot outline for coverage: from `config/robot.yaml` (body_length x body_width, centred), never copied.
-  Collision radius = farthest corner + `planning_padding_m` (0.293 m); plans use 0.33 m.
+- Robot outline for coverage: from `config/robot.yaml` (`outline`: front, back, left, right of base_link; not centred:
+  rod in front, as wide as the body, below the LiDAR; user 2026-10-19), never copied. Collision radius = farthest
+  corner + `planning_padding_m` (0.478 + 0.02 = 0.498 m); plans use 0.53 m. The tests use a fixed test robot (the old
+  centred 410 x 360 mm box), so they do not depend on the real outline.
 - The panel runs `plan_cli.py` as a child process: coverage_tool's package is called `coverage`, the same
   name as the system package `python3-coverage`.
 - Speeds (`motion` in `config/coverage.yaml`): 0.12 m/s, 0.4 rad/s (start values), slowest 0.04 m/s near a goal
   (the MCU protocol has 1 mm/s steps). Acceleration limits = floor test 2026-10-16 (user decision): 0.1 m/s^2
-  (velocity gate) and 0.35 rad/s^2 (gate + RPP `max_angular_accel`, also written into `nav2_params.yaml`).
+  (velocity gate) and 0.35 rad/s^2 (velocity gate). Nav2 RPP `max_angular_accel` is its own value,
+  `controller_angular_accel_rad_s2: 3.0` (user decision 2026-10-19, handover section B): from standstill RPP allows
+  only measured rate + accel x 0.05 s, and 0.35 gave 0.0175 rad/s, below the wheels' breakaway.
   RPP has no `acc_lim_*`/`decel_lim_*` (DWB parameters): not added (user decision 2026-10-16).
 - Global costmap robot_radius = collision radius + half a cell: NavFn measures from obstacle cell centres, the
   supervisor checks planner paths exactly against cell edges (else detours and the way back can be refused).
@@ -398,7 +402,7 @@ SLAM must not jump to a wrong but similar-looking place.
 - [3] Base station: answered, a pose only (user, 2026-10-08). Still open: how exact must the return be?
 - [3] Coverage sensor (scintillator): position and size unknown. `sensor_offset_m: 0.26` and
   `coverage_disk_radius_m: 0.6` in `config/coverage.yaml` are placeholders, and the sensor is assumed not to stick
-  out of the 410 x 360 mm box. Change them and plan again when known.
+  out of the outline. Whether the rod carries it: not known yet (user, 2026-10-19). Change them and plan again when known.
 - [3] First robot tests of app 3: localization at the base station, costmaps, a short plan, an obstacle, the
   return; coverage speeds (`motion` in `config/coverage.yaml`: 0.12 m/s, 0.4 rad/s are start values; the
   acceleration limits 0.1 m/s^2 / 0.35 rad/s^2 come from the floor test). Battery check stays off
@@ -414,12 +418,13 @@ SLAM must not jump to a wrong but similar-looking place.
   2 cells, the same on the original branch. Teammate's code, not changed.
 - [3] Robot dimensions changed (user, 2026-10-16): wheelbase 0.335 m, body 0.415 x 0.360 m, rod 0.235 m in front
   (0.650 m total), turning centre not at the outline centre; track 0.320 m unchanged. The odometry scale check
-  (rear-wheel travel) stays valid. To do: half_wheelbase 0.1675 in base.yaml + firmware config.h together and repeat
-  the 360 deg turn test; body is centred on the wheel centre (user); ask rod height/width/position and whether it
-  carries the coverage sensor; then a non-centred outline in robot.yaml / params.py / coverage_tool / URDF and new plans
-  (`docs/handover.md` section A).
+  (rear-wheel travel) stays valid. Body is centred on the wheel centre (user); rod: as wide as the body, below the LiDAR
+  (user, 2026-10-19); whether it carries the coverage sensor: not known yet. Done 2026-10-19: non-centred outline in
+  robot.yaml / params.py / coverage_tool / URDF / sim, half_wheelbase 0.1675 (base.yaml + firmware v2.3.2), new plan
+  `maps/Test/plans/2026-10-19_104154` (the old plans are refused). Open: flash v2.3.2, then the 360 deg turn test.
 - [3] Long stops at corners: Nav2 RPP turn-in-place from standstill is limited to 0.0175 rad/s (measured rate +
   max_angular_accel x 0.05 s), below the breakaway -> deadlock until the progress checker gives up (15 s).
-  Fix not done (`docs/handover.md` section B).
+  Fix 2026-10-19 (user chose option A): RPP max_angular_accel 3.0 (first step 0.15 rad/s), the gate keeps 0.35.
+  Simulation OK (no stiction there, so it cannot show the deadlock); check on the robot (`docs/handover.md` B).
 - [3] DDS on the Pi uses only the 10.42.0.0/24 network (`config/cyclonedds.xml`). Check that app 3 and the
   panel also work when the PC network is not there.

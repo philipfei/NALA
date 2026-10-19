@@ -111,8 +111,10 @@ def test_default_outline_and_radius_come_from_the_robot_repo_config():
         import pytest
         pytest.skip('no robot repo config/robot.yaml next to coverage_tool (run in the integrated workspace)')
     robot = yaml.safe_load(robot_file.read_text())
-    hx, hy = robot['body_length'] / 2, robot['body_width'] / 2
+    o = robot['outline']
     g = default_settings()['geometry']
-    assert g['footprint_m'] == [[hx, hy], [hx, -hy], [-hx, -hy], [-hx, hy]]
-    corner = math.hypot(hx, hy) + g['footprint_padding_m'] + LOCALISATION_MARGIN_M
+    assert g['footprint_m'] == [[o['front'], o['left']], [o['front'], -o['right']],
+                                [-o['back'], -o['right']], [-o['back'], o['left']]]
+    corner = (math.hypot(max(o['front'], o['back']), max(o['left'], o['right']))
+              + g['footprint_padding_m'] + LOCALISATION_MARGIN_M)
     assert corner <= g['robot_radius_m'] < corner + 0.01

@@ -17,16 +17,16 @@ LOCALISATION_MARGIN_M = 0.03
 
 DEFAULTS = {
     'geometry': {
-        # Keeps the robot centre (base_link) this far from walls/obstacles. NALA's 410 x 360 mm box
-        # reaches 0.273 m from its rotation centre, so 0.273 + 0.02 padding + 0.03 localisation margin
-        # lets it rotate in place anywhere on the path. Set from config/ by robot_config().
-        'robot_radius_m': 0.33,
+        # Keeps the robot centre (base_link) this far from walls/obstacles: the outline's farthest corner
+        # + padding + localisation margin, so it can rotate in place anywhere on the path.
+        # Set from config/ by robot_config() (NALA with the rod: 0.478 + 0.02 + 0.03 -> 0.53 m).
+        'robot_radius_m': 0.53,
         # The sensor (scintillator). PLACEHOLDER values, as in config/coverage.yaml.
         'coverage_disk_radius_m': 0.6,   # radius of the area the sensor covers
         'sensor_offset_m': 0.26,         # sensor point this far straight ahead of base_link
         # NALA's outer box in base_link (x forward, y left), m; it must never touch anything.
-        # Same as robot.yaml (body_length x body_width, centred); set from config/ by robot_config().
-        'footprint_m': [[0.205, 0.18], [0.205, -0.18], [-0.205, -0.18], [-0.205, 0.18]],
+        # Same as robot.yaml (outline: front, back, left, right); set from config/ by robot_config().
+        'footprint_m': [[0.4425, 0.18], [0.4425, -0.18], [-0.2075, -0.18], [-0.2075, 0.18]],
         'footprint_padding_m': 0.02,     # the footprint check (coverage/footprint.py) keeps this margin
     },
     'spiral': {
@@ -88,9 +88,11 @@ def robot_config(settings, config_dir=CONFIG_DIR):
         return False
     with open(robot_file) as f:
         robot = yaml.safe_load(f)
-    hx, hy = float(robot['body_length']) / 2, float(robot['body_width']) / 2
+    o = robot['outline']
+    front, back, left, right = (float(o[k]) for k in ('front', 'back', 'left', 'right'))
     g = settings['geometry']
-    g['footprint_m'] = [[hx, hy], [hx, -hy], [-hx, -hy], [-hx, hy]]
+    g['footprint_m'] = [[front, left], [front, -right], [-back, -right], [-back, left]]
+    corner = max(math.hypot(x, y) for x, y in g['footprint_m'])
     padding = g['footprint_padding_m']
     coverage_file = os.path.join(config_dir, 'coverage.yaml')
     if os.path.isfile(coverage_file):
@@ -99,7 +101,7 @@ def robot_config(settings, config_dir=CONFIG_DIR):
         padding = g['footprint_padding_m'] = float(cov['planning_padding_m'])
         g['coverage_disk_radius_m'] = float(cov['coverage_disk_radius_m'])
         g['sensor_offset_m'] = float(cov['sensor_offset_m'])
-    g['robot_radius_m'] = math.ceil((math.hypot(hx, hy) + padding + LOCALISATION_MARGIN_M) * 100 - 1e-9) / 100
+    g['robot_radius_m'] = math.ceil((corner + padding + LOCALISATION_MARGIN_M) * 100 - 1e-9) / 100
     return True
 
 

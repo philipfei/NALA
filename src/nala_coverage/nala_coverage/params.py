@@ -90,7 +90,7 @@ def file_hash(path):
 _REQUIRED = {
     'geometry': {'planning_padding_m', 'coverage_disk_radius_m', 'sensor_offset_m'},
     'motion': {'linear_m_s', 'angular_rad_s', 'linear_accel_m_s2', 'angular_accel_rad_s2',
-               'manual_forward_m_s', 'manual_reverse_m_s', 'manual_angular_rad_s'},
+               'controller_angular_accel_rad_s2', 'manual_forward_m_s', 'manual_reverse_m_s', 'manual_angular_rad_s'},
     'runtime': {'map_frame', 'odom_frame', 'base_frame', 'map_yaml', 'base_station_yaml', 'output_dir'},
     'coverage': {'planning', 'localization', 'health', 'measurement', 'battery', 'deadlines',
                  'recovery', 'visualization', 'radiation', 'map_changes'},
@@ -100,14 +100,15 @@ BEHAVIOR = ('geometry', 'motion', 'planning', 'localization', 'health', 'measure
 
 
 def robot_footprint(robot):
-    """The outer box of the robot repo's robot.yaml (body_length x body_width), centred on base_link."""
+    """The outer box of the robot repo's robot.yaml (outline: front, back, left, right of base_link)."""
     try:
-        half_x, half_y = float(robot['body_length']) / 2, float(robot['body_width']) / 2
+        o = robot['outline']
+        front, back, left, right = (float(o[k]) for k in ('front', 'back', 'left', 'right'))
     except (KeyError, TypeError, ValueError):
-        raise ValueError('robot.yaml: body_length and body_width are required') from None
-    if not (half_x > 0 and half_y > 0):
-        raise ValueError('robot.yaml: body_length and body_width must be positive')
-    return [[half_x, half_y], [half_x, -half_y], [-half_x, -half_y], [-half_x, half_y]]
+        raise ValueError('robot.yaml: outline front, back, left and right are required') from None
+    if not all(v > 0 for v in (front, back, left, right)):
+        raise ValueError('robot.yaml: outline front, back, left and right must be positive')
+    return [[front, left], [front, -right], [-back, -right], [-back, left]]
 
 
 def footprint(points):
@@ -218,7 +219,7 @@ class Settings:
         controller['FollowPath'].update(
             desired_linear_vel=motion['linear_m_s'],
             rotate_to_heading_angular_vel=motion['angular_rad_s'],
-            max_angular_accel=motion['angular_accel_rad_s2'],
+            max_angular_accel=motion['controller_angular_accel_rad_s2'],
             use_regulated_linear_velocity_scaling=True,
             regulated_linear_scaling_min_radius=motion['linear_m_s'] / motion['angular_rad_s'],
             allow_reversing=False, use_rotate_to_heading=True)

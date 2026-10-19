@@ -1,6 +1,6 @@
 # Stage 3 (coverage): robot geometry for coverage, speeds, frames, and the coverage mission settings.
 # Read by nala_coverage (params.py) on the Pi and by coverage_tool on the PC.
-# The robot outline is NOT here: it comes from robot.yaml (body_length x body_width, centred on base_link).
+# The robot outline is NOT here: it comes from robot.yaml (outline: front, back, left, right of base_link).
 # Write decimal values with a point (2.0, not 2).
 /coverage_config:
   ros__parameters:
@@ -19,11 +19,16 @@
       # The MCU protocol has steps of 1 mm/s and 1 mrad/s (docs/mcu_protocol.md).
       linear_m_s: 0.12
       angular_rad_s: 0.4
-      # Acceleration limits of the velocity gate (both directions); angular also for Nav2's controller
-      # (max_angular_accel). Floor test 2026-10-16: while the command is above 0 the robot follows only
-      # 0.1-0.14 m/s^2 of deceleration; with 0.1 m/s^2 it stopped 3 mm from the goal, 0.3 deg with 0.35 rad/s^2.
+      # Acceleration limits of the velocity gate (both directions). Floor test 2026-10-16: while the command is
+      # above 0 the robot follows only 0.1-0.14 m/s^2 of deceleration; with 0.1 m/s^2 it stopped 3 mm from the
+      # goal, 0.3 deg with 0.35 rad/s^2.
       linear_accel_m_s2: 0.1
       angular_accel_rad_s2: 0.35
+      # Nav2's controller only (RPP max_angular_accel), NOT the gate. RPP limits its turn command to the MEASURED
+      # turn rate +- this x 0.05 s: with 0.35 a standing robot got 0.0175 rad/s, below the wheels' breakaway, and
+      # waited ~15 s at every corner (run 8, 2026-10-16). 3.0: first step 0.15 rad/s. The gate still ramps the
+      # real command at angular_accel_rad_s2 (user decision 2026-10-19, handover section B).
+      controller_angular_accel_rad_s2: 3.0
       manual_forward_m_s: 0.25
       manual_reverse_m_s: 0.15
       manual_angular_rad_s: 0.5

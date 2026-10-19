@@ -3,8 +3,16 @@
 # So laser z below is the height above the floor.
 # Body axes: x forward, y left, z up. Yaw: counter-clockwise seen from above, in rad.
 
-body_length: 0.410    # m, outer size front-back (only for the picture in RViz)
-body_width: 0.360     # m, outer size left-right (only for the picture in RViz)
+# The robot's outer outline: a box around the turning centre (base_link), NOT centred on it.
+# Configured only here: the coverage stack (collision radius, Nav2 footprint), coverage_tool, the URDF
+# and the simulation all read it. All values are distances from base_link to that edge, in m.
+# User, 2026-10-16/19: body 415 x 360 mm centred on the wheel centre, plus a rod 235 mm in front that is
+# as wide as the robot (650 mm total length).
+outline:
+  front: 0.4425       # m, to the rod tip: half body 0.2075 + rod 0.235
+  back: 0.2075        # m, half body
+  left: 0.180         # m, half body width (the rod is as wide as the body)
+  right: 0.180        # m
 
 laser:                # RPLIDAR A2M8 scan center
   x: 0.0              # m, at the chassis center
