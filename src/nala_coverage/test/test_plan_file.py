@@ -49,6 +49,18 @@ def test_drivable_path_is_used_and_split_at_its_stops(tmp_path,room_map):
     assert only.points==points
 
 
+def test_short_pieces_at_a_corner_become_one_turn(tmp_path,room_map):
+    # Lane east, two 5 cm aimed goals at the corner (north-east, then south), then a lane north.
+    grid=Grid.load(room_map)
+    points=[[1.,1.],[2.,1.],[2.035,1.035],[2.035,.985],[2.035,2.]]
+    path=write_plan(tmp_path,[[1.,1.],[2.,2.]],drive_path={'format':1,'points':points,'stops':[1,2,3]})
+    unmerged=load_plan(path,grid,room_map,'map',.2)['targets']
+    lane,turn,north=load_plan(path,grid,room_map,'map',.2,turn_merge_m=.06)['targets']
+    assert len(unmerged)==4 and turn.kind=='turn' and turn.points[0]==[2.,1.] and lane.end_yaw is None
+    assert [round(math.degrees(h)) for h in turn.headings]==[45,-90,90]   # aim 1, aim 2, the next lane
+    assert north.points[-1]==[2.035,2.]
+
+
 def test_stop_corners_ignore_gentle_bends():
     from nala_coverage.plan_file import stop_corners
     pts=[[0.,0.],[1.,0.],[2.,.1],[2.,1.],[3.,1.]]

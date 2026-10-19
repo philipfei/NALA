@@ -20,7 +20,7 @@ from rclpy.node import Node
 from rclpy.signals import SignalHandlerOptions
 from rclpy.time import Time
 from tf2_ros import ExtrapolationException
-from geometry_msgs.msg import PoseWithCovarianceStamped, PoseStamped
+from geometry_msgs.msg import PoseWithCovarianceStamped, PoseStamped, Twist
 from nav_msgs.msg import OccupancyGrid, Path as PathMsg
 from nav2_msgs.action import ComputePathToPose, FollowPath
 from std_msgs.msg import String
@@ -44,8 +44,8 @@ AUTO_RESUME=('POSITION_UNCERTAIN','HEADING_UNCERTAIN','SCAN_MAP_MISMATCH','LOCAL
              'COVERAGE_METER_STALE')
 # No task holds the robot: it may be moved by hand, and the locator works.
 IDLE_STATES=('IDLE','FINISHED','CANCELED','FAILED')
-ACTIVE={'BACKGROUND','CONNECT_PLAN','CONNECT','SWEEP','DWELL','PHASE_WAIT','RETURN_PLAN','RETURN','TEST_PLAN','TEST'}
-DRIVING=('CONNECT','SWEEP','RETURN','TEST')
+ACTIVE={'BACKGROUND','CONNECT_PLAN','CONNECT','SWEEP','DWELL','TURN','PHASE_WAIT','RETURN_PLAN','RETURN','TEST_PLAN','TEST'}
+DRIVING=('CONNECT','SWEEP','TURN','RETURN','TEST')
 
 
 class Supervisor(Node):
@@ -88,6 +88,8 @@ class Supervisor(Node):
         self.sweep_points=None;self.sweep_index=0;self.stuck=None
         self.worker_pool=ThreadPoolExecutor(max_workers=1);self.work=None
         self.lease_pub=self.create_publisher(String,'/coverage/lease',LATEST)
+        # Corner turns (TURN): the supervisor turns the robot on the spot itself, through the velocity gate like Nav2.
+        self.turn_pub=self.create_publisher(Twist,'/cmd_vel_nav',LATEST);self.turn_left=[]
         self.trust_pub=self.create_publisher(String,'/coverage/trust',LATEST)
         self.sample_pub=self.create_publisher(String,'/coverage/sample',LATEST)
         self.definition_pub=self.create_publisher(String,'/coverage/definition',LATCHED)
@@ -249,7 +251,7 @@ class Supervisor(Node):
         if self.mission.generation:
             self.sample_seq+=1
             self.sample_pub.publish(json_msg({'generation':self.mission.generation,'sample_seq':self.sample_seq,'stamp':self.trust_stamp,
-                'pose':pose or [0.,0.,0.],'trusted':self.trusted,'active':self.mission.state in ('CONNECT','SWEEP','DWELL','PHASE_WAIT') and not self.manual}))
+                'pose':pose or [0.,0.,0.],'trusted':self.trusted,'active':self.mission.state in ('CONNECT','SWEEP','DWELL','TURN','PHASE_WAIT') and not self.manual}))
 
     def check_nav_active(self):
         if self.nav_pending or not self.nav_state.service_is_ready():
@@ -293,7 +295,7 @@ class Supervisor(Node):
 
     def plan_preview(self,grid,start,polygon):
         plan=load_plan(self.plan_file,grid,self.settings['runtime']['map_yaml'],self.map_frame,self.collision,
-                       sensor=(self.offset,self.radius))
+                       sensor=(self.offset,self.radius),turn_merge_m=self.settings['planning']['turn_merge_length_m'])
         reachable=grid.reachable(start,self.collision,self.settings['recovery']['planner_start_tolerance_m'])
         check_base_station(plan,self.station,self.settings['planning']['plan_join_tolerance_m'])
         first=grid.cell(plan['points'][0])
@@ -378,8 +380,8 @@ class Supervisor(Node):
 
     def pause(self,reason):
         if self.mission.state not in ACTIVE and self.mission.state!='PREPARING':return
-        if self.current and self.mission.state not in ('TEST_PLAN','TEST'):
-            # Resume continues where the robot stopped on the piece.
+        if self.current and self.mission.state not in ('TEST_PLAN','TEST') and getattr(self.current,'kind','')!='turn':
+            # Resume continues where the robot stopped on the piece (a corner turn keeps its headings left).
             rest=poly_target(self.plan_remainder(),'plan');rest.end_yaw=getattr(self.current,'end_yaw',None)
             self.current=rest;self.sweep_points=None
         self.slot.cancel();self.pending_phase=None;self.mission.pause(reason,time.monotonic())
@@ -524,7 +526,8 @@ class Supervisor(Node):
         # The robot normally stands where the previous piece ended; after a detour it is driven to the rest.
         if not getattr(self.current,'connect',False) and math.dist(self.pose[:2],pts[0])<=self.settings['planning']['plan_join_tolerance_m']:
             self.begin_sweep();return
-        heading=math.atan2(pts[1][1]-pts[0][1],pts[1][0]-pts[0][0]) if len(pts)>1 else None
+        heading=math.atan2(pts[1][1]-pts[0][1],pts[1][0]-pts[0][0]) if len(pts)>1 and math.dist(pts[0],pts[1])>1e-9 else \
+            (self.current.headings[0] if getattr(self.current,'headings',None) else None)
         self.plan_to(pts[0],'CONNECT_PLAN',heading)
 
     def update_sweep_index(self):
@@ -578,8 +581,36 @@ class Supervisor(Node):
         self.mission.events.append(event)
         self.current=None;self.sweep_points=None;self.mission.state='PREPARING';self.pending_phase='NEXT';self.phase_since=now
 
+    def begin_turn(self):
+        """One continuous turn on the spot through the corner's headings (plan_file.merge_turns)."""
+        self.turn_left=list(self.current.headings);self.mission.state='TURN'
+        self.phase_since=self.target_since=self.last_motion=time.monotonic();self.motion_pose=list(self.pose)
+
+    def turn_step(self,now):
+        """Turn command for the corner turn, sent like Nav2's (the gate ramps and limits it). It slows down only
+        before the last heading turned to in the same direction, so a corner is one smooth turn."""
+        m=self.settings['motion'];tol=math.radians(m['turn_tolerance_deg']);yaw_now=self.pose[2]
+        while self.turn_left and abs(wrap(self.turn_left[0]-yaw_now))<=tol:self.turn_left.pop(0)
+        self.current.headings=list(self.turn_left)      # a pause keeps only what is left
+        if not self.turn_left:
+            self.turn_pub.publish(Twist());self.next_target();return
+        first=wrap(self.turn_left[0]-yaw_now);same=abs(first);prev=self.turn_left[0]
+        for h in self.turn_left[1:]:
+            step=wrap(h-prev)
+            if step*first<=0:break
+            same+=abs(step);prev=h
+        w=math.copysign(min(m['angular_rad_s'],math.sqrt(2*m['angular_accel_rad_s2']*same)),first)
+        msg=Twist();msg.angular.z=w;self.turn_pub.publish(msg)
+        if abs(wrap(yaw_now-self.motion_pose[2]))>=self.settings['recovery']['movement_rotation_rad']:
+            self.motion_pose=list(self.pose);self.last_motion=now
+        if now-self.last_motion>=self.settings['deadlines']['no_motion_s']:
+            # The wheels do not turn it: leave the rest of this corner, never pause the task for it.
+            self.mission.events.append({'time':now,'reason':'TURN_SKIPPED','headings_left':len(self.turn_left)})
+            self.turn_left=[];self.turn_pub.publish(Twist());self.next_target()
+
     def begin_sweep(self):
         t=self.current
+        if getattr(t,'kind','')=='turn':self.begin_turn();return
         if length(points_of(t))<self.settings['planning']['stationary_target_length_m']:
             self.mission.state='DWELL';self.phase_since=time.monotonic();return
         # The exported path is already dense with its corners rounded where that keeps every cell: follow it
@@ -719,6 +750,7 @@ class Supervisor(Node):
                     if phase in ('CONNECT_PLAN','RETURN_PLAN'):self.target_failure('PLAN_TIMEOUT')
                     else:self.pause('PLAN_TIMEOUT')
                 elif phase=='TEST' and now-self.target_since>=self.settings['deadlines']['target_s']:self.pause('TEST_TIMEOUT')
+                elif phase=='TURN':self.turn_step(now)
                 elif phase in DRIVING:
                     if self.motion_pose is None or math.dist(self.pose[:2],self.motion_pose[:2])>=self.settings['recovery']['movement_translation_m'] or abs(wrap(self.pose[2]-self.motion_pose[2]))>=self.settings['recovery']['movement_rotation_rad']:
                         self.motion_pose=list(self.pose);self.last_motion=now

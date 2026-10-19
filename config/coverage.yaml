@@ -32,6 +32,8 @@
       # Velocity gate, Nav2 only: a turn on the spot from standstill asks at least this, ramped at
       # angular_accel_rad_s2 (user decision 2026-10-19). 0.15 did not break away once; 0.35-0.4 always did.
       turn_start_rad_s: 0.3
+      # A corner turn (supervisor TURN state) counts a heading as reached within this.
+      turn_tolerance_deg: 5.0
       manual_forward_m_s: 0.25
       manual_reverse_m_s: 0.15
       manual_angular_rad_s: 0.5
@@ -46,6 +48,9 @@
     planning:
       plan_join_tolerance_m: 0.15
       stationary_target_length_m: 0.01
+      # Plan pieces up to this long (the aimed goals' 5 cm moves) are no separate Nav2 goals: with the stop before
+      # them they become one continuous turn on the spot per corner (supervisor TURN; user, 2026-10-19).
+      turn_merge_length_m: 0.06
     localization:
       position_sigma_m: 0.1
       heading_sigma_deg: 10.0

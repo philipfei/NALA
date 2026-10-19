@@ -4,7 +4,7 @@ import hashlib
 import json
 import math
 import yaml
-from .planning import poly_target
+from .planning import poly_target, points_of
 
 
 def map_image_sha256(map_yaml):
@@ -35,6 +35,31 @@ def pieces(points,stops):
     return out
 
 
+def merge_turns(targets,max_length):
+    """One turn on the spot per corner (user, 2026-10-19): plan pieces no longer than max_length (the aimed goals'
+    5 cm moves, which Nav2's 5 cm goal tolerance treats as reached anyway) are no separate goals. Together with the
+    stop before them they become one 'turn' target at that corner: the headings to turn through in order (the
+    aims' headings, then the heading of the next piece). The piece before it ends without its own final turn."""
+    out=[]
+    for t in targets:
+        pts=points_of(t)
+        short=out and _length(pts)<=max_length
+        if short and getattr(out[-1],'kind','')!='turn':
+            prev=out[-1];end=points_of(prev)[-1]
+            turn=poly_target([list(end),list(end)],'turn');turn.headings=[];turn.end_yaw=None
+            if prev.end_yaw is not None:turn.headings.append(prev.end_yaw)
+            prev.end_yaw=None;out.append(turn)
+        if short:
+            if t.end_yaw is not None:out[-1].headings.append(t.end_yaw)
+            continue
+        out.append(t)
+    return out
+
+
+def _length(pts):
+    return sum(math.dist(a,b) for a,b in zip(pts,pts[1:]))
+
+
 def check_base_station(plan,station,tolerance):
     """Refuse a plan made for another base station (PLAN_BASE_MISMATCH). Plans without one are accepted."""
     if plan['base_station'] is not None and math.dist(plan['base_station'][:2],station[:2])>tolerance:
@@ -42,7 +67,7 @@ def check_base_station(plan,station,tolerance):
                          f'the base station is now {list(station[:2])}; plan again')
 
 
-def load_plan(path,grid,map_yaml,map_frame,collision,sensor=None):
+def load_plan(path,grid,map_yaml,map_frame,collision,sensor=None,turn_merge_m=None):
     """Return the plan's driven path and its pieces between stop corners, or raise ValueError naming the problem.
 
     A coverage_tool export with `drive_path` gives the exact path to follow (corners rounded where that
@@ -50,7 +75,7 @@ def load_plan(path,grid,map_yaml,map_frame,collision,sensor=None):
     joined by straight lines and every corner of 20 degrees or more is a stop.
 
     `sensor` = (offset, radius) of this robot's coverage sensor: a plan made for another sensor covers
-    different floor, so it is rejected (PLAN_ROBOT_MISMATCH)."""
+    different floor, so it is rejected (PLAN_ROBOT_MISMATCH). `turn_merge_m`: merge_turns() with that length."""
     path=Path(path)
     if not path.is_file():raise ValueError('PLAN_FILE_MISSING: '+str(path))
     text=path.read_text()
@@ -99,6 +124,8 @@ def load_plan(path,grid,map_yaml,map_frame,collision,sensor=None):
     try:area=[[float(p[0]),float(p[1])] for p in area] if area else None
     except (TypeError,ValueError,IndexError):raise ValueError('PLAN_FILE_INVALID: area_polygon needs [x, y] corners') from None
     if area is not None and len(area)<3:raise ValueError('PLAN_FILE_INVALID: area_polygon needs at least 3 corners')
-    return {'points':points,'stops':stops,'targets':pieces(points,stops),'drivable':isinstance(drive,dict),
+    targets=pieces(points,stops)
+    if turn_merge_m is not None:targets=merge_turns(targets,turn_merge_m)
+    return {'points':points,'stops':stops,'targets':targets,'drivable':isinstance(drive,dict),
             'robot_radius':robot_radius,'base_station':station,'area':area,
             'plan_sha256':hashlib.sha256(text.encode()).hexdigest()}

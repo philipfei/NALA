@@ -75,6 +75,7 @@ class FakeInputs(Node):
         super().__init__('isolated_fake_robot')
         self.settings=node_settings(self)
         self.battery=.8;self.x=2.;self.y=2.;self.yaw=0.;self.pose_bad=False
+        self.turns=False   # True: the fake robot turns with the gate's angular command (corner turn tests)
         self.publish_scan=True;self.scan_ahead=0.;self.tf_lag=0.;self.battery_enabled=True;self.publish_trust=True;self.request_owner='NONE';self.epoch='test'
         self.outputs=[];self.final=(0.,0.)
         # Stands in for locator_node: where the robot is found, and whether it is on the base station.
@@ -93,8 +94,10 @@ class FakeInputs(Node):
     def command(self,msg):self.outputs.append((time.monotonic(),msg.linear.x,msg.angular.z));self.final=(msg.linear.x,msg.angular.z)
     def tick(self):
         stamp=self.get_clock().now().to_msg()
+        if self.turns:self.yaw=math.remainder(self.yaw+self.final[1]*.05,2*math.pi)
+        qz,qw=math.sin(self.yaw/2),math.cos(self.yaw/2)
         od=Odometry();od.header.stamp=stamp;od.header.frame_id='odom';od.child_frame_id='base_footprint'
-        od.pose.pose.position.x=self.x;od.pose.pose.position.y=self.y;od.pose.pose.orientation.w=1.;self.pubs['odom'].publish(od)
+        od.pose.pose.position.x=self.x;od.pose.pose.position.y=self.y;od.pose.pose.orientation.z=qz;od.pose.pose.orientation.w=qw;self.pubs['odom'].publish(od)
         if self.battery_enabled:
             bat=BatteryState();bat.header.stamp=stamp;bat.percentage=self.battery;self.pubs['battery_state'].publish(bat)
         if self.publish_scan:
@@ -103,7 +106,7 @@ class FakeInputs(Node):
             scan.header.stamp=Time(nanoseconds=self.get_clock().now().nanoseconds+int(self.scan_ahead*1e9)).to_msg()
             scan.angle_increment=2*math.pi/180;scan.range_min=.1;scan.range_max=12.
             # Distance to the walls of the 4 m box (vectorised: a slow fake scan goes stale on a busy PC).
-            a=scan.angle_min+np.arange(180)*scan.angle_increment;c,s=np.cos(a),np.sin(a)
+            a=scan.angle_min+np.arange(180)*scan.angle_increment+self.yaw;c,s=np.cos(a),np.sin(a)
             dist=np.full((4,180),np.inf)
             with np.errstate(divide='ignore',invalid='ignore'):
                 for row,(boundary,coordinate,velocity) in enumerate([(3.95,self.x,c),(.05,self.x,c),(3.95,self.y,s),(.05,self.y,s)]):
@@ -111,11 +114,11 @@ class FakeInputs(Node):
                     dist[row]=np.where((np.abs(velocity)>1e-9)&(d>0),d,np.inf)
             scan.ranges=dist.min(axis=0).astype(float).tolist();self.pubs['scan'].publish(scan)
         transforms=[]
-        for parent,child,x,y in [('map','odom',0.,0.),('odom','base_footprint',self.x,self.y),('base_footprint','base_link',0.,0.),('base_link','laser',0.,0.)]:
+        for parent,child,x,y,z,w in [('map','odom',0.,0.,0.,1.),('odom','base_footprint',self.x,self.y,qz,qw),('base_footprint','base_link',0.,0.,0.,1.),('base_link','laser',0.,0.,0.,1.)]:
             # tf_lag > 0: the TF is older than the other messages (on the robot the EKF lags under load).
             t=TransformStamped();t.header.stamp=Time(nanoseconds=self.get_clock().now().nanoseconds-int(self.tf_lag*1e9)).to_msg()
             t.header.frame_id=parent;t.child_frame_id=child
-            t.transform.translation.x=x;t.transform.translation.y=y;t.transform.rotation.w=1.;transforms.append(t)
+            t.transform.translation.x=x;t.transform.translation.y=y;t.transform.rotation.z=z;t.transform.rotation.w=w;transforms.append(t)
         self.pubs['tf'].publish(TFMessage(transforms=transforms))
         am=PoseWithCovarianceStamped();am.header.stamp=stamp;am.header.frame_id='map';am.pose.pose=od.pose.pose
         # pose_bad: sigma 0.25 m, over 2x the 0.10 m limit (lost even while the scan fits the map).
@@ -305,7 +308,7 @@ class FakeRadiation(Node):
         m.data=np.where(mask,cost,0).astype(np.int8).ravel().tolist();self.keepout.publish(m)
 
 
-def run_plan(ros,poses,drive=None,block_at=None,base_station=None,radiation=None,keepout=None,during=None):
+def run_plan(ros,poses,drive=None,block_at=None,base_station=None,radiation=None,keepout=None,during=None,turns=False):
     """Drive an exported plan through fake planner and controller servers.
 
     FollowPath moves the fake robot along exactly the path it is given. With `block_at` the first goal that
@@ -322,6 +325,7 @@ def run_plan(ros,poses,drive=None,block_at=None,base_station=None,radiation=None
     plan.write_text(yaml.safe_dump(data))
     gate=add(SafetyGate());sup=add(Supervisor());meter=add(CoverageMeter());fake=add(FakeInputs())
     fake.request_owner=None;fake.publish_trust=False;fake.publish_map(sup.base);sup.plan_file=str(plan)
+    fake.turns=turns
     if radiation is not None:
         add(radiation);sup.settings['radiation']['enabled']=True
         if keepout is not None:radiation.publish_keepout(sup.base,keepout)
@@ -403,6 +407,21 @@ def test_pause_while_recalculating_is_a_real_pause(ros):
     assert sup.auto_resumable(time.monotonic())
     sup.pause_service()
     assert sup.mission.state=='PAUSED' and sup.mission.reason=='OPERATOR_PAUSE' and not sup.auto_resumable(time.monotonic())
+
+
+def test_a_corner_is_one_continuous_turn_not_separate_goals(ros):
+    # Lane east, a 5.7 cm aimed goal towards the south-east corner, then the next lane north: the aim is no
+    # separate Nav2 goal; the supervisor turns the robot on the spot to -45 deg and then to +90 deg.
+    turned=[]
+    def turning(sup):
+        if sup.mission.state=='TURN':turned.append(list(sup.turn_left))
+    pts=[[2.,2.],[2.6,2.],[2.64,1.96],[2.64,2.6]]
+    sup,follows,_,_=run_plan(ros,[[2.,2.],[2.64,2.6]],drive={'format':1,'points':pts,'stops':[1,2]},during=turning,turns=True)
+    assert sup.mission.state=='FINISHED' and sup.mission.reason=='RETURNED_TO_BASE',(sup.mission.state,sup.mission.events)
+    assert turned and [round(math.degrees(h)) for h in turned[0]]==[-45,90]
+    lanes=[p for _,p,_ in follows[:-1]]                       # the last follow is the way back
+    assert len(lanes)==2 and all(math.dist(p[0],p[-1])>.5 for p in lanes)   # no goal for the 5.7 cm aim
+    assert not any(e.get('reason')=='TURN_SKIPPED' for e in sup.mission.events)
 
 
 def test_plan_check_is_saved_and_used_again_until_the_plan_changes(ros):

@@ -336,6 +336,13 @@ SLAM must not jump to a wrong but similar-looking place.
   map (68 m2): first check ~19 s, then ~1 s. AMCL is restarted when the locator's pose and AMCL differ by more than
   locator.base_tolerance_m/deg (not against the base station pose: that restarted AMCL every 2 s and dropped the
   plan check when the robot stood 10-15 cm off).
+- Corner turns (user, 2026-10-19): plan pieces up to planning.turn_merge_length_m (the aims' 5 cm moves) are no
+  Nav2 goals; plan_file.merge_turns joins them with the stop before into one 'turn' target, and the supervisor
+  (state TURN) turns the robot on the spot through all its headings itself, via /cmd_vel_nav and the velocity gate,
+  slowing only before the last heading in one direction. No motion for no_motion_s skips the rest of the turn
+  (TURN_SKIPPED), never a pause. Simulation room Test: 1 standstill > 0.4 s in the whole run.
+- Reversing out of corners: not built. A 90 deg corner needs none (the plan keeps 0.53 m = turning room; with the
+  placeholder sensor the turn sweeps the corner). To plan with the user if the real sensor is much smaller.
 - Map screen: no zoom buttons (they did not work on the robot screen; pinch and drag do; user 2026-10-19).
 - Auto-resume (user, 2026-10-19: rather localize longer than stop with an error): a pause for a localization or
   late-data reason (`AUTO_RESUME` in supervisor.py) ends by itself once trust is back (settle_s), within
