@@ -318,7 +318,7 @@ NALA/
     │   └── msg/
     │       └── CountRate.msg              [3] Scintillator reading: counts per second over an interval (docs/scintillator.md)
     │
-    └── nala_panel/                        Robot screen for app 3 (PyQt5): maps, base station, planning, driving
+    └── nala_panel/                        Robot screen (PyQt5): app 3 (maps, base station, planning, driving), apps 1 and 2
         ├── package.xml                    [3] Package manifest
         ├── setup.py                       [3] Python package setup and node entry points
         ├── setup.cfg                      [3] Install paths for ros2 run
@@ -326,20 +326,23 @@ NALA/
         │   └── nala_panel                 (empty) [3] ament index marker. Stays empty
         ├── nala_panel/
         │   ├── __init__.py                (empty) [3] Python package marker. Stays empty
+        │   ├── apps.py                    [1][2] Start/stop app 1 / app 2 from the screen, app 2's live map, save_map.sh,
+        │   │                                  map name check (no Qt)
         │   ├── library.py                 [3] Map library: maps, base station, plans, can a plan be driven, last run (no ROS, no Qt)
         │   ├── planning.py                [3] Run coverage_tool/plan_cli.py, check start and area, cancel (no Qt)
         │   ├── drive.py                   [3] Start/stop app 3, follow its state and the radiation data; Start/Pause/Resume/
         │   │                                  Go home/STOP, mark checked, hand control (no Qt)
         │   ├── mapwidget.py               [3] Map drawing (QPainter): coverage, heatmap, keepout, actual trail, hotspots, robot; touch
         │   ├── style.py                   [3] Colours and stylesheet after the scan screen design
-        │   └── ui.py                      [3] The screens: Maps, Map (plans, new plan, results), Planning, Scan
+        │   └── ui.py                      [3] The screens: Maps, Map (plans, new plan, results), Planning, Scan; App (apps 1
+        │                                      and 2) with an on-screen keyboard for the map name
         └── test/
             ├── conftest.py                [3] Test map library (the example room map)
             ├── test_library.py            [3] Unit tests for library.py
             ├── test_planning.py           [3] Planning tests (one real plan on a small map, about 1 minute)
             ├── test_drive.py              [3] Loopback ROS tests of the drive session with fake app 3 services
             └── test_ui.py                 [3] Screen tests without a display: every screen fits 1024 x 600, taps, hotspot sheet,
-                                               go home (NALA_PANEL_SHOTS=<dir> saves screenshots)
+                                               go home, apps 1 and 2, map names (NALA_PANEL_SHOTS=<dir> saves screenshots)
 ```
 
 `ref/` (the previous team's code) exists only on the development machine. It is not in git.
@@ -447,6 +450,13 @@ source ~/NALA/config/ros_env.sh
 
 ### App 1: teleop (keyboard or Xbox controller)
 
+**On the robot screen** (no terminal needed): tap **Drive (app 1)** on the map list. App 1 starts at once; drive
+with the Xbox controller (below). **STOP** stops app 1 (the motors stop), **Start** starts it again, **Back** stops it
+and returns to the map list. Only one app runs at a time: if app 1, 2 or 3 is already running (e.g. started over
+ssh), the screen says so and does not start another one.
+
+**Or over ssh:**
+
 **Pi terminal** (`ssh nala@nala.local`):
 
 ```bash
@@ -515,6 +525,13 @@ Parameter names: `kp`, `ki`, `i_limit`, `accel_limit`, `ff_speed0`..`ff_speed9` 
 `ff_m1_pwm0`..`ff_m1_pwm9` .. `ff_m4_pwm0`..`ff_m4_pwm9` (one row per motor).
 
 ### App 2: mapping
+
+**On the robot screen** (no terminal needed): tap **Make a map (app 2)** on the map list. App 2 starts at once and
+the map grows on the screen, with the robot on it; drive with the Xbox controller (as in app 1). Tap **Save map**,
+type the name on the on-screen keyboard (letters, digits, - and _; a date/time name is filled in) and **Save**:
+the map is saved like `save_map.sh` does and appears in the map list for app 3. **STOP** / **Back** as in app 1.
+
+**Or over ssh:**
 
 **Pi terminal 1** (`ssh nala@nala.local`): app 1 + robot model + LiDAR + IMU + EKF + SLAM
 

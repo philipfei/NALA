@@ -244,3 +244,71 @@ def test_map_widget_tap_drag_and_pinch(panel):
     scale = view.scale
     view.zoom(2.0)
     assert view.scale == pytest.approx(2 * scale)
+
+
+def test_app1_and_app2_start_from_buttons_and_app2_saves_a_named_map(panel, monkeypatch, maps_dir):
+    from nala_coverage.geometry import Grid
+    from nala_panel import apps
+    window, app = panel
+    s = window.apps
+    started, saved, running, busy = [], [], [False], [[]]
+    monkeypatch.setattr(s, 'start', lambda a: (started.append(a), running.__setitem__(0, True)))
+    monkeypatch.setattr(s, 'stop', lambda: running.__setitem__(0, False))
+    monkeypatch.setattr(s, 'running', lambda: running[0])
+    monkeypatch.setattr(s, 'busy', lambda: busy[0])
+    monkeypatch.setattr(s, 'driver_ok', lambda: True)
+    monkeypatch.setattr(s, 'robot_pose', lambda: (1.5, -2.5, 0.3))
+    def press(text):
+        [b] = [b for b in window.findChildren(QtWidgets.QPushButton) if b.text() == text and b.isVisible()]
+        b.click()
+        app.processEvents()
+    from PyQt5 import QtWidgets
+    # App 1 from the map list: started at once, Xbox instructions, STOP stops it.
+    press('Drive (app 1)')
+    assert window.stack.currentWidget() is window.app and started == ['app1']
+    window.tick();app.processEvents()
+    assert 'Running' in window.app.status.text() and not window.app.save_map_button.isVisible()
+    shot(window, '10_app1')
+    press('STOP')
+    assert not running[0] and window.app.start_button.isVisible()
+    press('Back')
+    assert window.stack.currentWidget() is window.maps
+    # Another app already runs (e.g. started over ssh): not started.
+    busy[0] = ['base_node']
+    press('Make a map (app 2)')
+    assert started == ['app1'] and 'Another app is running' in window.app.detail.text()
+    press('Back')
+    # App 2: the growing map and the robot on it, then Save map with a typed name.
+    busy[0] = []
+    press('Make a map (app 2)')
+    assert started == ['app1', 'app2']
+    s.grid = Grid.load(maps_dir / 'room' / 'map.yaml')
+    window.tick();app.processEvents()
+    assert window.app.view.grid is s.grid and window.app.view.robot == (1.5, -2.5, 0.3)
+    assert 'Map so far' in window.app.detail.text()
+    shot(window, '11_app2')
+    press('Save map')
+    kb = window.app.keyboard
+    assert window.app.pages.currentIndex() == 1 and kb.text.startswith('map_') and window.app.save_button.isEnabled()
+    shot(window, '12_app2_name')
+    kb.set_text('')
+    assert not window.app.save_button.isEnabled()
+    for ch in 'room':
+        kb.type(ch)
+    assert 'exists already' in window.app.name_problem.text() and not window.app.save_button.isEnabled()
+    kb.type('2')
+    assert kb.text == 'room2' and window.app.save_button.isEnabled()
+    monkeypatch.setattr(s, 'save_map', lambda name: saved.append(name))
+    monkeypatch.setattr(s, 'poll_save', lambda: (True, 'Saved: maps/room2'))
+    press('Save')
+    assert saved == ['room2'] and 'Saved as room2' in window.app.detail.text()
+
+
+def test_map_names_must_be_safe_folder_names(tmp_path):
+    from nala_panel import apps
+    (tmp_path / 'house1').mkdir()
+    assert apps.name_problem('house_2-b', tmp_path) == ''
+    assert apps.name_problem('house1', tmp_path).startswith('A map called')
+    for bad in ('', 'a b', '../x', 'x' * 41, 'kamer/1'):
+        assert apps.name_problem(bad, tmp_path) == 'Use 1-40 letters, digits, - or _'
+

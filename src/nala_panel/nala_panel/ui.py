@@ -1,6 +1,7 @@
-"""Touchscreen panel for app 3 (PyQt5), styled after the scan screen design (Scan_screen_visualiser.html).
+"""Touchscreen panel for the robot (PyQt5), styled after the scan screen design (Scan_screen_visualiser.html).
 
-Screens: Maps -> Map (plans, new plan, last results) -> Planning -> Scan.
+Screens: Maps -> Map (plans, new plan, last results) -> Planning -> Scan (app 3); Maps -> App (app 1: drive with
+the Xbox controller, app 2: make a map and save it, with an on-screen keyboard for its name).
 The Scan screen shows where the robot actually was (trusted measured poses), what the sensor covered and what
 the scintillator measured (heatmap, numbered hotspots), with Start / Pause / Stop and go home / STOP.
 Sizes come from config/panel.yaml.
@@ -18,7 +19,7 @@ from rclpy.parameter import Parameter
 from PyQt5 import QtCore, QtGui, QtWidgets
 from nala_coverage.geometry import Grid
 from nala_coverage.params import load_settings
-from . import library, planning, style
+from . import apps, library, planning, style
 from .drive import DriveSession, plain_state
 from .mapwidget import MapWidget
 
@@ -106,6 +107,8 @@ class MapsScreen(QtWidgets.QWidget):
         title = QtWidgets.QHBoxLayout()
         title.addWidget(label('<b>NALA</b> - choose a map', wrap=False))
         title.addStretch()
+        title.addWidget(button('Drive (app 1)', lambda: panel.start_app('app1')))
+        title.addWidget(button('Make a map (app 2)', lambda: panel.start_app('app2')))
         title.addWidget(button('Refresh', self.refresh))
         layout.addLayout(title)
         self.list = QtWidgets.QListWidget()
@@ -128,8 +131,8 @@ class MapsScreen(QtWidgets.QWidget):
             item = QtWidgets.QListWidgetItem(icon, f'{entry.name}\n{plans} plan{"s" if plans != 1 else ""}')
             item.setData(QtCore.Qt.UserRole, entry)
             self.list.addItem(item)
-        self.empty.setText('' if maps else f'No maps in {self.panel.maps_dir}. Make one with app 2 over ssh '
-                           '(scripts/save_map.sh <name>); it appears here.')
+        self.empty.setText('' if maps else f'No maps in {self.panel.maps_dir}. Make one with "Make a map (app 2)"; '
+                           'it appears here.')
 
 
 class MapScreen(QtWidgets.QWidget):
@@ -883,6 +886,188 @@ class ScanScreen(QtWidgets.QWidget):
         self.panel.open_map(self.entry)
 
 
+class Keyboard(QtWidgets.QWidget):
+    """On-screen keyboard for a map name (letters, digits, - and _: the name becomes a folder)."""
+    ROWS = ('1234567890', 'qwertyuiop', 'asdfghjkl', 'zxcvbnm-_')
+
+    def __init__(self, on_change):
+        super().__init__()
+        self.text, self.on_change, self.upper = '', on_change, False
+        grid = QtWidgets.QGridLayout(self)
+        grid.setSpacing(6)
+        self.keys = []
+        for r, row in enumerate(self.ROWS):
+            for c, ch in enumerate(row):
+                b = QtWidgets.QPushButton(ch)
+                b.setFocusPolicy(QtCore.Qt.NoFocus)
+                b.setStyleSheet('padding: 0px;')        # 10 keys a row must fit next to the side panel
+                b.setMinimumWidth(40)
+                b.clicked.connect(lambda _, k=ch: self.type(k))
+                grid.addWidget(b, r, c)
+                self.keys.append(b)
+        self.shift = button('Shift', self.toggle_shift)
+        delete = button('Del', self.delete)
+        for b in (self.shift, delete):
+            b.setStyleSheet('padding: 0px;')
+        grid.addWidget(self.shift, 3, 9)
+        grid.addWidget(delete, 2, 9)
+
+    def type(self, ch):
+        self.set_text(self.text + (ch.upper() if self.upper else ch))
+
+    def delete(self):
+        self.set_text(self.text[:-1])
+
+    def toggle_shift(self):
+        self.upper = not self.upper
+        for b in self.keys:
+            b.setText(b.text().upper() if self.upper else b.text().lower())
+
+    def set_text(self, text):
+        self.text = text
+        self.on_change(text)
+
+
+class AppScreen(QtWidgets.QWidget):
+    """App 1 (drive with the Xbox controller) or app 2 (make a map, then save it under a typed name)."""
+    TITLES = {'app1': 'Drive (app 1)', 'app2': 'Make a map (app 2)'}
+    XBOX = ('Xbox controller: hold <b>LB</b> to drive, then let both sticks go to the centre once. Left stick: '
+            'forward / back and sideways, right stick: turn. Release LB = stop.')
+
+    def __init__(self, panel):
+        super().__init__()
+        self.panel = panel
+        self.session = panel.apps
+        self.app = None
+        lay = QtWidgets.QHBoxLayout(self)
+        lay.setContentsMargins(8, 8, 8, 8)
+        self.pages = QtWidgets.QStackedWidget()                 # the live map (app 2) or the name keyboard
+        self.view = MapWidget()
+        self.pages.addWidget(self.view)
+        name_page = QtWidgets.QWidget()
+        nl = QtWidgets.QVBoxLayout(name_page)
+        self.name = label('', name='status')                   # wraps: a 40-character name must fit the screen
+        nl.addWidget(label('Name of the new map:', wrap=False))
+        nl.addWidget(self.name)
+        self.name_problem = label(name='mute')
+        nl.addWidget(self.name_problem)
+        self.keyboard = Keyboard(self._name_changed)
+        nl.addWidget(self.keyboard)
+        row = QtWidgets.QHBoxLayout()
+        row.addWidget(button('Cancel', lambda: self.pages.setCurrentIndex(0)))
+        self.save_button = button('Save', self.save, 'primary')
+        row.addWidget(self.save_button)
+        nl.addLayout(row)
+        self.pages.addWidget(name_page)
+        self.info = label()                                      # app 1: no map, the instructions instead
+        self.info.setAlignment(QtCore.Qt.AlignTop)
+        self.pages.addWidget(self.info)
+        lay.addWidget(self.pages, 1)
+        side = QtWidgets.QFrame()
+        side.setObjectName('side')
+        side.setFixedWidth(330)
+        sl = QtWidgets.QVBoxLayout(side)
+        head = QtWidgets.QHBoxLayout()
+        self.title = label(wrap=False)
+        head.addWidget(self.title, 1)
+        head.addWidget(button('Back', self.back))
+        sl.addLayout(head)
+        self.status = label(name='status')
+        sl.addWidget(self.status)
+        self.detail = label(name='mute')
+        sl.addWidget(self.detail)
+        self.xbox = label(self.XBOX, name='mute')
+        sl.addWidget(self.xbox)
+        sl.addStretch()
+        self.save_map_button = button('Save map', self.ask_name, 'dark')
+        sl.addWidget(self.save_map_button)
+        self.start_button = button('Start', self.start, 'primary')
+        sl.addWidget(self.start_button)
+        self.stop_button = button('STOP', self.stop, 'stop')
+        sl.addWidget(self.stop_button)
+        lay.addWidget(side)
+        self.message = ''
+
+    def begin(self, app):
+        self.app, self.message = app, ''
+        self.title.setText(f'<b>{self.TITLES[app]}</b>')
+        self.pages.setCurrentIndex(0 if app == 'app2' else 2)
+        if app == 'app1':
+            self.info.setText('<b>Drive the robot with the Xbox controller.</b><br><br>' + self.XBOX +
+                              '<br><br>STOP stops app 1 at once (the motors stop).')
+        self.xbox.setVisible(app == 'app2')
+        self.view.set_grid(Grid.from_cells(np.full((2, 2), -1, np.int8), .05, (0., 0., 0.)))
+        self.start()
+
+    def start(self):
+        busy = self.session.busy()
+        if busy:
+            self.message = 'Another app is running (' + ', '.join(busy) + '). Stop it first.'
+        else:
+            self.session.start(self.app)
+            self.message = ''
+        self.refresh()
+
+    def stop(self):
+        self.session.stop()
+        self.message = 'Stopped.'
+        self.refresh()
+
+    def back(self):
+        self.session.stop()
+        self.panel.show_maps()
+
+    def ask_name(self):
+        self.keyboard.set_text(datetime.datetime.now().strftime('map_%Y-%m-%d_%H%M'))
+        self.pages.setCurrentIndex(1)
+        self.refresh()
+
+    def _name_changed(self, text):
+        self.name.setText(text or ' ')
+        problem = apps.name_problem(text, self.panel.maps_dir)
+        self.name_problem.setText(problem)
+        self.save_button.setEnabled(not problem)
+
+    def save(self):
+        self.session.save_map(self.keyboard.text)
+        self.pages.setCurrentIndex(0)
+        self.refresh()
+
+    def refresh(self):
+        s = self.session
+        running = s.running()
+        result = s.poll_save()
+        if result is not None:
+            ok, line = result
+            self.message = (f'Saved as {self.keyboard.text}: it is now in the map list (for app 3).' if ok
+                            else f'Not saved: {line}')
+        if not running:
+            text = 'Not running.'
+        elif not s.driver_ok():
+            text = 'Starting... (waiting for the motor driver)'
+        elif s.saving is not None:
+            text = 'Saving the map...'
+        else:
+            text = 'Running: drive with the Xbox controller.'
+        self.status.setText(text)
+        detail = []
+        if self.app == 'app2' and s.grid is not None:
+            if s.grid is not self.view.grid:
+                self.view.set_grid(s.grid, fit=s.grid.cells.shape != self.view.grid.cells.shape)
+            seen = int((s.grid.cells >= 0).sum()) * s.grid.resolution ** 2
+            detail.append(f'Map so far: {seen:.0f} m\u00b2 seen. Drive slowly, turn slowly.')
+        if self.app == 'app2':
+            self.view.refresh(robot=s.robot_pose() if running else None)
+        if self.message:
+            detail.append(self.message)
+        self.detail.setText('<br>'.join(detail))
+        self.start_button.setVisible(not running)
+        self.stop_button.setEnabled(running)
+        self.save_map_button.setVisible(self.app == 'app2')
+        self.save_map_button.setEnabled(running and s.grid is not None and s.saving is None
+                                        and self.pages.currentIndex() == 0)
+
+
 class Panel(QtWidgets.QMainWindow):
     def __init__(self, node, executor, params):
         super().__init__()
@@ -894,6 +1079,8 @@ class Panel(QtWidgets.QMainWindow):
         self.session = DriveSession(repo / 'config', params['hardware'], params['launch_stop_timeout'],
                                     params['preview_retry'])
         executor.add_node(self.session)
+        self.apps = apps.AppSession(repo, params['launch_stop_timeout'])
+        executor.add_node(self.apps)
         self.setWindowTitle('NALA')
         self.stack = QtWidgets.QStackedWidget()
         self.setCentralWidget(self.stack)
@@ -901,7 +1088,8 @@ class Panel(QtWidgets.QMainWindow):
         self.map = MapScreen(self)
         self.planning = PlanningScreen(self)
         self.scan = ScanScreen(self)
-        for screen in (self.maps, self.map, self.planning, self.scan):
+        self.app = AppScreen(self)
+        for screen in (self.maps, self.map, self.planning, self.scan, self.app):
             self.stack.addWidget(screen)
         self.timer = QtCore.QTimer(self)
         self.timer.timeout.connect(self.tick)
@@ -922,6 +1110,10 @@ class Panel(QtWidgets.QMainWindow):
         self.planning.begin(entry, planning.PlanRun(cmd, out_yaml, out_png))
         self.stack.setCurrentWidget(self.planning)
 
+    def start_app(self, app):
+        self.stack.setCurrentWidget(self.app)
+        self.app.begin(app)
+
     def start_drive(self, entry, plan):
         self.stack.setCurrentWidget(self.scan)
         self.scan.begin(entry, plan, self.map.grid, self.map.station)
@@ -932,11 +1124,14 @@ class Panel(QtWidgets.QMainWindow):
             self.planning.poll()
         elif current is self.scan:
             self.scan.refresh()
+        elif current is self.app:
+            self.app.refresh()
 
     def closeEvent(self, event):
         if self.planning.run is not None and not self.planning.run.done():
             self.planning.run.cancel()
         self.session.stop_launch()
+        self.apps.close()
         super().closeEvent(event)
 
 

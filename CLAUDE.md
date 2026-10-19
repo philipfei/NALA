@@ -343,6 +343,12 @@ SLAM must not jump to a wrong but similar-looking place.
   (TURN_SKIPPED), never a pause. Simulation room Test: 1 standstill > 0.4 s in the whole run.
 - Reversing out of corners: not built. A 90 deg corner needs none (the plan keeps 0.53 m = turning room; with the
   placeholder sensor the turn sweeps the corner). To plan with the user if the real sensor is much smaller.
+- Apps 1 and 2 on the robot screen (user, 2026-10-19): buttons "Drive (app 1)" and "Make a map (app 2)" on the map
+  list (`nala_panel/apps.py`, `ui.AppScreen`). They start the same launch files as over ssh (log in `log/`), STOP /
+  Back stop them with Ctrl-C. Driving only with the Xbox controller (user: no on-screen arrows). App 2 shows the live
+  /map with the robot (TF map -> base_footprint) and saves with scripts/save_map.sh; the name is typed on an
+  on-screen keyboard (user), letters/digits/-/_ only, never an existing map. A start is refused while another app's
+  nodes (base_node, slam_toolbox, coverage_supervisor, velocity gate) run.
 - Map screen: no zoom buttons (they did not work on the robot screen; pinch and drag do; user 2026-10-19).
 - Auto-resume (user, 2026-10-19: rather localize longer than stop with an error): a pause for a localization or
   late-data reason (`AUTO_RESUME` in supervisor.py) ends by itself once trust is back (settle_s), within

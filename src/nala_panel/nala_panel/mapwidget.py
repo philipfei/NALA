@@ -88,7 +88,8 @@ class MapWidget(QtWidgets.QWidget):
         # No zoom buttons: they did not work on the robot screen, the touch gestures do (user, 2026-10-19).
 
     # ---------------------------------------------------------------- data
-    def set_grid(self, grid):
+    def set_grid(self, grid, fit=True):
+        """fit: zoom to the whole map (False keeps the view, e.g. for app 2's growing map of the same size)."""
         self.grid = grid
         rgba = np.zeros(grid.cells.shape + (4,), np.uint8)
         rgba[:] = colour(style.BG)
@@ -99,7 +100,10 @@ class MapWidget(QtWidgets.QWidget):
         self.trail, self.plan, self.route, self.hotspots = [], [], [], []
         self.robot = self.station = self.selected = None
         self.marks = {'start': None, 'area': [], 'area_closed': False, 'pending': None}
-        self.fit()
+        if fit:
+            self.fit()
+        else:
+            self.update()
 
     def set_mask(self, name, mask, hex_colour, alpha):
         if mask is None or self.grid is None or mask.shape != self.grid.cells.shape:
