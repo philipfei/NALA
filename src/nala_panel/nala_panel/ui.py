@@ -756,9 +756,12 @@ class ScanScreen(QtWidgets.QWidget):
         s.update()
         state = s.state.get('state')
         running = s.launch_running()
-        paused = state == 'PAUSED'
-        driving = running and state in ('BACKGROUND', 'PREPARING', 'CONNECT_PLAN', 'CONNECT', 'SWEEP', 'DWELL',
-                                        'PHASE_WAIT', 'RETURN_PLAN', 'RETURN')
+        # A pause for a localization reason that ends by itself is not a real stop (user, 2026-10-19): the
+        # driving view stays, with "Recalculating...".
+        recalculating = running and state == 'PAUSED' and bool(s.state.get('auto_resume'))
+        paused = state == 'PAUSED' and not recalculating
+        driving = running and (recalculating or state in ('BACKGROUND', 'PREPARING', 'CONNECT_PLAN', 'CONNECT',
+                                                          'SWEEP', 'DWELL', 'PHASE_WAIT', 'RETURN_PLAN', 'RETURN'))
         if not driving:
             self.show_map_while_driving = False
         big = driving and not self.show_map_while_driving      # the large progress view of the design
@@ -809,8 +812,8 @@ class ScanScreen(QtWidgets.QWidget):
         self.start_button.setText('Resume' if paused else 'New scan' if state in ('FINISHED', 'CANCELED', 'FAILED')
                                   else 'Start')
         self.start_button.setEnabled(running and ((paused and not self.manual_on) or s.can_start()))
-        self.pause_button.setEnabled(running and s.active())
-        self.home_button.setEnabled(running and (s.active() or paused))
+        self.pause_button.setEnabled(running and (s.active() or recalculating))
+        self.home_button.setEnabled(running and (s.active() or paused or recalculating))
         # Hide before show: if both were visible for a moment, Qt would grow the window past the screen.
         self.legend.setVisible(not (running and paused))     # room for the hand control arrows
         self.toggles.setVisible(not (running and paused))

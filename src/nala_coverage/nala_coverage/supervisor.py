@@ -110,7 +110,7 @@ class Supervisor(Node):
         self.background_client=self.create_client(Trigger,'/radiation/measure_background')
         self.create_subscription(PoseStamped,'/coverage/test_goal',self.goal_received,10)
         # Where the locator finds the robot from the scan (locator_node): Start needs it on the base station.
-        self.located={};self.located_time=0.;self.paused_at=0.
+        self.located={};self.located_time=0.;self.paused_at=0.;self.escape=None
         self.create_subscription(String,'/coverage/located',self.located_received,LATEST)
         self.create_service(SetBool,'/control/manual',self.manual_service)
         for name,fn in [('preview',self.preview_service),('start',self.start),
@@ -347,7 +347,7 @@ class Supervisor(Node):
 
     def check_start_component(self):
         try:
-            rc,_,_=self.grid.project_start(self.pose[:2],self.collision,self.settings['recovery']['planner_start_tolerance_m'])
+            rc,_,_,_=self.grid.escape_start(self.pose[:2],self.collision,self.settings['recovery']['planner_start_tolerance_m'])
         except ValueError as error:
             raise ValueError('Actual pose exceeds planner_start_tolerance_m') from error
         if not self.preview['reachable'][rc]:
@@ -374,7 +374,12 @@ class Supervisor(Node):
         except ValueError:return   # not yet: still localizing (resume checks trust, the gate and the robot)
         self.mission.events.append({'time':now,'reason':'AUTO_RESUMED','after':reason})
 
-    def pause_service(self):self.pause('OPERATOR_PAUSE');return 'Paused; stopping/cancellation is checked independently'
+    def pause_service(self):
+        if self.auto_resumable(time.monotonic()):
+            # Pause while it recalculates: now a real pause that waits for Resume.
+            self.mission.change('PAUSED','OPERATOR_PAUSE',time.monotonic());self.save_report()
+        else:self.pause('OPERATOR_PAUSE')
+        return 'Paused; stopping/cancellation is checked independently'
 
     def resume(self):
         self.ready(require_nav=True)
@@ -459,12 +464,25 @@ class Supervisor(Node):
 
     def plan_to(self,xy,state,heading=None):
         goal=ComputePathToPose.Goal();goal.goal=pose_msg(self,xy,heading or 0.);goal.planner_id='GridBased';goal.use_start=False
+        # NavFn cannot plan from inside its robot_radius band (collision radius + half a cell) near a wall: then
+        # plan from the nearest safe point and drive the short way out first (robot 2026-10-19: BLOCKED_IN_PLACE
+        # 2-3 cm too close to a wall after a detour around a box).
+        self.escape=None
+        try:
+            _,point,_,escape=self.grid.escape_start(self.pose[:2],self.collision+self.base.resolution/2,
+                                                    self.settings['recovery']['planner_start_tolerance_m'])
+            if escape:
+                self.escape=point;goal.use_start=True;goal.start=pose_msg(self,point,self.pose[2])
+        except ValueError:pass       # too far from any safe point: the planner reports the failure as before
         self.path_end_yaw=heading;self.mission.state=state;self.phase_since=time.monotonic()
         self.slot.send(ComputePathToPose,'/compute_path_to_pose',goal)
 
-    def follow(self,points,state,end_yaw=None,feedback=None):
+    def follow(self,points,state,end_yaw=None,feedback=None,escape=None):
+        """escape: the safe point the first segment leads to from a start a little too close to a wall
+        (plan_to): that one short segment is checked for a clear line only."""
         if len(points)<2:raise ValueError('Controller path has fewer than two poses')
-        for a,b in zip(points,points[1:]):
+        for i,(a,b) in enumerate(zip(points,points[1:])):
+            if i==0 and escape is not None and math.dist(b,escape)<=self.settings['recovery']['plan_endpoint_tolerance_m'] and self.grid.visible(a,b):continue
             if not self.grid.segment_safe(a,b,self.collision):raise ValueError('Unsafe continuous path segment')
         self.path=points;goal=FollowPath.Goal();goal.path=path_msg(self,points,end_yaw)
         goal.controller_id='FollowPath';goal.goal_checker_id='goal_checker';goal.progress_checker_id='progress_checker'
@@ -614,7 +632,7 @@ class Supervisor(Node):
                 if phase in ('CONNECT_PLAN','RETURN_PLAN'):self.target_failure('PLANNER_ENDPOINT_MISSES_TARGET');return
                 raise ValueError('Planner endpoint misses requested target')
             points.insert(0,list(self.pose[:2]))
-            try:self.follow(points,{'CONNECT_PLAN':'CONNECT','RETURN_PLAN':'RETURN','TEST_PLAN':'TEST'}[phase],self.path_end_yaw)
+            try:self.follow(points,{'CONNECT_PLAN':'CONNECT','RETURN_PLAN':'RETURN','TEST_PLAN':'TEST'}[phase],self.path_end_yaw,escape=self.escape)
             except ValueError as e:
                 # A detour planned around an obstacle may pass closer to a wall than the plan allows: that is a
                 # failed connection (retry, then skip further), not a reason to stop.

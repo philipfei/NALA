@@ -369,6 +369,23 @@ def run_plan(ros,poses,drive=None,block_at=None,base_station=None,radiation=None
     return sup,follows,plans,plan
 
 
+def test_planning_from_a_start_a_little_too_close_to_a_wall_starts_at_a_safe_point(ros):
+    add,pump,_,_=ros
+    sup=add(Supervisor());goals=[]
+    sup.slot.send=lambda typ,name,goal,*_:goals.append(goal)
+    radius=sup.collision+sup.base.resolution/2
+    sup.pose=[2.,2.,0.];sup.plan_to([2.5,2.],'CONNECT_PLAN')
+    assert not goals[-1].use_start and sup.escape is None
+    # The 4 m test box: walls in the outer 0.05 m cells. 2 cm inside the collision band near the west wall.
+    sup.pose=[.05+sup.collision-.02,2.,0.];sup.plan_to([2.5,2.],'CONNECT_PLAN')
+    assert goals[-1].use_start and sup.escape is not None and sup.escape[0]>sup.pose[0]
+    sent=[]
+    sup.slot.send=lambda typ,name,goal,*_:sent.append(goal)
+    sup.follow([sup.pose[:2],sup.escape,[2.5,2.]],'CONNECT',escape=sup.escape)   # the short way out is accepted
+    assert sent
+    with pytest.raises(ValueError):sup.follow([sup.pose[:2],sup.escape,[2.5,2.]],'CONNECT')   # without: refused
+
+
 def test_a_localization_pause_resumes_by_itself_once_trusted_again(ros):
     paused=[]
     def lose_position_once(sup):
@@ -376,6 +393,16 @@ def test_a_localization_pause_resumes_by_itself_once_trusted_again(ros):
     sup,follows,_,_=run_plan(ros,[[2.,2.],[3.,2.]],during=lose_position_once)
     assert paused and sup.mission.state=='FINISHED' and sup.mission.reason=='RETURNED_TO_BASE',(sup.mission.state,sup.mission.events)
     assert any(e.get('reason')=='AUTO_RESUMED' and e.get('after')=='POSITION_UNCERTAIN' for e in sup.mission.events)
+
+
+
+def test_pause_while_recalculating_is_a_real_pause(ros):
+    add,pump,_,_=ros
+    sup=add(Supervisor());sup.mission.start(time.monotonic(),sup.timeout);sup.mission.state='SWEEP'
+    sup.pause('POSITION_UNCERTAIN')
+    assert sup.auto_resumable(time.monotonic())
+    sup.pause_service()
+    assert sup.mission.state=='PAUSED' and sup.mission.reason=='OPERATOR_PAUSE' and not sup.auto_resumable(time.monotonic())
 
 
 def test_start_needs_the_robot_on_the_base_station_and_amcl_restarts_there(ros):

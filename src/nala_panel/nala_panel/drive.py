@@ -277,7 +277,7 @@ def plain_state(state):
         side = 'left' if turn > 0 else 'right'    # seen from above: positive = counter-clockwise
         text = f'Robot is on the base station but turned. Turn it about {abs(turn)} degrees to the {side}.'
     elif s == 'PAUSED' and state.get('auto_resume'):
-        text = 'Finding the position again - continues by itself'
+        text = 'Recalculating...'
     elif s == 'IDLE' and not state.get('trusted'):
         text = 'Finding the robot on the map'
     elif s == 'IDLE' and not state.get('preview_ready'):

@@ -166,7 +166,7 @@ def test_report_and_plain_words(tmp_path):
         'Robot is on the base station the wrong way round')
     assert drive.plain_state({'state': 'SWEEP', 'located': 'NOT_ON_BASE'}) == 'Covering'   # a task holds the robot
     assert drive.plain_state({'state': 'PAUSED', 'reason': 'POSITION_UNCERTAIN', 'auto_resume': True}) == \
-        'Finding the position again - continues by itself'
+        'Recalculating...'
     assert drive.plain_state({'state': 'PAUSED', 'reason': 'OPERATOR_PAUSE'}) == 'Paused'
     assert drive.plain_state({'state': 'IDLE', 'located': 'TURNED', 'turn_deg': 132}) == \
         'Robot is on the base station but turned. Turn it about 132 degrees to the left.'

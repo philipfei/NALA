@@ -187,6 +187,26 @@ class Grid:
                 return cell, points[index].tolist(), float(distances[index])
         raise ValueError('Localized start exceeds planner_start_tolerance_m')
 
+    def escape_start(self, start, radius, tolerance):
+        """Like project_start, but a robot standing a little too close to a wall (inside the radius band, e.g.
+        after driving around an obstacle, robot 2026-10-19) may leave it on a short straight line in sight.
+        Returns (cell, point, distance, escape): escape is True when the start itself is not safe."""
+        try:
+            return (*self.project_start(start, radius, tolerance), False)
+        except ValueError:
+            pass
+        safe = self.safe_centres(radius)
+        candidates = np.argwhere(safe)
+        if len(candidates):
+            points = self.world(candidates)
+            distances = np.linalg.norm(points - np.asarray(start, float), axis=1)
+            for index in np.argsort(distances, kind='stable'):
+                if distances[index] > tolerance + 1e-10:
+                    break
+                if self.visible(start, points[index]):
+                    return tuple(int(v) for v in candidates[index]), points[index].tolist(), float(distances[index]), True
+        raise ValueError('Localized start exceeds planner_start_tolerance_m')
+
     def reachable(self, start, radius, tolerance=0.0):
         safe=self.safe_centres(radius)
         root,_,_=self.project_start(start,radius,tolerance)

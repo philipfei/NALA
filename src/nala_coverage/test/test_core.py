@@ -14,6 +14,17 @@ def room(size=30,res=.1,origin=(0.,0.,0.)):
     return Grid.from_cells(a,res,origin)
 
 
+def test_a_start_a_little_too_close_to_a_wall_escapes_to_the_nearest_safe_point():
+    g=room(30,.1)                                   # 3 x 3 m, walls in the outer cells (inner face at 0.1 m)
+    radius=.5
+    _,_,_,escape=g.escape_start([1.5,1.5],radius,.15)
+    assert not escape                               # a safe start is used as it is
+    cell,point,dist,escape=g.escape_start([.57,1.5],radius,.15)   # 3 cm inside the band near the west wall
+    assert escape and dist<=.15 and point[0]>.57 and g.safe_centres(radius)[cell]
+    with pytest.raises(ValueError):g.project_start([.57,1.5],radius,.15)   # the old check refused it
+    with pytest.raises(ValueError):g.escape_start([.3,1.5],radius,.15)     # too far inside: still refused
+
+
 def test_map_threshold_and_image_y(tmp_path):
     from PIL import Image
     Image.fromarray(np.array([[0,205],[254,255]],np.uint8)).save(tmp_path/'map.pgm')
