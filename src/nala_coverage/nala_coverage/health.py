@@ -22,10 +22,16 @@ class Trust:
             cov=np.asarray(covariance).reshape(6,6)
             sigma=math.sqrt(max(0,float(np.linalg.eigvalsh(cov[:2,:2]).max())))
             yaw_sigma=math.sqrt(max(0,float(cov[5,5])))
+            # The scan decides (user, 2026-10-19): AMCL's own sigma was wrong both ways on the robot (0.017 m while
+            # 0.6 m off; over 0.10 m while right, in turns on the spot). Above the limit the robot only stops when
+            # the live scan does not fit the map well, or when the sigma is uncertain_hard_factor x the limit.
+            scan_fits=endpoints>=self.cfg['min_endpoints'] and matched/endpoints>=self.cfg['matched_ratio']
+            hard=self.cfg['uncertain_hard_factor']
+            pos_limit=self.cfg['position_sigma_m'];yaw_limit=math.radians(self.cfg['heading_sigma_deg'])
             # A tightly converged filter can report a variance a hair below zero (rounding): that is zero.
             if np.any(np.diag(cov)<-self.cfg['covariance_rounding']):reason='AMCL_INVALID'
-            elif sigma>self.cfg['position_sigma_m']+1e-10:reason='POSITION_UNCERTAIN'
-            elif yaw_sigma>math.radians(self.cfg['heading_sigma_deg'])+1e-10:reason='HEADING_UNCERTAIN'
+            elif sigma>hard*pos_limit+1e-10 or (sigma>pos_limit+1e-10 and not scan_fits):reason='POSITION_UNCERTAIN'
+            elif yaw_sigma>hard*yaw_limit+1e-10 or (yaw_sigma>yaw_limit+1e-10 and not scan_fits):reason='HEADING_UNCERTAIN'
             elif endpoints<self.cfg['min_endpoints']:reason='TOO_FEW_SCAN_ENDPOINTS'
             elif matched/endpoints<self.cfg['matched_ratio']:reason='SCAN_MAP_MISMATCH'
         if not reason and self.previous:
@@ -84,9 +90,11 @@ class Ownership:
             # Autodrive (Nav2) only drives forwards and turns; only manual driving may reverse.
             if self.owner=='NAV':
                 v=min(self.linear,max(0.,v))
-                # A turn on the spot asks at least turn_start: Nav2 (RPP) asks only measured rate + a small step,
-                # which from standstill stays below the wheels' breakaway (robot, 2026-10-16/19). Still ramped below.
-                if v==0. and w!=0.:w=math.copysign(max(abs(w),self.turn_start),w)
+                # A turn on the spot from STANDSTILL asks at least turn_start: Nav2 (RPP) asks only measured rate +
+                # a small step, below the wheels' breakaway (robot, 2026-10-16/19). Still ramped below. Once the
+                # robot turns, Nav2's own command passes, so it can slow down at the heading: lifting always made
+                # the robot overshoot and turn extra rounds (simulation 2026-10-19: 1500-2700 deg instead of 900).
+                if v==0. and w!=0. and stopped:w=math.copysign(max(abs(w),self.turn_start),w)
                 w=min(self.angular,max(-self.angular,w))
             else:v=min(self.cfg['motion']['manual_forward_m_s'],max(-self.cfg['motion']['manual_reverse_m_s'],v));w=min(self.cfg['motion']['manual_angular_rad_s'],max(-self.cfg['motion']['manual_angular_rad_s'],w))
             # Idle keyboard zeros do not create a permanent zero stream.

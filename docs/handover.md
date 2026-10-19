@@ -225,6 +225,12 @@ after app 3 starts with the robot there it can be drawn in the mirrored corner (
 Robot 13:00: the robot stood on the base station position but turned 132 deg: Start stayed off with only "not on
 the base station". New status TURNED with turn_deg ("Turn it about 132 degrees to the left"); the map draws the
 robot outline (dashed) and a clear arrow at the base station (user: show the required heading).
+Robot ~13:25 (`runs/2026-10-19_132156`, 92 % covered, no recording): straight driving good; 13 POSITION_UNCERTAIN
+pauses (in turns) and turns not in the plan near the base station. Simulation: since the gate lift and RPP 0.35 the
+robot turned 1500-2700 deg on the spot per run instead of ~900 (overshoot, extra rounds). Fixes (user decisions):
+the lift only from standstill, RPP max_angular_accel back to 3.0, and the trust check lets the scan decide (AMCL
+sigma over the limit pauses only with a poorly fitting scan or over 2x the limit). Not simulated again (user: test
+on the robot).
 
 - Regulated Pure Pursuit (`nav2_regulated_pure_pursuit_controller`, Jazzy) clamps the turn-in-place command to
   `measured turn rate +- max_angular_accel * control period` = `0 +- 0.35 * 0.05 = +-0.0175 rad/s` when the robot

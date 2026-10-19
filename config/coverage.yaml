@@ -25,10 +25,11 @@
       linear_accel_m_s2: 0.1
       angular_accel_rad_s2: 0.35
       # Nav2's controller (RPP max_angular_accel). RPP limits its turn command to the MEASURED turn rate +- this
-      # x 0.05 s: from standstill 0.0175 rad/s, below the wheels' breakaway (~15 s waits at corners, run 8). 3.0
-      # (first step 0.15) still stalled once for 14 s (robot 2026-10-19), so the gate lifts instead (turn_start).
-      controller_angular_accel_rad_s2: 0.35
-      # Velocity gate, Nav2 only: a turn on the spot (no forward speed) asks at least this, ramped at
+      # x 0.05 s: with 0.35 it could neither start (0.0175 rad/s, below the breakaway: ~15 s waits at corners, run 8)
+      # nor slow down in time (overshoot, extra turns: simulation 2026-10-19, 1500-1800 deg of turning instead of
+      # ~900). 3.0 turned well on the robot (drive 7); the one stall there (0.15 rad/s) is what turn_start is for.
+      controller_angular_accel_rad_s2: 3.0
+      # Velocity gate, Nav2 only: a turn on the spot from standstill asks at least this, ramped at
       # angular_accel_rad_s2 (user decision 2026-10-19). 0.15 did not break away once; 0.35-0.4 always did.
       turn_start_rad_s: 0.3
       manual_forward_m_s: 0.25
@@ -48,6 +49,9 @@
     localization:
       position_sigma_m: 0.1
       heading_sigma_deg: 10.0
+      # Above position_sigma_m / heading_sigma_deg the robot stops only when the live scan also does not fit the map
+      # (matched_ratio), or when AMCL's sigma is this many times the limit (user decision 2026-10-19).
+      uncertain_hard_factor: 2.0
       settle_s: 2.0
       min_endpoints: 60
       matched_ratio: 0.65

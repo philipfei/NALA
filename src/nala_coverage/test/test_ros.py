@@ -118,7 +118,8 @@ class FakeInputs(Node):
             t.transform.translation.x=x;t.transform.translation.y=y;t.transform.rotation.w=1.;transforms.append(t)
         self.pubs['tf'].publish(TFMessage(transforms=transforms))
         am=PoseWithCovarianceStamped();am.header.stamp=stamp;am.header.frame_id='map';am.pose.pose=od.pose.pose
-        am.pose.covariance[0]=am.pose.covariance[7]=.0025 if not self.pose_bad else .04
+        # pose_bad: sigma 0.25 m, over 2x the 0.10 m limit (lost even while the scan fits the map).
+        am.pose.covariance[0]=am.pose.covariance[7]=.0025 if not self.pose_bad else .0625
         am.pose.covariance[35]=math.radians(5)**2;self.pubs['amcl_pose'].publish(am)
         if self.publish_trust:self.trust.publish(json_msg({'trusted':True}))
         if self.located is not None:self.located_pub.publish(json_msg({'status':self.located,'pose':[self.x,self.y,self.yaw]}))

@@ -327,6 +327,9 @@ SLAM must not jump to a wrong but similar-looking place.
 - Xbox B pauses the task (user decision 2026-10-16): app 3 starts `joy_node` + `xbox_pause` (nala_coverage);
   on the B rising edge (`pause_button: 1`, `config/teleop.yaml`, checked 2026-10-16) it calls
   `/coverage/pause` with `call_async` (no waiting in callbacks; no service = warning only; one open request).
+- Localization trust (user decision 2026-10-19): AMCL sigma above position_sigma_m / heading_sigma_deg stops the
+  robot only if the live scan does not fit the map (matched_ratio) or the sigma is `uncertain_hard_factor` (2) x the
+  limit. AMCL's sigma was wrong both ways on the robot; the scan check caught every real error.
 - Robot outline for coverage: from `config/robot.yaml` (`outline`: front, back, left, right of base_link; not centred:
   rod in front, as wide as the body, below the LiDAR; user 2026-10-19), never copied. Collision radius = farthest
   corner + `planning_padding_m` (0.478 + 0.02 = 0.498 m); plans use 0.53 m. The tests use a fixed test robot (the old
@@ -335,10 +338,11 @@ SLAM must not jump to a wrong but similar-looking place.
   name as the system package `python3-coverage`.
 - Speeds (`motion` in `config/coverage.yaml`): 0.12 m/s, 0.4 rad/s (start values), slowest 0.04 m/s near a goal
   (the MCU protocol has 1 mm/s steps). Acceleration limits = floor test 2026-10-16 (user decision): 0.1 m/s^2
-  (velocity gate) and 0.35 rad/s^2 (gate + RPP `max_angular_accel`, from `controller_angular_accel_rad_s2`).
-  From standstill RPP asks only measured rate + accel x 0.05 s = 0.0175 rad/s, below the wheels' breakaway, so the
-  gate lifts a Nav2 turn on the spot to `turn_start_rad_s: 0.3` (still ramped at 0.35 rad/s^2; user decision
-  2026-10-19, handover section B; RPP 3.0 was tried first: 0.15 rad/s still stalled once for 14 s).
+  (velocity gate) and 0.35 rad/s^2 (velocity gate). RPP `max_angular_accel` = `controller_angular_accel_rad_s2`
+  3.0: RPP limits its turn command to the measured rate +- accel x 0.05 s, and 0.35 could neither start a turn
+  (0.0175 rad/s, below the breakaway) nor slow down in time (extra turns). The gate lifts a Nav2 turn on the spot
+  from standstill only to `turn_start_rad_s: 0.3` (ramped; lifting while turning made the robot overshoot and turn
+  extra rounds). User decisions 2026-10-19, handover section B.
   RPP has no `acc_lim_*`/`decel_lim_*` (DWB parameters): not added (user decision 2026-10-16).
 - Global costmap robot_radius = collision radius + half a cell: NavFn measures from obstacle cell centres, the
   supervisor checks planner paths exactly against cell edges (else detours and the way back can be refused).

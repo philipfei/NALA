@@ -116,12 +116,16 @@ def test_autodrive_is_forward_only_and_manual_may_reverse():
 def test_turn_on_the_spot_is_lifted_to_the_start_rate_and_still_ramped():
     p=Ownership(angular=.4,angular_acceleration=.35,turn_start=.3);p.lease('NAV','a',0)
     out=[]
-    for i in range(40):
-        p.lease('NAV','a',i*.05);p.receive('NAV',(0.,-.0175),i*.05);out.append(p.tick(i*.05,True,False)[1])
+    for i in range(40):                                          # the robot stands (wheels not yet turning)
+        p.lease('NAV','a',i*.05);p.receive('NAV',(0.,-.0175),i*.05);out.append(p.tick(i*.05,True,True)[1])
     assert out[0]==pytest.approx(-.35*.05)                      # ramped, no jump
     assert out[-1]==pytest.approx(-.3)                          # Nav2's -0.0175 rad/s lifted to the start rate
     p.lease('NAV','a',2);p.receive('NAV',(0.,-.4),2)
-    assert p.tick(2,True,False)[1]<out[-1]                      # larger requests pass (ramped)
+    assert p.tick(2,True,True)[1]<out[-1]                       # larger requests pass (ramped)
+    # Turning: Nav2's own command passes (ramped), so it can slow down at the heading without overshooting.
+    for i in range(40):
+        p.lease('NAV','a',3+i*.05);p.receive('NAV',(0.,-.05),3+i*.05);w=p.tick(3+i*.05,True,False)[1]
+    assert w==pytest.approx(-.05)
 
 
 def test_turn_start_only_for_nav_turns_on_the_spot():
@@ -183,12 +187,21 @@ def test_a_variance_a_hair_below_zero_is_rounding_not_invalid():
     assert not t.check(2.1,[1,1,0],[0,0,0],c,100,100,.1) and t.reason=='AMCL_INVALID'
 
 
+@pytest.mark.parametrize('kind,index,value',[('POSITION_UNCERTAIN',0,.15**2),('HEADING_UNCERTAIN',35,math.radians(15)**2)])
+def test_sigma_over_the_limit_only_matters_when_the_scan_does_not_fit(kind,index,value):
+    # The scan decides (robot 2026-10-19): AMCL's sigma grows in turns on the spot while the pose is right.
+    t=Trust();c=good_cov();c[index]=value
+    for now in [0.,1.,2.,3.]:ready=t.check(now,[1,1,0],[0,0,0],c,100,90,.1)
+    assert ready,t.reason
+    assert not t.check(3.1,[1,1,0],[0,0,0],c,100,60,.1) and t.reason==kind     # scan does not fit: uncertain
+
+
 @pytest.mark.parametrize('problem',['position','heading','endpoints','age','jump'])
 def test_runtime_trust_loss(problem):
     t=Trust();c=good_cov();args=[3.,[1,1,0],[0,0,0],c,100,100,.1]
     t.check(0.,[1,1,0],[0,0,0],c,100,100,.1)
-    if problem=='position':args[3][0]=.101**2
-    if problem=='heading':args[3][35]=math.radians(10.1)**2
+    if problem=='position':args[3][0]=.201**2                        # over 2x the limit: lost even with a fitting scan
+    if problem=='heading':args[3][35]=math.radians(20.1)**2
     if problem=='endpoints':args[4]=59;args[5]=59
     if problem=='age':args[6]=2.01
     if problem=='jump':args[1]=[1.101,1,0]
