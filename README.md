@@ -99,7 +99,7 @@ NALA/
 │   │                                      [2] Wheel geometry for odometry, odometry TF on/off, odometry variances
 │   ├── teleop.yaml                        [1] Fixed teleop speeds: PC keyboard, Pi Xbox controller (buttons, sticks)
 │   ├── ros_env.sh                         [1] ROS environment for PC and Pi: domain ID, Cyclone DDS
-│   ├── cyclonedds.xml                     [1] Cyclone DDS: use only the robot network 10.42.0.0/24
+│   ├── cyclonedds.xml                     [1] Cyclone DDS: use only the robot network 10.42.0.0/24 or 192.168.137.0/24
 │   ├── robot.yaml                         [2] Robot model: body size, LiDAR and IMU mount poses (read by the URDF)
 │   ├── battery.yaml                       [1] INA260 battery monitor: I2C address, full / low / empty voltage
 │   ├── tune_motors.yaml                   [1] Test settings of scripts/tune_motors.py (step times, sweep speeds, timeouts).

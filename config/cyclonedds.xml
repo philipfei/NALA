@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
   Cyclone DDS settings for the PC and the Pi (loaded through CYCLONEDDS_URI in ros_env.sh).
-  Use only the robot network 10.42.0.0/24 (PC: USB Ethernet 10.42.0.1, Pi: WiFi 10.42.0.x).
+  Use only a robot network: 10.42.0.0/24 (PC: USB Ethernet 10.42.0.1, Pi: WiFi 10.42.0.x) or
+  192.168.137.0/24 (the laptop's shared network with the router, Pi 192.168.137.x; 2026-10-19).
+  presence_required false: a network that is not there is skipped (else no ROS node can start).
   Without this, Cyclone on the PC may pick the eduroam WiFi and never see the Pi.
   If the robot network changes, change the address below (host part 0 = whole network).
 -->
@@ -9,7 +11,8 @@
   <Domain Id="any">
     <General>
       <Interfaces>
-        <NetworkInterface address="10.42.0.0" />
+        <NetworkInterface address="10.42.0.0" presence_required="false" />
+        <NetworkInterface address="192.168.137.0" presence_required="false" />
       </Interfaces>
     </General>
   </Domain>
