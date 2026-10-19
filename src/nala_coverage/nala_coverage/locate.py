@@ -16,6 +16,7 @@ from scipy import ndimage
 
 ON_BASE = 'ON_BASE'
 BACKWARDS = 'BACKWARDS'
+TURNED = 'TURNED'            # on the base station position, but facing another way (turn_deg says how far)
 NOT_ON_BASE = 'NOT_ON_BASE'
 
 
@@ -134,7 +135,12 @@ class Locator:
         if (status != NOT_ON_BASE and found is not None and found[0][0] > base_fit + self.cfg['direction_margin']
                 and math.dist(found[0][1][:2], station[:2]) > self.cfg['base_tolerance_m']):
             status = NOT_ON_BASE
-        if status != NOT_ON_BASE:
+        turn = None
+        if status == NOT_ON_BASE and found is not None and math.dist(found[0][1][:2], station[:2]) <= self.cfg['base_tolerance_m']:
+            # On the spot, turned (robot 2026-10-19: 130 deg off and only "not on the base station" on the screen).
+            status = TURNED
+            turn = round(math.degrees(_wrap(station[2] - found[0][1][2])))
+        if status not in (NOT_ON_BASE, TURNED):
             pose, fit = base_pose, base_fit
         elif found is not None:
             fit, pose = found[0]
@@ -143,5 +149,5 @@ class Locator:
         other = found[1] if found is not None else None
         ambiguous = other is not None and other[0] >= fit - self.cfg['ambiguity_margin']
         return {'status': status, 'pose': [round(v, 4) for v in pose] if pose is not None else None,
-                'fit': round(fit, 3), 'base_fit': round(base_fit, 3), 'ambiguous': bool(ambiguous),
+                'fit': round(fit, 3), 'base_fit': round(base_fit, 3), 'ambiguous': bool(ambiguous), 'turn_deg': turn,
                 'points': int(len(points))}

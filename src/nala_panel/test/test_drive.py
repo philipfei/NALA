@@ -165,6 +165,9 @@ def test_report_and_plain_words(tmp_path):
     assert drive.plain_state({'state': 'FINISHED', 'located': 'BACKWARDS'}).startswith(
         'Robot is on the base station the wrong way round')
     assert drive.plain_state({'state': 'SWEEP', 'located': 'NOT_ON_BASE'}) == 'Covering'   # a task holds the robot
+    assert drive.plain_state({'state': 'IDLE', 'located': 'TURNED', 'turn_deg': 132}) == \
+        'Robot is on the base station but turned. Turn it about 132 degrees to the left.'
+    assert drive.plain_state({'state': 'IDLE', 'located': 'TURNED', 'turn_deg': -40}).endswith('40 degrees to the right.')
     assert drive.plain_state({'state': 'RETURN'}) == 'Driving back to the base station'
 
 

@@ -222,6 +222,9 @@ and no whole-map search when the base station fit is >= 0.95. Room Test, 20 ray-
 20/20 right; pose right 20/20 when the robot is carried (ties go to the pose nearest the last one), 19/20 right
 after a fresh start: one corner looks exactly like the opposite corner turned 180 deg (both fit 100 %), so right
 after app 3 starts with the robot there it can be drawn in the mirrored corner (status still NOT_ON_BASE).
+Robot 13:00: the robot stood on the base station position but turned 132 deg: Start stayed off with only "not on
+the base station". New status TURNED with turn_deg ("Turn it about 132 degrees to the left"); the map draws the
+robot outline (dashed) and a clear arrow at the base station (user: show the required heading).
 
 - Regulated Pure Pursuit (`nav2_regulated_pure_pursuit_controller`, Jazzy) clamps the turn-in-place command to
   `measured turn rate +- max_angular_accel * control period` = `0 +- 0.35 * 0.05 = +-0.0175 rad/s` when the robot

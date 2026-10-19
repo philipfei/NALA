@@ -158,6 +158,7 @@ class MapScreen(QtWidgets.QWidget):
         left.addLayout(top)
         self.view = MapWidget()
         self.view.heat_width_m = panel.params['heatmap_width_m']
+        self.view.footprint = panel.settings['geometry']['footprint_m']
         self.view.tapped.connect(self.tap)
         left.addWidget(self.view, 1)
         self.status = label(name='mute')
@@ -506,6 +507,7 @@ class ScanScreen(QtWidgets.QWidget):
         self.left = QtWidgets.QStackedWidget()
         mapbox = QtWidgets.QWidget()
         self.view = MapWidget(mapbox)
+        self.view.footprint = panel.settings['geometry']['footprint_m']
         # The STOP banner of the design, over the top of the map (it takes no height from the 600 px screen).
         self.banner = QtWidgets.QFrame(mapbox)
         self.banner.setObjectName('banner')

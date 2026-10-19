@@ -2,7 +2,7 @@
 import math
 import numpy as np
 from nala_coverage.geometry import Grid
-from nala_coverage.locate import Locator, endpoints, ON_BASE, BACKWARDS, NOT_ON_BASE
+from nala_coverage.locate import Locator, endpoints, ON_BASE, BACKWARDS, TURNED, NOT_ON_BASE
 
 CFG = {'position_step_m': .1, 'yaw_step_deg': 4., 'match_distance_m': .1, 'min_fit': .7, 'base_tolerance_m': .15,
        'base_tolerance_deg': 15., 'direction_margin': .05, 'ambiguity_margin': .05}
@@ -55,6 +55,8 @@ def test_base_station_check_on_base_backwards_and_beside_it():
     assert loc.locate(scan_from(g, (1.58, 1.22, math.radians(8))), station)['status'] == ON_BASE   # put on roughly
     assert loc.locate(scan_from(g, (1.5, 1.25, math.pi)), station)['status'] == BACKWARDS
     assert loc.locate(scan_from(g, (2.0, 1.25, 0.)), station)['status'] == NOT_ON_BASE         # 0.5 m beside it
+    r = loc.locate(scan_from(g, (1.5, 1.25, math.radians(-130))), station)                   # on the spot, turned
+    assert r['status'] == TURNED and abs(r['turn_deg'] - 130) <= 3
 
 
 def test_direction_cannot_be_told_in_a_symmetric_room():

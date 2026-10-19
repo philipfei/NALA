@@ -324,6 +324,7 @@ class Supervisor(Node):
         if time.monotonic()-self.located_time>self.settings['locator']['max_age_s']:
             raise ValueError('LOCATOR_UNAVAILABLE: the robot was not found on the map yet')
         if status=='BACKWARDS':raise ValueError('ROBOT_BACKWARDS: the robot is on the base station the wrong way round')
+        if status=='TURNED':raise ValueError(f"ROBOT_TURNED: turn the robot {self.located.get('turn_deg')} deg (positive = to the left)")
         if status!='ON_BASE':raise ValueError('NOT_ON_BASE_STATION: put the robot on the base station')
 
     def begin_background(self):
@@ -692,6 +693,7 @@ class Supervisor(Node):
         data={'config_hash':self.settings.hash,'generation':self.mission.generation,'state':phase,'reason':self.mission.reason,'root_cause':self.mission.root_cause,
               'trusted':self.trusted,'trust_reason':self.trust.reason,'preview_ready':self.preview is not None,
               'located':self.located.get('status','') if now-self.located_time<=self.settings['locator']['max_age_s'] else '',
+              'turn_deg':self.located.get('turn_deg'),
               'fraction':self.measurement.get('fraction',0.),'owner':owner,'nav_active':self.nav_active,
               'skipped_stretches':sum(b.get('reason')=='PLAN_STRETCH_SKIPPED' for b in self.mission.blocked)}
         self.state_pub.publish(json_msg(data));diagnostic(self,self.diag,'coverage_supervisor',phase,data,int(phase in ('PAUSED','FAILED')))

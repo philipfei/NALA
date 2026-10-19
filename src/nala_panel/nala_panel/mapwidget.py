@@ -75,6 +75,7 @@ class MapWidget(QtWidgets.QWidget):
         self.plan = []
         self.route = []
         self.station = None
+        self.footprint = []                    # robot outline [[x, y], ...] in the robot frame (robot.yaml)
         self.robot = None
         self.sensor_offset = 0.
         self.sensor_radius = 0.
@@ -202,9 +203,17 @@ class MapWidget(QtWidgets.QWidget):
                 self._line(p, segment, QtGui.QColor(11, 94, 138, 150), 2.5)
         self._marks(p)
         if self.station is not None:
-            pt = self.to_screen(*self.station[:2])
-            p.fillRect(QtCore.QRectF(pt.x() - 9, pt.y() - 9, 18, 18), QtGui.QColor(style.INK))
-            self._arrow(p, self.station, QtGui.QColor(style.INK), 16, outline=False)
+            # Where and which way to put the robot: its outline (body + rod) dashed at the base station, and a
+            # clear heading arrow (user, 2026-10-19: the old dark arrow on a dark square could not be seen).
+            x, y, yaw = self.station
+            c, s = math.cos(yaw), math.sin(yaw)
+            if self.footprint:
+                pen = QtGui.QPen(QtGui.QColor(style.INK), 2, QtCore.Qt.DashLine)
+                p.setPen(pen)
+                p.setBrush(QtGui.QColor(16, 37, 52, 35))
+                p.drawPolygon(QtGui.QPolygonF([self.to_screen(x + c * fx - s * fy, y + s * fx + c * fy)
+                                               for fx, fy in self.footprint]))
+            self._arrow(p, self.station, QtGui.QColor(style.INK), min(34, max(20, self.scale * 0.3)))
         if self.layers['contamination']:
             for h in self.hotspots:
                 self._diamond(p, h)

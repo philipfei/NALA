@@ -585,7 +585,9 @@ The panel starts by itself after the Pi boots (`scripts/setup_pi_screen.sh`). By
    (the design of `Scan_screen_visualiser.html`):
    - the map shows where the robot really is (found from the LiDAR scan, wherever it stands). If it is not on
      the base station, the screen says *Robot is not on the base station*, or *... the wrong way round* when
-     it stands there backwards: put it on the base station, the right way round; Start stays off until then;
+     it stands there backwards, or *... turned. Turn it about N degrees to the left/right*: put it on the base
+     station the right way round (the map shows the robot's outline there, dashed, with an arrow for the direction
+     it must face); Start stays off until then;
    - *Finding the robot on the map*, then *Checking the plan* (the preview);
    - **Start** becomes active when the plan is checked. **The robot only moves after Start.** It first measures
      the radiation background on the base station (*Measuring the background*), then drives.

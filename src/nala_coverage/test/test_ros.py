@@ -375,6 +375,8 @@ def test_start_needs_the_robot_on_the_base_station_and_amcl_restarts_there(ros):
     with pytest.raises(ValueError,match='NOT_ON_BASE_STATION'):sup.check_located()
     fake.located='BACKWARDS';pump(.5)
     with pytest.raises(ValueError,match='ROBOT_BACKWARDS'):sup.check_located()
+    fake.located='TURNED';pump(.5)
+    with pytest.raises(ValueError,match='ROBOT_TURNED'):sup.check_located()
     # The robot is put on the base station while AMCL still has it elsewhere: AMCL starts again there.
     fake.x,fake.y=3.,3.;pump(.5);starts.clear()
     fake.located='ON_BASE';fake.x,fake.y=3.,3.;pump(.5)

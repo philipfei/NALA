@@ -272,6 +272,10 @@ def plain_state(state):
         text = 'Robot is not on the base station. Put it on the base station.'
     elif s in IDLE_STATES and state.get('located') == 'BACKWARDS':
         text = 'Robot is on the base station the wrong way round. Turn it around.'
+    elif s in IDLE_STATES and state.get('located') == 'TURNED' and state.get('turn_deg') is not None:
+        turn = state['turn_deg']
+        side = 'left' if turn > 0 else 'right'    # seen from above: positive = counter-clockwise
+        text = f'Robot is on the base station but turned. Turn it about {abs(turn)} degrees to the {side}.'
     elif s == 'IDLE' and not state.get('trusted'):
         text = 'Finding the robot on the map'
     elif s == 'IDLE' and not state.get('preview_ready'):
