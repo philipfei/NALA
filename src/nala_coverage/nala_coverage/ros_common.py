@@ -78,6 +78,8 @@ class Inputs:
     def __init__(self,node,tf=True):
         self.settings=getattr(node,'settings',None) or load_settings()
         self.node=node;self.messages={};self.received={};self.invalid=set()
+        # Diagnostics (supervisor timing log): per topic the most messages and the oldest one when handled.
+        self.lag={};self.count={}
         for name,typ in [('scan',LaserScan),('odom',Odometry),('battery_state',BatteryState)]:
             node.create_subscription(typ,'/'+name,lambda msg,k=name:self.receive(k,msg),qos_profile_sensor_data)
         # tf=False: no TF listener. Every /tf message (~45/s) costs a Python wake-up and decoding; on the Pi 4 that
@@ -92,6 +94,7 @@ class Inputs:
         if key in self.messages and t<stamp_seconds(self.messages[key].header.stamp):self.invalid.add(key)
         else:self.invalid.discard(key)
         self.messages[key]=msg;self.received[key]=time.monotonic()
+        self.lag[key]=max(self.lag.get(key,0.),ros_now(self.node)-t);self.count[key]=self.count.get(key,0)+1
 
     def fresh(self,key,limit):
         if key not in self.messages or key in self.invalid:return False

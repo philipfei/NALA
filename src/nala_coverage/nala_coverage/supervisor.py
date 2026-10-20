@@ -11,6 +11,7 @@ Drive-ins into pockets: driving in (plan kind 'spur') is a normal piece Nav2 fol
 state SPUR) is driven by the supervisor itself, straight back, only over floor the meter has measured."""
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+import os
 import signal
 import hashlib
 import json
@@ -123,6 +124,7 @@ class Supervisor(Node):
         self.create_subscription(PoseStamped,'/coverage/test_goal',self.goal_received,10)
         # Where the locator finds the robot from the scan (locator_node): Start needs it on the base station.
         self.located={};self.located_time=0.;self.paused_at=0.;self.escape=None
+        self.timing=dict(since=time.monotonic(),ticks=0,tick=0.,trust=0.,gap=0.,last=None,amcl_n=0,amcl_age=0.)
         self.create_subscription(String,'/coverage/located',self.located_received,LATEST)
         self.create_service(SetBool,'/control/manual',self.manual_service)
         for name,fn in [('preview',self.preview_service),('start',self.start),
@@ -155,7 +157,23 @@ class Supervisor(Node):
             self.live_map=msg.header.frame_id==self.map_frame and grid.identity==self.base.identity
         except (ValueError,TypeError):self.live_map=False
 
-    def amcl_pose(self,msg):self.amcl=msg;self.amcl_received=time.monotonic()
+    def amcl_pose(self,msg):
+        self.amcl=msg;self.amcl_received=time.monotonic()
+        tm=self.timing;tm['amcl_n']+=1;tm['amcl_age']=max(tm['amcl_age'],ros_now(self)-stamp_seconds(msg.header.stamp))
+
+    def log_timing(self,now):
+        """Diagnostics (robot 2026-10-20: SCAN_STALE / AMCL_STALE at the pocket ends while the LiDAR and AMCL were fine
+        and the Pi had a load of 15): one log line per health.timing_log_period_s on how far this node falls behind."""
+        tm=self.timing
+        if now-tm['since']<self.settings['health']['timing_log_period_s']:return
+        lag,cnt=self.inputs.lag,self.inputs.count
+        self.get_logger().info(
+            f"timing: state {self.mission.state} ticks {tm['ticks']} tick max {1000*tm['tick']:.0f} ms "
+            f"(trust {1000*tm['trust']:.0f} ms) gap max {1000*tm['gap']:.0f} ms | amcl {tm['amcl_n']} msgs oldest "
+            f"{tm['amcl_age']:.2f} s | scan {cnt.get('scan',0)} msgs oldest {lag.get('scan',0.):.2f} s | odom "
+            f"{cnt.get('odom',0)} msgs oldest {lag.get('odom',0.):.2f} s | load {os.getloadavg()[0]:.1f}")
+        self.timing=dict(since=now,ticks=0,tick=0.,trust=0.,gap=0.,last=tm['last'],amcl_n=0,amcl_age=0.)
+        self.inputs.lag={};self.inputs.count={}
 
     def publish_initial_pose(self):
         """Tell AMCL the robot is on the base station, until AMCL reports a pose. An operator can still correct
@@ -902,8 +920,16 @@ class Supervisor(Node):
         if self.stop_client.service_is_ready():self.stop_client.call_async(Trigger.Request())
 
     def tick(self):
-        now=time.monotonic()
+        now=time.monotonic();tm=self.timing
+        if tm['last'] is not None:tm['gap']=max(tm['gap'],now-tm['last'])
+        tm['last']=now;tm['ticks']+=1
         self.update_trust(now)
+        tm['trust']=max(tm['trust'],time.monotonic()-now)
+        self.tick_body(now)
+        tm['tick']=max(tm['tick'],time.monotonic()-now)
+        self.log_timing(time.monotonic())
+
+    def tick_body(self,now):
         if self.work is not None and self.work.done():
             work=self.work;self.work=None
             try:

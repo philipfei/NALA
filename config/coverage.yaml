@@ -124,6 +124,8 @@
       future_stamp_tolerance_s: 0.1
       shutdown_stop_messages: 3
       stop_confirm_timeout_s: 1.0
+      # Supervisor diagnostics: one log line this often on its step time and how old messages are when handled.
+      timing_log_period_s: 5.0
     measurement:
       max_sample_gap_s: 0.3
       translation_slack_m: 0.05
