@@ -341,6 +341,9 @@ SLAM must not jump to a wrong but similar-looking place.
   (state TURN) turns the robot on the spot through all its headings itself, via /cmd_vel_nav and the velocity gate,
   slowing only before the last heading in one direction. No motion for no_motion_s skips the rest of the turn
   (TURN_SKIPPED), never a pause. Simulation room Test: 1 standstill > 0.4 s in the whole run.
+- Full coverage first (user decision 2026-10-20): the planner keeps covering every reachable cell, also the few
+  against the walls (edge_missed_weight stays 10000). Dropping the corner sweeps (room Test 58 s instead of 77 s,
+  99.8 % instead of 100 %) was rejected.
 - Reversing out of corners: not built; user decision 2026-10-20: later (too risky now). It needs the planner with
   the real outline (lanes ~0.25 m from side walls, drive into the corner, reverse ~0.3 m to turning room), a
   'reverse' piece type, RPP allow_reversing and a reverse-capable velocity gate with a clear-behind check. A 90 deg
