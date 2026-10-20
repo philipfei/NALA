@@ -79,3 +79,34 @@ def test_new_plan_and_run_paths_and_delete(maps_dir):
     plan.png.write_bytes(b'png')
     library.delete_plan(plan)
     assert library.list_plans(entry) == [] and not plan.png.exists()
+
+
+def make_run(entry, name, fraction, state, heat=True):
+    """A run folder as app 3 writes it: task report, coverage report, optionally the heatmap."""
+    import json
+    import numpy as np
+    folder = entry.folder / 'runs' / name
+    folder.mkdir(parents=True)
+    (folder / 'task_x.json').write_text(json.dumps({'state': state, 'reason': 'RETURNED_TO_BASE'}))
+    (folder / 'coverage_x.json').write_text(json.dumps({'fraction': fraction, 'covered_indices': [5, 6, 7],
+        'actual_trajectory': [[0., 1., 2., 0.], [.1, 1.1, 2., 0.]]}))
+    if heat:
+        shape = (10, 10)
+        np.savez_compressed(folder / 'heatmap.npz', value=np.full(shape, np.nan), keepout=np.zeros(shape, bool),
+                            threshold=np.nan, background=30.)
+    return folder
+
+
+def test_all_previous_scans_are_listed_newest_first_and_load(maps_dir):
+    [entry] = library.list_maps(maps_dir)
+    make_run(entry, '2026-10-19_101500', .95, 'CANCELED', heat=False)
+    make_run(entry, '2026-10-20_103019', .998, 'FINISHED')
+    (entry.folder / 'runs' / '2026-10-20_120000').mkdir()           # started, but app 3 wrote nothing: not a scan
+    runs = library.list_runs(entry)
+    assert [r['name'] for r in runs] == ['2026-10-20_103019', '2026-10-19_101500']
+    assert library.run_summary(runs[0]) == '20-10-2026 10:30\n100 % covered, finished'
+    assert library.run_summary(runs[1]) == '19-10-2026 10:15\n95 % covered, cancelled'
+    old = library.load_run(runs[1]['folder'])
+    assert old['value'] is None and old['covered'] == [5, 6, 7] and old['trail'] == [[[1., 2.], [1.1, 2.]]]
+    assert library.load_run(runs[0]['folder'])['background'] == 30.
+

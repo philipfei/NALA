@@ -597,7 +597,8 @@ The panel starts by itself after the Pi boots (`scripts/setup_pi_screen.sh`). By
      **Keep plan** saves it in `maps/<name>/plans/`; **Discard** deletes it.
 3. **Plans** tab: every saved plan, newest first. A plan the robot would refuse is grey, with the reason
    (made on another map image, for another base station, or for other sensor values). **Delete** removes one.
-   **Results** tab: the heatmap, hotspots and trail of the last scan of this map.
+   **Results** tab: every previous scan of this map, newest first (drag to scroll); tap one to see its
+   heatmap, hotspots, the floor it covered and the path it drove.
 4. **Scan:** put the robot on the base station (within about 10 cm), facing the base station direction
    (within about 10 deg). Tap **Scan** on a plan. The panel starts app 3 and shows the scan screen
    (the design of `Scan_screen_visualiser.html`):

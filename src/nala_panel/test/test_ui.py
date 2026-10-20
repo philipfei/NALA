@@ -12,7 +12,7 @@ import rclpy
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from PyQt5.QtTest import QTest
-from nala_panel import ui
+from nala_panel import library, ui
 
 PARAMS = {'maps_dir': 'maps', 'fullscreen': False, 'window_width': 1024, 'window_height': 600, 'font_size': 13,
           'button_height': 52, 'update_period': 0.3, 'manual_period': 0.05, 'heatmap_width_m': 0.15, 'launch_stop_timeout': 5.0, 'preview_retry': 10.0,
@@ -322,4 +322,23 @@ def test_map_names_must_be_safe_folder_names(tmp_path):
     assert apps.name_problem('house1', tmp_path).startswith('A map called')
     for bad in ('', 'a b', '../x', 'x' * 41, 'kamer/1'):
         assert apps.name_problem(bad, tmp_path) == 'Use 1-40 letters, digits, - or _'
+
+
+def test_results_tab_lists_every_scan_and_shows_the_chosen_one(panel, maps_dir):
+    from test_library import make_run
+    window, app = panel
+    [entry] = library.list_maps(maps_dir)
+    make_run(entry, '2026-10-19_101500', .95, 'CANCELED', heat=False)
+    make_run(entry, '2026-10-20_103019', .998, 'FINISHED')
+    window.open_map(entry)
+    screen = window.map
+    screen.tabs.setCurrentIndex(2)
+    app.processEvents()
+    assert screen.run_list.count() == 2 and screen.run['name'] == '2026-10-20_103019'
+    assert 'coverage' in screen.view.images                     # the floor this scan covered
+    screen.run_list.setCurrentRow(1)
+    app.processEvents()
+    assert screen.run['name'] == '2026-10-19_101500' and '95.0 % covered' in screen.result_text.text()
+    assert 'No scintillator readings' in screen.result_text.text()
+    shot(window, '13_results')
 

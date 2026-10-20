@@ -150,6 +150,7 @@ class MapScreen(QtWidgets.QWidget):
         self.start = None
         self.area, self.area_closed = [], False
         self.run = None
+        self.runs = []                     # previous scans of this map (Results tab)
         outer = QtWidgets.QHBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         left = QtWidgets.QVBoxLayout()
@@ -213,9 +214,15 @@ class MapScreen(QtWidgets.QWidget):
 
         results = QtWidgets.QWidget()
         rl = QtWidgets.QVBoxLayout(results)
+        # Every previous scan of this map, newest first; tap one to see it on the map (user, 2026-10-20).
+        self.run_list = QtWidgets.QListWidget()
+        self.run_list.currentRowChanged.connect(self.show_run)
+        self.run_list.setWordWrap(True)
+        self.run_list.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        QtWidgets.QScroller.grabGesture(self.run_list.viewport(), QtWidgets.QScroller.LeftMouseButtonGesture)
+        rl.addWidget(self.run_list, 1)
         self.result_text = label()
         rl.addWidget(self.result_text)
-        rl.addStretch()
         self.tabs.addTab(results, 'Results')
         self.tabs.currentChanged.connect(lambda _: self.redraw())
         outer.addWidget(side)
@@ -260,10 +267,23 @@ class MapScreen(QtWidgets.QWidget):
             self.plan_list.setCurrentRow(0)
 
     def load_results(self):
-        self.run = library.last_run(self.entry)
-        if self.run is None:
+        self.runs = library.list_runs(self.entry)
+        self.run = None
+        self.run_list.blockSignals(True)
+        self.run_list.clear()
+        for info in self.runs:
+            self.run_list.addItem(library.run_summary(info))
+        self.run_list.blockSignals(False)
+        if not self.runs:
             self.result_text.setText('No scan of this map yet.')
             return
+        self.run_list.setCurrentRow(0)
+        self.show_run(0)
+
+    def show_run(self, row):
+        if not 0 <= row < len(self.runs):
+            return
+        self.run = library.load_run(self.runs[row]['folder'])
         r = self.run
         text, _ = hotspot_message(r['hotspots'])
         text = text.replace(' yet', '')          # a finished scan
@@ -272,8 +292,12 @@ class MapScreen(QtWidgets.QWidget):
             cell = self.grid.resolution ** 2
             text += (f"<br>Map changed: {r['appeared'].sum() * cell:.1f} m² new, "
                      f"{r['vanished'].sum() * cell:.1f} m² removed")
-        self.result_text.setText(f"<b>Last scan: {r['name']}</b><br>Background: {bg}<br>{text}<br>"
-                                 f"<span style='color:{style.MUTE}'>Saved in {r['folder']}</span>")
+        if r['value'] is None or not np.isfinite(r['value']).any():
+            text = 'No scintillator readings in this scan.'
+        cov = f"{100 * r['fraction']:.1f} % covered" if r['fraction'] is not None else 'No coverage data'
+        self.result_text.setText(f"<b>{library.run_summary(self.runs[row]).replace(chr(10), ', ')}</b><br>{cov}. Background: {bg}<br>{text}<br>"
+                                 f"<span style='color:{style.MUTE}'>Saved in {r['folder'].name}</span>")
+        self.redraw()
 
     # ---------------------------------------------------------------- map taps
     def say(self, text):
@@ -353,6 +377,13 @@ class MapScreen(QtWidgets.QWidget):
                    'area': self.area if tab == 1 else [], 'area_closed': self.area_closed,
                    'pending': self.station_xy}
         run = self.run if tab == 2 else None
+        covered = None
+        if run and run['covered'] is not None:
+            covered = np.zeros(self.grid.cells.size, bool)
+            idx = np.asarray(run['covered'], int)
+            covered[idx[(idx >= 0) & (idx < covered.size)]] = True
+            covered = covered.reshape(self.grid.cells.shape)
+        v.set_mask('coverage', covered, style.TEAL, 120)
         v.set_heatmap(run['value'] if run else None, run['threshold'] if run else None)
         v.set_mask('keepout', run['keepout'] if run else None, style.MAG, 90)
         v.set_changes(run['appeared'] if run else None, run['vanished'] if run else None)

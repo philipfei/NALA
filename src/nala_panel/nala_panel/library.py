@@ -139,18 +139,62 @@ def new_run_dir(entry, now=None):
     return folder
 
 
+def list_runs(entry):
+    """Every scan of a map, newest first: [{'name', 'folder', 'when', 'fraction', 'state', 'reason'}]. A run folder
+    counts when app 3 wrote a task report or coverage into it (user, 2026-10-20: browse all previous scans)."""
+    import json
+    runs_dir = entry.folder / RUNS
+    out = []
+    for folder in sorted((p for p in runs_dir.glob('*') if p.is_dir()), reverse=True) if runs_dir.is_dir() else []:
+        tasks, covers = sorted(folder.glob('task_*.json')), sorted(folder.glob('coverage_*.json'))
+        if not tasks and not covers:
+            continue
+        info = {'name': folder.name, 'folder': folder, 'fraction': None, 'state': '', 'reason': ''}
+        try:
+            info['when'] = datetime.datetime.strptime(folder.name, '%Y-%m-%d_%H%M%S')
+        except ValueError:
+            info['when'] = None
+        try:
+            if covers:
+                info['fraction'] = float(json.loads(covers[-1].read_text()).get('fraction'))
+            if tasks:
+                task = json.loads(tasks[-1].read_text())
+                info['state'], info['reason'] = task.get('state', ''), task.get('reason', '')
+        except (OSError, ValueError, TypeError):
+            pass
+        out.append(info)
+    return out
+
+
+def run_summary(info):
+    """One line for the list of scans."""
+    when = info['when'].strftime('%d-%m-%Y %H:%M') if info['when'] else info['name']
+    cov = f"{100 * info['fraction']:.0f} % covered" if info['fraction'] is not None else 'no coverage data'
+    ended = {'FINISHED': 'finished', 'CANCELED': 'cancelled', 'FAILED': 'failed', 'PAUSED': 'stopped while paused'}
+    return f"{when}\n{cov}, {ended.get(info['state'], info['state'].lower() or 'unknown')}"
+
+
 def last_run(entry):
     """The newest run of a map with radiation data: heatmap, keepout, hotspots and the actual trail, or None."""
+    runs = [r for r in list_runs(entry) if (r['folder'] / 'heatmap.npz').is_file()]
+    return load_run(runs[0]['folder']) if runs else None
+
+
+def load_run(folder):
+    """One run's results: heatmap, keepout, hotspots, the actual trail, the covered floor and map changes."""
     import json
     import numpy as np
-    runs = sorted((p for p in (entry.folder / RUNS).glob('*') if (p / 'heatmap.npz').is_file()), reverse=True) \
-        if (entry.folder / RUNS).is_dir() else []
-    if not runs:
-        return None
-    folder = runs[0]
-    data = np.load(folder / 'heatmap.npz')
+    folder = Path(folder)
+    value = keepout = None
+    threshold, background = float('nan'), float('nan')
+    if (folder / 'heatmap.npz').is_file():
+        data = np.load(folder / 'heatmap.npz')
+        value, keepout = data['value'], data['keepout']
+        threshold, background = float(data['threshold']), float(data['background'])
     hotspots = json.loads((folder / 'hotspots.json').read_text()) if (folder / 'hotspots.json').is_file() else {}
     trail = []                     # segments of trusted measured poses; no line across a gap in time
+    covered = None                 # flat indices of the floor the sensor covered (the coverage meter)
+    fraction = None
     for path in folder.glob('coverage_*.json'):
         report = json.loads(path.read_text())
         gap = report.get('effective_config', {}).get('measurement', {}).get('max_sample_gap_s', 0.3)
@@ -160,12 +204,13 @@ def last_run(entry):
                 trail.append([])
             trail[-1].append([x, y])
             last = stamp
+        covered = report.get('covered_indices')
+        fraction = report.get('fraction')
     appeared = vanished = None                   # map changes seen during the run (mapchange_node)
     if (folder / 'changes.npz').is_file():
         changes = np.load(folder / 'changes.npz')
         appeared, vanished = changes['appeared'], changes['vanished']
-    threshold = float(data['threshold'])
-    return {'name': folder.name, 'folder': folder, 'value': data['value'], 'keepout': data['keepout'],
+    return {'name': folder.name, 'folder': folder, 'value': value, 'keepout': keepout,
             'threshold': threshold if np.isfinite(threshold) else None,
-            'background': float(data['background']), 'hotspots': hotspots.get('hotspots', []), 'trail': trail,
-            'appeared': appeared, 'vanished': vanished}
+            'background': background, 'hotspots': hotspots.get('hotspots', []), 'trail': trail,
+            'covered': covered, 'fraction': fraction, 'appeared': appeared, 'vanished': vanished}

@@ -364,6 +364,8 @@ SLAM must not jump to a wrong but similar-looking place.
   along it (REJOINED event); corner turns are done where the robot stands. Otherwise (or after a detour around an
   obstacle, or when that straight line is not safe) a planned connection as before. Robot 2026-10-20: a pause 12-16 cm
   beside the lane after a corner turn led to a planned connection with turns on the spot and 35 s of pauses.
+- Results tab (user, 2026-10-20): all previous scans of a map (library.list_runs: run folders with a task or
+  coverage report), newest first, scrollable; tap one: heatmap, hotspots, covered floor and driven path (load_run).
 - Scan screen (user, 2026-10-20): it switches to the big driving view by itself when a scan drives; after "Show
   map" the map stays until "Big view" or a new scan (it used to switch back after every pause or state change).
 - Map screen: no zoom buttons (they did not work on the robot screen; pinch and drag do; user 2026-10-19).
