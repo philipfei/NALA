@@ -29,11 +29,15 @@ robot's Pi: the touchscreen panel (`src/nala_panel`) runs `plan_cli.py` as a chi
 - `pipeline.sensor_reachable` = reachable centres dilated by the offset; coverable floor is measured from it.
 - `footprint.py`: real box swept along the drivable path (forward + turn on the spot), `footprint_hits` == 0.
   Segments of kind 'reverse' are driven backwards (heading flipped).
-- `spurs.py` (2026-10-20): after `drivable.make_drivable`, drive-in stretches P -> Q -> P (kinds 'spur', 'reverse')
-  into pockets the robot cannot turn in, for floor the route misses. The ONE place where the path leaves the robot
-  radius: checked with the outline + `footprint_padding_m` + `LOCALISATION_MARGIN_M`, straight, no turn at Q.
-  Reversing only passes floor measured on the way in (tests/test_spurs.py). regression.py skips them in the
-  circle check.
+- Drive-ins (`spurs.py`, user 2026-10-20): floor the sensor cannot reach from positions with turning room (narrow
+  pockets) is added to `coverable` and offered to the route optimiser as pieces: straight in from a start P (clearance
+  robot radius + LOCALISATION_MARGIN_M) to Q, the same way back out (target kind 'spur': P, Q, P). Checked with the
+  outline + padding + margin, never the circle; Q only as deep as the sensor needs (user). In `localsearch` a
+  drive-in is an aimed-goal-like piece (`drivein`: fixed heading, never flipped/trimmed/straightened); `detours`
+  offers the candidates covering a missed cell; time = in and out at `spur.speed_factor` x speed + 2 stops (user:
+  count the robot's half speed). Coverage of a drive-in = its way in (`planning.coverage_points`). The drivable path
+  keeps it exact (P stop, Q kind 'spur', P kind 'reverse'). NOT a post-processing step: the user rejected changing a
+  finished path (2026-10-20: leftover hairpins and a route end back to a pocket mouth) - planner logic only.
 - `drivable.py` counts the corner swing (`pivot`) as coverage: rounding a corner loses that swing.
 - `sensor_path` always emits both shifted end points at a corner (no shortcut at gentle bends), so the
   path checked in parts (drivable) and as a whole gives exactly the same cells.

@@ -31,6 +31,13 @@ def poly_target(points,kind='sweep'):
 def points_of(t):return getattr(t,'points',None) or [t.start,t.end]
 
 
+def coverage_points(t):
+    """The points whose sensor sweep a target covers: a drive-in ('spur': P, Q, P) covers its way in; backing out
+    passes the same floor with the sensor still facing in (spurs.py)."""
+    pts=points_of(t)
+    return pts[:2] if getattr(t,'kind','')=='spur' and len(pts)==3 else pts
+
+
 def split_path(points,maximum,kind):
     # Nav2's endpoint goal checker can accept a closed loop without traversing it.
     # Split at a distinct point before applying the ordinary length limit.
@@ -236,8 +243,36 @@ def connect(grid,targets,start,reachable,collision):
                 if not grid.segment_safe(path[i],path[candidate],collision):break
                 j=candidate;stride*=2
             compact.append(path[j]);i=j
-        links.append(compact);xy=t.end
+        links.append(least_bend(grid,compact,collision));xy=t.end
     return links
+
+
+def least_bend(grid,path,collision,near=0.15,step=0.005):
+    """A connector with its bends as small as the walls allow. A* bends at grid cells: a straight line that missed the
+    clearance by a few mm became a 90 deg turn, 5 cm, and a turn back (robot 2026-10-20). Where a bend point lies
+    within `near` of the straight line between its neighbours, it is replaced by the point just beside that line
+    (anywhere along it, `step` apart) with the smallest bend whose two segments are safe."""
+    path=[list(map(float,p)) for p in path]
+    k=1
+    while k<len(path)-1:
+        a,v,b=np.asarray(path[k-1]),np.asarray(path[k]),np.asarray(path[k+1])
+        ab=b-a;L=math.sqrt(float(ab@ab))
+        if L<1e-9:k+=1;continue
+        u=ab/L;n=np.array([-u[1],u[0]]);side=float((v-a)@n)
+        if abs(side)>near:k+=1;continue
+        n=n if side>=0 else -n
+        best=None
+        for f in (0.5,0.4,0.6,0.3,0.7,0.2,0.8,0.1,0.9):
+            for d in np.arange(step,near+1e-9,step):
+                if best is not None and math.atan2(d,min(f,1-f)*L)>=best[0]:break   # cannot bend less
+                w=a+f*ab+d*n
+                if grid.segment_safe(a,w,collision) and grid.segment_safe(w,b,collision):
+                    bend=math.atan2(d,f*L)+math.atan2(d,(1-f)*L)
+                    if best is None or bend<best[0]:best=(bend,w.tolist())
+                    break
+        if best is not None:path[k]=best[1]
+        k+=1
+    return path
 
 
 def rank_candidates(candidates,ratio):

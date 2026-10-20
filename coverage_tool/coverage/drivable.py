@@ -108,13 +108,8 @@ def _simplify(grid, v, kinds, cells, keep_mask, collision, pivot):
     return v, kinds
 
 
-def make_drivable(grid, result, settings, progress=None):
-    """Drivable path for a planning result.
-
-    Returns {'points': [[x, y], ...] (straight stretches as their end points, arcs every `spacing_m`),
-    'kinds': kind per point,
-    'stops': indices of the corners where the robot stops and turns, 'stats': {...}}.
-    """
+def _section(grid, v, kinds, region, keep_mask, settings, progress=None):
+    """Drivable path of one stretch of the route without drive-ins (vertices v with the kind after each)."""
     d = settings.get('drive', {})
     spacing = float(d.get('spacing_m', 0.05))
     r_min = float(d.get('min_arc_radius_m', 0.2))
@@ -123,12 +118,6 @@ def make_drivable(grid, result, settings, progress=None):
     hairpin = math.radians(float(settings['cost']['reverse_angle_deg']))
     radius = float(settings['geometry']['coverage_disk_radius_m'])
     collision = settings.collision
-    region = result['region']
-    keep = np.flatnonzero(result['covered'].ravel())                 # every cell the plan covers stays covered
-    keep_mask = np.zeros(region.size, bool)
-    keep_mask[keep] = True
-
-    v, kinds = route_with_kinds(result)
     vertices_planned = len(v)
 
     off = sensor.offset(settings)
@@ -146,8 +135,7 @@ def make_drivable(grid, result, settings, progress=None):
     if len(v) > 2:
         v, kinds = _simplify(grid, v, kinds, cells, keep_mask, collision, pivot)
     if len(v) < 2:
-        return {'points': [list(p) for p in v], 'kinds': kinds, 'stops': [],
-                'stats': {'drive_stops': 0, 'drive_arcs': 0, 'drive_length_m': 0.0, 'drive_lost_cells': 0}}
+        return [list(p) for p in v], list(kinds), [], 0, [], {}, vertices_planned, len(v)
 
     # Coverage multiplicity of the current path pieces: a corner may only drop cells covered elsewhere.
     count = np.zeros(region.size, int)
@@ -252,13 +240,98 @@ def make_drivable(grid, result, settings, progress=None):
     out += tail
     out_kinds += [kinds[-2]] * len(tail)
 
+    return out, out_kinds, stops, arcs, radii, reasons, vertices_planned, len(v)
+
+
+def make_drivable(grid, result, settings, progress=None):
+    """Drivable path for a planning result.
+
+    Returns {'points': [[x, y], ...] (straight stretches as their end points, arcs every `spacing_m`),
+    'kinds': kind per point (of the stretch arriving there),
+    'stops': indices of the corners where the robot stops and turns, 'stats': {...}}.
+
+    A drive-in (target kind 'spur': P, Q, P; spurs.py) is kept exactly: the route up to P and from P on are made
+    drivable each on their own, the drive-in in between becomes P (stop), Q (kind 'spur', stop), P (kind 'reverse',
+    stop). It is never rounded or simplified: it is checked with the robot outline, not the turning circle."""
+    radius = float(settings['geometry']['coverage_disk_radius_m'])
+    collision = settings.collision
+    region = result['region']
+    keep_mask = np.zeros(region.size, bool)
+    keep_mask[np.flatnonzero(result['covered'].ravel())] = True     # every cell the plan covers stays covered
+
+    # Split the route at the drive-ins: [('route', vertices, kinds) | ('spur', P, Q)]
+    parts, v, kinds = [], [], []
+    for t, conn in zip(result['targets'], result['connections']):
+        kind = getattr(t, 'kind', 'spiral')
+        add = [(list(map(float, q)), 'transit') for q in conn]
+        if kind == 'spur':
+            p, q = [list(map(float, x)) for x in points_of(t)[:2]]
+            add.append((p, 'transit'))
+        else:
+            add += [(list(map(float, q)), kind) for q in points_of(t)]
+        for x, k in add:
+            if v and math.dist(v[-1], x) < 1e-6:
+                kinds[-1] = k
+                continue
+            v.append(x)
+            kinds.append(k)
+        if kind == 'spur':
+            parts.append(('route', v, kinds))
+            parts.append(('spur', p, q))
+            v, kinds = [list(p)], ['transit']
+    parts.append(('route', v, kinds))
+
+    out, out_kinds, stops, arcs, radii, reasons, planned, kept, n_spurs = [], [], [], 0, [], {}, 0, 0, 0
+    for part in parts:
+        if part[0] == 'spur':
+            _, p, q = part
+            if not out or math.dist(out[-1], p) > 1e-6:
+                out.append(list(p))
+                out_kinds.append('transit')
+            stops.append(len(out) - 1)
+            out += [list(q), list(p)]
+            out_kinds += ['spur', 'reverse']
+            stops += [len(out) - 2, len(out) - 1]
+            n_spurs += 1
+            continue
+        _, pv, pk = part
+        if len(pv) < 2:
+            continue
+        o, ok, st, a, rr, why, pl, kp = _section(grid, pv, pk, region, keep_mask, settings, progress)
+        base = len(out)
+        if out and math.dist(out[-1], o[0]) < 1e-6:     # the section starts where the path is (a drive-in's P)
+            o, ok, base = o[1:], ok[1:], base - 1
+        stops += [base + s for s in st]
+        out += o
+        out_kinds += ok
+        arcs += a
+        radii += rr
+        for key, val in why.items():
+            reasons[key] = reasons.get(key, 0) + val
+        planned += pl - 2
+        kept += kp - 2
+    stops = sorted(s for s in set(stops) if 0 < s < len(out) - 1)
+
     # Final check on the whole drivable path, with the planner's own coverage test.
-    final = stroke_union(grid, region, [poly_target(out, 'drive')], radius)
+    final = np.zeros(region.shape, bool)
+    run = [out[0]] if out else []
+    for i in range(1, len(out)):
+        if out_kinds[i] in ('spur', 'reverse'):
+            if len(run) > 1:
+                final |= stroke_union(grid, region, [poly_target(run, 'drive')], radius)
+            if out_kinds[i] == 'spur':
+                final.reshape(-1)[piece_cells(grid, region, [out[i - 1], out[i]], radius)] = True
+            run = [out[i]]
+        else:
+            run.append(out[i])
+    if len(run) > 1:
+        final |= stroke_union(grid, region, [poly_target(run, 'drive')], radius)
     lost = int((result['covered'] & ~final).sum())
-    unsafe = sum(not grid.segment_safe(p, q, collision) for p, q in zip(out, out[1:]))
+    unsafe = sum(not grid.segment_safe(p, q, collision)
+                 for p, q, k in zip(out, out[1:], out_kinds[1:]) if k not in ('spur', 'reverse'))
     length = float(sum(math.dist(p, q) for p, q in zip(out, out[1:])))
     stats = {'drive_stops': len(stops), 'drive_arcs': arcs, 'drive_length_m': length, 'drive_lost_cells': lost,
-             'drive_unsafe_segments': unsafe,
+             'drive_unsafe_segments': unsafe, 'drive_spurs': n_spurs,
              'drive_min_arc_radius_m': min(radii) if radii else 0.0, 'drive_stop_reasons': reasons,
-             'drive_corners_planned': vertices_planned - 2, 'drive_corners_kept': len(v) - 2}
+             'drive_corners_planned': planned, 'drive_corners_kept': kept}
     return {'points': out, 'kinds': out_kinds, 'stops': stops, 'stats': stats}

@@ -12,7 +12,10 @@ the *total* cost from cost.py:
   straighten  replace a wiggly piece (a loop along a bumpy wall) by fewer,
             longer straight lines that are still safe to drive
   detour    add a goal that covers still-missed cells, where the missed-cell
-            penalty it removes outweighs the extra driving and turning
+            penalty it removes outweighs the extra driving and turning: a single
+            pose, an aimed goal, a line along a missed strip, or a drive-in into a
+            pocket (spurs.py: straight in from a start with turning room, straight
+            back out; only offered for floor nothing else can reach)
 
 Every move is scored with exact cost differences: transition time (straight
 connector or A* around obstacles), stop-and-turn costs at every junction,
@@ -27,8 +30,8 @@ import time
 import numpy as np
 
 from . import cost as costmod
-from . import sensor
-from .planning import poly_target, split_path, stroke_union, visible_many
+from . import sensor, spurs
+from .planning import least_bend, poly_target, split_path, stroke_union, visible_many
 
 AIM_RUN_M = 0.05   # an aimed goal is reached with a short straight forward move, so the robot faces its aim
 # An aimed goal at a piece end where the route already is: the robot turns on the spot there and moves this far
@@ -67,6 +70,7 @@ class Piece:
         self.aim = None   # aimed goal: a fixed heading that points the sensor (ahead of the robot) at missed floor
         self.run = AIM_RUN_M   # aimed goal: length of its short forward move
         self.covs = None  # (cells covered driven forwards, cells covered driven backwards), set by _measure
+        self.spur = None  # drive-in: its end Q (pts = [P]); in from P facing `aim`, back out to P facing the same way
 
     def cells(self, rev):
         """Floor cells this piece covers when driven in that direction (the sensor leads the robot)."""
@@ -85,6 +89,10 @@ class Piece:
 
     def targets(self, rev, max_seg):
         pts = self.pts[::-1] if rev else self.pts
+        if self.spur is not None:
+            t = poly_target([list(self.pts[0]), list(self.spur), list(self.pts[0])], 'spur')
+            t.kind = 'spur'
+            return [t]
         if self.aim is not None:
             t = poly_target(aim_line(self), 'aim')
             t.kind = 'aim'
@@ -106,6 +114,17 @@ def aimed(xy, heading, run=AIM_RUN_M):
     return p
 
 
+def drivein(p, q, pocket=None):
+    """A drive-in (spurs.py): straight from P to Q facing Q, and back out to P (still facing Q). Like an aimed goal it
+    has a fixed heading at P and is never driven the other way, trimmed or straightened."""
+    piece = Piece([p], 'spur')
+    piece.aim = piece.h = math.atan2(q[1] - p[1], q[0] - p[0])
+    piece.spur = [float(q[0]), float(q[1])]
+    piece.run = 0.0
+    piece.pocket = pocket    # index of the pocket it was made for (RouteOptimizer.rechoose)
+    return piece
+
+
 def aim_line(p):
     """The short forward move of an aimed goal (AIM_RUN_M long, ending at the goal)."""
     x, y = p.pts[0]
@@ -118,6 +137,12 @@ def pieces_from_targets(targets):
     for t in targets:
         pts = [list(map(float, p)) for p in (getattr(t, 'points', None) or [t.start, t.end])]
         k = getattr(t, 'kind', 'spiral')
+        if k == 'spur' and len(pts) == 3:     # a drive-in: P, Q, P
+            if cur:
+                pieces.append(Piece(cur, kind))
+                cur = None
+            pieces.append(drivein(pts[0], pts[1]))
+            continue
         if k == 'aim' and len(pts) == 2:      # an aimed goal keeps its heading (it is never driven backwards)
             if cur:
                 pieces.append(Piece(cur, kind))
@@ -141,7 +166,7 @@ def pieces_from_targets(targets):
 
 
 class RouteOptimizer:
-    def __init__(self, grid, pieces, start, reach, den, coverable, settings, neighbours=8):
+    def __init__(self, grid, pieces, start, reach, den, coverable, settings, neighbours=8, drive_ins=([], [])):
         self.g, self.reach, self.den = grid, reach, den
         self.start = list(map(float, start))
         self.s = settings
@@ -165,6 +190,13 @@ class RouteOptimizer:
         self.r = float(settings['geometry']['coverage_disk_radius_m'])
         self.collision = settings.collision
         self.K = neighbours
+        # Drive-in candidates (spurs.candidates): (P, Q, cells, pocket), the pockets, and per cell the candidates.
+        self.drive_ins, self.pockets = list(drive_ins[0]), list(drive_ins[1])
+        self._drive_in_of = {}
+        for n, (_, _, cells, _) in enumerate(self.drive_ins):
+            for c in cells:
+                self._drive_in_of.setdefault(int(c), []).append(n)
+        self._outline = spurs.body(settings, grid.resolution) if self.drive_ins else None
         self.cov_ok = coverable.ravel().copy()
         self.count = np.zeros(grid.cells.size, np.int32)
         self._conn = {}
@@ -173,6 +205,9 @@ class RouteOptimizer:
         for p in pieces:
             self._register(p)
             self.seq.append([len(self.pieces) - 1, False])
+        for p in pieces:                         # drive-ins of an earlier plan (pieces_from_targets): their pocket
+            if p.spur is not None and getattr(p, 'pocket', None) is None and self.pockets:
+                p.pocket = int(np.argmax([pk[p.cells(False)].sum() for pk in self.pockets]))
 
     def _miss(self, idx):
         """Missed-area cost (s) of the given cells if none of them were covered."""
@@ -191,6 +226,11 @@ class RouteOptimizer:
 
         The sensor sits ahead of the robot, so a piece covers a little more at the end it drives towards:
         forwards and backwards cover different cells. Every move that flips a piece updates the counts."""
+        if p.spur is not None:                   # a drive-in covers its way in (backing out passes the same floor)
+            fwd = costmod.piece_cells(self.g, self.den, [p.pts[0], p.spur], self.r)
+            p.covs = (fwd, fwd)
+            p.internal = spurs.drive_in_time(self.s, math.dist(p.pts[0], p.spur))
+            return p
         if p.aim is not None:
             fwd = costmod.piece_cells(self.g, self.den, aim_line(p), self.r)
             p.covs = (fwd, fwd)                  # an aimed goal is never driven the other way
@@ -261,7 +301,7 @@ class RouteOptimizer:
                         j -= 1
                     compact.append(path[j])
                     i = j
-                path = compact
+                path = least_bend(g, compact, self.collision)
         if not path:
             res = None
         else:
@@ -687,11 +727,47 @@ class RouteOptimizer:
         self.local_optimum(deadline + 2.0, step)        # small grace period: never stop mid-repair
         return time.monotonic() < deadline
 
+    def rechoose(self, deadline):
+        """Drive-ins chosen again in the route as it is now: every other candidate for the same pocket, and the best
+        drive-in starting where the route already is (the end of the piece before it, the start of the piece after
+        it), in its place. Kept when the total cost drops (robot 2026-10-20: after a drive-in the route drove 18 cm on
+        to a lane start and turned 155 deg there; a drive-in from that lane start covers the same pocket)."""
+        applied = 0
+        for k in range(len(self.seq)):
+            if time.monotonic() > deadline:
+                break
+            i, rv = self.seq[k]
+            p = self.pieces[i]
+            if p.spur is None or p.pocket is None:
+                continue
+            options = [(c[0], c[1]) for c in self.drive_ins if c[3] == p.pocket]
+            for nb, end in ((self._at(k - 1), 2), (self._at(k + 1), 0)):
+                if nb is not None:
+                    xy = self.pieces[nb[0]].state(nb[1])[end]
+                    line = spurs.lines_from(self.g, self.den, self.pockets[p.pocket], xy, self.s, self._outline)
+                    if line:
+                        options.append(line)
+            best = None
+            for a, b in options:
+                if math.dist(a, p.pts[0]) < EPS and math.dist(b, p.spur) < EPS:
+                    continue
+                d, qi = self._replace_delta(k, self._measure(drivein(a, b, p.pocket)))
+                self.pieces.pop()
+                if d < -1e-6 and (best is None or d < best[0]):
+                    best = (d, a, b)
+            if best:
+                q = self._measure(drivein(best[1], best[2], p.pocket))
+                self.pieces.append(q)
+                self._commit(k, len(self.pieces) - 1)
+                applied += 1
+        return applied
+
     def local_optimum(self, deadline, step):
         while time.monotonic() < deadline:
             n = (self.orient(deadline) + self.straighten(deadline) + self.improve_once(deadline)
                  + self.block_moves(deadline) + self.rotate(deadline) + self.orient(deadline)
-                 + self.trim(deadline, step))
+                 + self.trim(deadline, step) + self.trim(deadline, self.g.resolution)   # also by single cells
+                 + self.rechoose(deadline))
             if n == 0:
                 break
 
@@ -762,10 +838,12 @@ class RouteOptimizer:
             aim = self._aim_at(p, open_xy, reach_xy) if off > 0 else None
             ends = np.array([self.start] + [self.pieces[i].state(rv)[2] for i, rv in self.seq])
             at_route = self._aims_at_route(p, open_xy, ends) if off > 0 else []
-            if best is None and aim is None and not at_route:   # no safe pose can see this cell: not reachable
-                self.cov_ok[m] = False
+            drive_ins = [drivein(self.drive_ins[n][0], self.drive_ins[n][1], self.drive_ins[n][3])
+                         for n in self._drive_in_of.get(int(m), [])]
+            if best is None and aim is None and not at_route and not drive_ins:
+                self.cov_ok[m] = False           # no safe pose can see this cell and no drive-in reaches it
                 continue
-            options = ([Piece([best[0].tolist()], 'gap')] if best is not None else []) + \
+            options = drive_ins + ([Piece([best[0].tolist()], 'gap')] if best is not None else []) + \
                 ([aimed(*aim)] if aim is not None else []) + \
                 [aimed(xy, h, AIM_AT_ROUTE_RUN_M) for xy, h in at_route] + self._strip_lines(m, open_idx)
             choice = None

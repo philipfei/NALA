@@ -680,6 +680,7 @@ class Supervisor(Node):
             # box, which the drive-in then nearly touched): first drive straight onto the start, then turn into the line.
             if math.dist([x,y],a)>self.settings['planning']['rejoin_max_m'] or not self.grid.segment_safe([x,y],a,self.collision):
                 leave('SPUR_SKIPPED');return
+            self.mission.events.append({'time':now,'reason':'SPUR_APPROACH','offset_m':round(abs(side),3)})
             self.targets.insert(0,t);ap=poly_target([[x,y],list(a)],'approach');ap.end_yaw=yaw_
             self.current=ap;self.begin_spur();return
         if kind in ('spur','approach'):

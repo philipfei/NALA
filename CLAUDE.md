@@ -349,28 +349,22 @@ SLAM must not jump to a wrong but similar-looking place.
   against the walls (edge_missed_weight stays 10000). Dropping the corner sweeps (room Test 58 s instead of 77 s,
   99.8 % instead of 100 %) was rejected.
 - Reversing out of pockets (user, 2026-10-20: "it should only drive backwards on already covered area, so that we
-  are sure it doesn't drive into a contamination"). Planner: coverage_tool/coverage/spurs.py runs after the drivable
-  path and adds "spurs" for floor the route misses (also floor beyond the robot radius's reach): from a point P on
-  the route straight forwards to Q and straight back to P (drive_path kinds 'spur', 'reverse'; stops at P, Q, P),
-  checked with the real outline + padding + localisation margin, chosen by covered cells per second. Backwards the
-  robot only passes floor its sensor measured on the way in. test_basement2: 95.8 % -> 100 %, 3 spurs.
-  Robot: plan_file checks spur stretches with the outline + planning_padding_m (not the turning circle) and keeps
-  them as own targets ('spur', 'reverse'); the supervisor drives them itself (state SPUR, spur.* in coverage.yaml,
-  0.06 m/s): forwards via /cmd_vel_nav, backwards via /cmd_vel_reverse, which the gate passes only while NAV owns
-  the robot, only <= 0 and <= spur.speed_m_s, and only from coverage_supervisor (else a graph conflict). Before
-  backing out every cell under the outline on the way back must be measured by the meter (or under the robot where
-  it stood at P) and not contaminated, else a pause (SPUR_REVERSE_NOT_MEASURED / _CONTAMINATION). While driving: a
-  LiDAR point within spur.clear_m ahead ends the drive-in there (SPUR_SHORTENED), behind pauses (SPUR_REVERSE_BLOCKED).
-  The meter's denominator includes the floor the spurs reach.
-  After the first robot drive (2026-10-20: two drive-ins into one pocket, the route's end went back to the pocket
-  mouth, ~300 deg of turning there, a drive-in started 6 cm beside its line and nearly touched the box, a false
-  "wall behind"): the planner merges drive-ins one drive-in can do, ends each Q as shallow as its cells allow,
-  starts drive-ins only where P has robot_radius + 3 cm (the robot turns there after backing out), and cuts the
-  path end back to its last stop while that end covers nothing new (never into a drive-in). The robot drives onto
-  P itself when Nav2 left it more than spur.max_offset_m beside the line ('approach'), backs out to (not short of)
-  P, checks walls behind with the bare outline, and accepts a piece Nav2 finished up to rejoin_max_m off its end
-  (base: locator.base_tolerance_m) as done (ENDPOINT_MISSED_ACCEPTED) instead of planning a new connection.
-  Simulation test_basement2: 208 s instead of 271 s, 99.9 %, no contacts.
+  are sure it doesn't drive into a contamination"). Planner: drive-ins are pieces of the route optimiser
+  (coverage_tool/coverage/spurs.py, coverage_tool/CLAUDE.md): straight in from a start with turning room, the same
+  way back out, chosen by the cost function like every piece; pocket floor counts as floor to cover. User decisions
+  2026-10-20: no post-processing of a finished path (the first version added drive-ins afterwards and then merged,
+  trimmed and straightened the path: rejected); only as deep as the sensor model needs; drive-in time at the robot's
+  drive-in speed (half); start anywhere with turning room (robot radius + 3 cm). test_basement2: 100 %, 2 drive-ins.
+  Robot: plan_file checks drive-ins with the outline + planning_padding_m and keeps them as own targets ('spur',
+  'reverse'); the supervisor drives them itself (state SPUR, spur.* in coverage.yaml, 0.06 m/s): forwards via
+  /cmd_vel_nav, backwards via /cmd_vel_reverse, which the gate passes only while NAV owns the robot, only <= 0 and
+  <= spur.speed_m_s, and only from coverage_supervisor. Before backing out every cell under the bare outline on the
+  way back must be measured by the meter (or under the robot where it stood at P) and not contaminated, else a pause
+  (SPUR_REVERSE_NOT_MEASURED / _CONTAMINATION); a LiDAR point within spur.clear_m ahead ends the drive-in there
+  (SPUR_SHORTENED), behind pauses (SPUR_REVERSE_BLOCKED). More than spur.max_offset_m beside the line at the start:
+  it first drives straight onto P ('approach'). The back-out ends at or just past P (it turns there). A piece Nav2
+  finished up to rejoin_max_m off its end (base: locator.base_tolerance_m) counts as done (ENDPOINT_MISSED_ACCEPTED).
+  The meter's denominator includes the floor the drive-ins reach.
 - Apps 1 and 2 on the robot screen (user, 2026-10-19): buttons "Drive (app 1)" and "Make a map (app 2)" on the map
   list (`nala_panel/apps.py`, `ui.AppScreen`). They start the same launch files as over ssh (log in `log/`), STOP /
   Back stop them with Ctrl-C. Driving only with the Xbox controller (user: no on-screen arrows). App 2 shows the live

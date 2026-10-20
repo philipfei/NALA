@@ -59,7 +59,8 @@ def run(case):
     s['strategy']['mode'] = mode
     r = pipeline.plan(g, start_in(g, rr), None, s)
     S = r['stats']
-    bad = sum(not g.segment_safe(a, b, rr) for t in r['targets']
+    # Drive-ins (kind 'spur', spurs.py) are checked with the real outline, not the turning circle (outline hits).
+    bad = sum(not g.segment_safe(a, b, rr) for t in r['targets'] if getattr(t, 'kind', '') != 'spur'
               for a, b in zip(planning.points_of(t), planning.points_of(t)[1:]))
     bad += sum(not g.segment_safe(a, b, rr) for c in r['connections'] for a, b in zip(c, c[1:]))
     edge = g.clearance < s['cost']['edge_band_m']

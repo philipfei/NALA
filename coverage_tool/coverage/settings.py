@@ -62,6 +62,21 @@ DEFAULTS = {
         'straight_deg': 1.0,             # heading changes below this are left as they are
         'max_corner_group': 8,           # at most this many consecutive corners are replaced by one arc
     },
+    'spur': {                            # drive-ins into pockets the robot cannot turn in, see coverage/spurs.py
+        'max_depth_m': 2.0,              # longest drive-in (straight in, the same way back out)
+        'step_m': 0.05,                  # depth steps of the outline check, and of making a drive-in shorter
+        'angle_range_deg': 30.0,         # directions tried: towards the pocket's centre +- this ...
+        'angle_step_deg': 5.0,           # ... in these steps
+        'max_starts': 150,               # start points tried per pocket (evenly spread over the candidates)
+        'per_pocket': 6,                 # drive-ins per pocket offered to the route optimiser
+        # Drive-in speed / normal driving speed: the robot drives them at spur.speed_m_s of config/coverage.yaml
+        # (0.06 m/s, half its 0.12 m/s; user 2026-10-20: count them at that speed). Set by robot_config().
+        'speed_factor': 0.5,
+        # The robot may start a drive-in this far beside its line and steers onto it while driving in, so the line is
+        # checked with this much margin (if more than the localisation margin). spur.max_offset_m of
+        # config/coverage.yaml; set by robot_config().
+        'start_offset_m': 0.05,
+    },
     'optimizer': {
         'search_time_s': 4.0,            # route optimisation per candidate pattern
         'polish_time_s': 15.0,           # extra optimisation of the cheapest candidate
@@ -98,6 +113,10 @@ def robot_config(settings, config_dir=CONFIG_DIR):
     if os.path.isfile(coverage_file):
         with open(coverage_file) as f:
             cov = next(iter(yaml.safe_load(f).values()))['ros__parameters']['geometry']
+        params = next(iter(yaml.safe_load(open(coverage_file)).values()))['ros__parameters']
+        if 'spur' in params:
+            settings['spur']['speed_factor'] = float(params['spur']['speed_m_s']) / float(params['motion']['linear_m_s'])
+            settings['spur']['start_offset_m'] = float(params['spur']['max_offset_m'])
         padding = g['footprint_padding_m'] = float(cov['planning_padding_m'])
         g['coverage_disk_radius_m'] = float(cov['coverage_disk_radius_m'])
         g['sensor_offset_m'] = float(cov['sensor_offset_m'])

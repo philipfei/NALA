@@ -128,7 +128,7 @@ def piece_cells(grid, region, pts, radius, offset=None):
 def swept_floor(grid, region, targets, radius):
     """Floor area (m2) the brush passes over, counting every target separately,
     so floor covered by two targets counts twice. Walls/obstacles never count."""
-    from .planning import points_of
+    from .planning import coverage_points as points_of     # a drive-in sweeps its way in only
     chains, prev = [], None          # rejoin a line that was split into several Nav2 goals
     for t in targets:
         pts = [list(map(float, p)) for p in points_of(t)]

@@ -94,7 +94,7 @@ def _sanitize(grid, targets, collision):
     for t in targets:
         pts = planning.points_of(t)
         kind = getattr(t, 'kind', 'spiral')
-        if len(pts) < 2 or all(grid.segment_safe(a, b, collision) for a, b in zip(pts, pts[1:])):
+        if kind == 'spur' or len(pts) < 2 or all(grid.segment_safe(a, b, collision) for a, b in zip(pts, pts[1:])):
             out.append(t)
             continue
         part = [pts[0]]
@@ -110,7 +110,7 @@ def _sanitize(grid, targets, collision):
     return out
 
 
-REMOVABLE = ('gap', 'aim', 'fill')   # pieces added only to cover leftovers
+REMOVABLE = ('gap', 'aim', 'fill', 'spur')   # pieces added only to cover leftovers
 
 
 def driven_coverage(grid, den, targets, links, radius):
@@ -120,7 +120,7 @@ def driven_coverage(grid, den, targets, links, radius):
     pieces = []
     for t, link in zip(targets, links):
         pts = []
-        for p in list(link) + list(planning.points_of(t)):
+        for p in list(link) + list(planning.coverage_points(t)):
             if not pts or math.dist(pts[-1], p) > 1e-9:
                 pts.append(list(map(float, p)))
         pts = pts if len(pts) > 1 else pts * 2        # a goal the robot already stands on: heading unknown
@@ -131,7 +131,7 @@ def driven_coverage(grid, den, targets, links, radius):
 def _prune_redundant(grid, den, coverable, targets, radius):
     """Drop leftover pieces (detours, aimed goals, centre lines) whose coverable cells the rest of the route
     covers anyway, with the exact coverage of each piece in its driving direction. Smallest first."""
-    cells = [costmod.piece_cells(grid, den, planning.points_of(t), radius) for t in targets]
+    cells = [costmod.piece_cells(grid, den, planning.coverage_points(t), radius) for t in targets]
     count = np.zeros(den.size, np.int32)
     for c in cells:
         count[c] += 1
@@ -146,7 +146,7 @@ def _prune_redundant(grid, den, coverable, targets, radius):
     return [t for i, t in enumerate(targets) if i not in removed]
 
 
-def _finish(grid, targets, start, den, reach, coverable, settings, progress, budget_s, fill=True):
+def _finish(grid, targets, start, den, reach, coverable, settings, progress, budget_s, fill=True, drive_ins=([], [])):
     """Centre-line fill, cost-driven route optimisation, connectors, coverage and exact cost."""
     radius = float(settings['geometry']['coverage_disk_radius_m'])
     collision = settings.collision
@@ -159,7 +159,7 @@ def _finish(grid, targets, start, den, reach, coverable, settings, progress, bud
 
     # optimise the whole route on the cost function (drop / flip / move / 2-opt / detours)
     opt = localsearch.RouteOptimizer(grid, localsearch.pieces_from_targets(targets), start, reach, den,
-                                     coverable, settings, int(settings['optimizer']['neighbours']))
+                                     coverable, settings, int(settings['optimizer']['neighbours']), drive_ins)
     opt.run(budget_s)
     targets = _sanitize(grid, opt.targets(settings['planning']['max_segment_length_m']), collision)
     coverable = coverable & opt.cov_ok.reshape(coverable.shape)   # minus cells no safe pose can see
@@ -177,17 +177,40 @@ def _finish(grid, targets, start, den, reach, coverable, settings, progress, bud
         links.append(link)
         xy = t.end
     covered = driven_coverage(grid, den, final, links, radius)
-    route = []
+    route, drive_in_s = [], 0.0
     for t, c in zip(final, links):
+        if getattr(t, 'kind', '') == 'spur':
+            # A drive-in: the route goes to its start P; its own time (in, out, stops) and its turns at P count
+            # separately (as a route vertex it would look like a 180 deg hairpin at Q).
+            p, q = planning.points_of(t)[:2]
+            route.extend(c + [p])
+            drive_in_s += spurs.drive_in_time(settings, math.dist(p, q)) + _drive_in_turns(c, p, q, final, t, settings)
+            continue
         route.extend(c + planning.points_of(t))
     cell = grid.resolution ** 2
     open_ = coverable & ~covered
     ev = costmod.evaluate(route, final, covered.sum() * cell, open_.sum() * cell, settings,
                           costmod.swept_floor(grid, den, final, radius),
                           (open_ & costmod.edge_mask(grid, settings)).sum() * cell)
+    for key in ('drive_s', 'drive_turn_s', 'total_s'):
+        ev[key] += drive_in_s
+    ev['drive_in_s'] = drive_in_s
     return {'targets': final, 'connections': links, 'skipped': skipped, 'covered': covered, 'route': route,
             'cost': ev, 'coverable': coverable, 'uncovered_reachable': int(open_.sum()),
             'uncovered_interior': int((open_ & ~costmod.edge_mask(grid, settings)).sum())}
+
+
+def _drive_in_turns(link, p, q, final, t, settings):
+    """Turning time at a drive-in's start: from the way the robot arrives at P to facing Q, and after backing out
+    from facing Q to the way it leaves (approximated by the arrival heading reversed when unknown)."""
+    yaw = math.atan2(q[1] - p[1], q[0] - p[0])
+    pts = [x for x in link if math.dist(x, p) > 1e-6]
+    arrive = math.atan2(p[1] - pts[-1][1], p[0] - pts[-1][0]) if pts else yaw
+    k = final.index(t)
+    nxt = planning.points_of(final[k + 1])[0] if k + 1 < len(final) else None
+    leave = math.atan2(nxt[1] - p[1], nxt[0] - p[0]) if nxt is not None and math.dist(nxt, p) > 1e-6 else yaw
+    dh = [abs(math.remainder(yaw - arrive, 2 * math.pi)), abs(math.remainder(leave - yaw, 2 * math.pi))]
+    return float(costmod.vertex_cost(dh, [0.0, 0.0], settings)[0].sum())
 
 
 def plan(grid, start_xy, polygon, settings, progress=None):
@@ -207,6 +230,15 @@ def plan(grid, start_xy, polygon, settings, progress=None):
     # cells the brush can physically reach from some safe robot position
     _log(progress, 'Finding every cell the brush can reach...')
     coverable = brush_reachable(grid, den, sensor_reachable(grid, reach, settings), radius)
+    # Floor only a drive-in reaches (narrow pockets): offered to the route optimiser as pieces, and counted as floor
+    # to cover, so missing it costs like any other missed floor (spurs.py; user, 2026-10-20).
+    drive_ins = ([], [])
+    if settings['geometry'].get('footprint_m') and (den & ~coverable).any():
+        _log(progress, 'Finding drive-ins into narrow pockets...')
+        drive_ins = spurs.candidates(grid, reach, den, coverable, settings, progress)
+        coverable = coverable.copy()
+        for _, _, cells, _ in drive_ins[0]:
+            coverable.reshape(-1)[cells] = True
 
     mode = settings['strategy']['mode']
     builders = []
@@ -257,7 +289,7 @@ def plan(grid, start_xy, polygon, settings, progress=None):
             continue
         _log(progress, f'Candidate: {name}: centre lines, connections and cost...')
         res = _finish(grid, targets, start, den, reach, coverable, settings, progress,
-                      float(settings['optimizer']['search_time_s']))
+                      float(settings['optimizer']['search_time_s']), drive_ins=drive_ins)
         res['info'], res['name'] = info, name
         c = res['cost']
         cov_c = res['coverable']
@@ -271,7 +303,8 @@ def plan(grid, start_xy, polygon, settings, progress=None):
     if polish > 0:
         _log(progress, f'Optimising {best["name"]} further on the cost function...')
         before = best['cost']['total_s']
-        res = _finish(grid, best['targets'], start, den, reach, coverable, settings, progress, polish, fill=False)
+        res = _finish(grid, best['targets'], start, den, reach, coverable, settings, progress, polish, fill=False,
+                      drive_ins=drive_ins)
         if res['cost']['total_s'] <= before:
             res['info'], res['name'] = best['info'], best['name']
             best = res
@@ -318,6 +351,8 @@ def plan(grid, start_xy, polygon, settings, progress=None):
         'lane_segments': kinds.count('lane'),
         'centre_line_segments': kinds.count('fill'),
         'gap_goals': kinds.count('gap') + kinds.count('aim'),   # 'aim': gap goal faced at missed floor
+        'drive_ins': kinds.count('spur'),
+        'drive_in_s': c.get('drive_in_s', 0.0),
         'skipped_unreachable': best['skipped'],
         'uncovered_reachable_cells': best['uncovered_reachable'],
         'uncovered_interior_cells': best['uncovered_interior'],   # not counting the edge band
@@ -335,16 +370,6 @@ def plan(grid, start_xy, polygon, settings, progress=None):
     # The path the robot drives: corners rounded where that keeps every covered cell, stops elsewhere.
     _log(progress, 'Making the path drivable...')
     result['drive'] = drivable.make_drivable(grid, result, settings, progress)
-    # Floor the route cannot reach with turning room (narrow pockets): in-and-out stretches, reversing only over
-    # floor just measured on the way in (spurs.py; user, 2026-10-20).
-    _log(progress, 'Adding drive-in stretches for narrow pockets...')
-    if spurs.add_spurs(grid, result, settings, progress):
-        covered = result['covered'] & den
-        stats['coverage_pct'] = 100.0 * covered.sum() / den.sum()
-        stats['covered_m2'] = float(covered.sum() * grid.resolution ** 2)
-        ds = result['drive']['stats']
-        stats['estimated_time_s'] = (stats.get('estimated_time_s', 0.0) + ds.get('drive_spur_s', 0.0)
-                                     - ds.get('drive_trimmed_m', 0.0) / float(settings['motion']['linear_m_s']))
     stats.update({k: v for k, v in result['drive']['stats'].items() if not isinstance(v, dict)})
     g = settings['geometry']
     if g.get('footprint_m'):
