@@ -344,6 +344,8 @@ def run_plan(ros,poses,drive=None,block_at=None,base_station=None,radiation=None
         for xy in walk:
             if block[0] and math.dist(xy,block[0])<.015:
                 block[0]=None;time.sleep(.3);handle.abort();return FollowPath.Result(error_code=106)
+            if handle.is_cancel_requested:            # like Nav2: a cancelled goal stops where the robot is
+                handle.canceled();return FollowPath.Result()
             fake.x,fake.y=xy;time.sleep(.02)
         time.sleep(.2);handle.succeed();return FollowPath.Result()
     # The fake Nav2 servers sleep while they 'drive': give them their own node and executor thread, so they
@@ -398,7 +400,7 @@ def test_a_pause_beside_the_lane_rejoins_it_while_driving_without_a_planned_conn
     # spot, drive, turn on the spot) and AMCL lost certainty in those turns. Now: one path back onto the lane.
     moved=[]
     def push_aside(sup):
-        if sup.mission.state=='SWEEP' and not moved and sup.pose and sup.pose[0]>2.8:
+        if sup.mission.state=='SWEEP' and not moved and sup.pose and sup.pose[0]>2.4:   # >0.4 m of lane left
             moved.append('paused');sup.pause('OPERATOR_PAUSE')
         elif moved==['paused'] and sup.mission.state=='PAUSED' and sup.slot.idle:
             # The fake controller has stopped: put the robot 0.2 m beside the lane, then resume.
@@ -412,6 +414,22 @@ def test_a_pause_beside_the_lane_rejoins_it_while_driving_without_a_planned_conn
     assert rejoin and abs(rejoin[0]['offset_m']-.2)<.05
     path=follows[-2][1]                                       # the path after the pause
     assert abs(path[0][1]-2.2)<.03 and abs(path[-1][0]-3.6)<1e-6 and abs(path[-1][1]-2.)<1e-6
+
+
+def test_beside_the_last_cm_of_a_piece_the_robot_goes_on_without_driving_there(ros):
+    # North-west corner of room Test, 2026-10-20: after a pause 15 cm beside the last few cm of the lane the robot
+    # turned on the spot to drive there first. Now the piece counts as done and the next one follows.
+    from nala_coverage.planning import poly_target,points_of
+    add,pump,_,_=ros
+    sup=add(Supervisor())
+    lane=poly_target([[2.,2.],[2.6,2.]],'plan');nxt=poly_target([[2.6,2.],[2.6,3.]],'plan')
+    followed=[];sup.follow=lambda pts,state,*a,**k:followed.append((state,pts))
+    sup.mission.start(time.monotonic(),sup.timeout);sup.mission.state='PREPARING'
+    sup.targets=[lane,nxt];sup.pose=[2.57,2.16,0.]          # 16 cm beside the last 3 cm of the lane
+    sup.next_target()
+    assert any(e.get('reason')=='REJOINED_AT_END' for e in sup.mission.events) and sup.current is nxt
+    [(state,pts)]=followed                                   # straight on along the next piece, not back to the lane
+    assert state=='SWEEP' and pts[0]==[2.57,2.16] and pts[-1]==[2.6,3.]
 
 
 def test_a_localization_pause_resumes_by_itself_once_trusted_again(ros):

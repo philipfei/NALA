@@ -543,6 +543,11 @@ class Supervisor(Node):
         if d[k]>cfg['rejoin_max_m']:return False
         j=k;along=0.
         while j<len(dense)-1 and along<cfg['rejoin_ahead_m']:along+=math.dist(dense[j],dense[j+1]);j+=1
+        if along<cfg['rejoin_ahead_m'] and math.dist(here,dense[-1])<=cfg['rejoin_max_m']:
+            # Only the last few cm of the piece are left: done. Driving to its end point, a few cm away at a steep
+            # angle, made Nav2 turn on the spot first (north-west corner of room Test, 2026-10-20).
+            self.mission.events.append({'time':time.monotonic(),'reason':'REJOINED_AT_END','offset_m':round(d[k],3)})
+            self.next_target();return True
         path=densify([here]+dense[j:],self.base.resolution)
         if len(path)<2 or not self.grid.segment_safe(here,dense[j],self.collision):return False
         self.mission.events.append({'time':time.monotonic(),'reason':'REJOINED','offset_m':round(d[k],3)})
