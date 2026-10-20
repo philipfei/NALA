@@ -342,7 +342,8 @@ SLAM must not jump to a wrong but similar-looking place.
   slowing only before the last heading in one direction. No motion for no_motion_s skips the rest of the turn
   (TURN_SKIPPED), never a pause. Simulation room Test: 1 standstill > 0.4 s in the whole run.
   Only corner sweeps ('aim' in the drive_path 'kinds' the planner exports since 2026-10-20) become turns; another
-  short piece, e.g. a 5 cm step between two lanes, is skipped (the robot turned south and back for it in room Test).
+  short piece, e.g. a 5 cm step between two lanes, joins the pieces before and after it into one piece: no turn
+  and no stop (room Test: the bottom lane follows the south wall's pixel staircase; the real wall is straight).
   Plans without 'kinds' merge every short piece as before.
 - Full coverage first (user decision 2026-10-20): the planner keeps covering every reachable cell, also the few
   against the walls (edge_missed_weight stays 10000). Dropping the corner sweeps (room Test 58 s instead of 77 s,

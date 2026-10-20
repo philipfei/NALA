@@ -41,21 +41,28 @@ def merge_turns(targets,max_length):
     """One turn on the spot per corner (user, 2026-10-19): plan pieces no longer than max_length (the aimed goals'
     5 cm moves, which Nav2's 5 cm goal tolerance treats as reached anyway) are no separate goals. Together with the
     stop before them they become one 'turn' target at that corner: the headings to turn through in order (the
-    aims' headings, then the heading of the next piece). The piece before it ends without its own final turn."""
+    aims' headings, then the heading of the next piece). The piece before it ends without its own final turn.
+    With the planner's kinds, only corner sweeps ('aim') turn: another short step joins its neighbours into one
+    piece (no stop, no turn)."""
     out=[]
     for t in targets:
         pts=points_of(t)
         short=out and _length(pts)<=max_length
         kinds=getattr(t,'kinds',None)
         if short and kinds and kinds[-1]!='aim':
-            # A few-cm step that is no corner sweep (e.g. between two lanes 5 cm apart, room Test 2026-10-20): no
-            # turn towards it; the robot drives on to the next piece (followed from up to plan_join_tolerance_m).
+            # A few-cm step that is no corner sweep (e.g. a lane following a wall's pixel staircase, 5 cm aside;
+            # room Test 2026-10-20): no turn towards it, and no stop either: the piece before, the step and the
+            # next piece become one piece (the planner's own, safe stretches), which Nav2 follows in one go.
             last=out[-1]
             if getattr(last,'kind','')=='turn':
                 if last.headings:last.headings.pop()
                 if t.end_yaw is not None:last.headings.append(t.end_yaw)
-            else:last.end_yaw=t.end_yaw
+            else:
+                out[-1]=_joined(last,t);out[-1].join_next=True
             continue
+        if not short and out and getattr(out[-1],'join_next',False):
+            out[-1]=_joined(out[-1],t);continue
+        if out:out[-1].join_next=False
         if short and getattr(out[-1],'kind','')!='turn':
             prev=out[-1];end=points_of(prev)[-1]
             turn=poly_target([list(end),list(end)],'turn');turn.headings=[];turn.end_yaw=None
@@ -66,6 +73,15 @@ def merge_turns(targets,max_length):
             continue
         out.append(t)
     return out
+
+
+def _joined(a,b):
+    """Pieces a and b (b starting where a ends) as one piece with b's final heading."""
+    pa,pb=points_of(a),points_of(b)
+    t=poly_target([list(p) for p in pa]+[list(p) for p in pb[1:]],'plan')
+    t.end_yaw=b.end_yaw
+    t.kinds=(getattr(a,'kinds',None) or [])+(getattr(b,'kinds',None) or []) or None
+    return t
 
 
 def _length(pts):
