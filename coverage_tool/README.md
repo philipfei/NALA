@@ -213,7 +213,7 @@ The planner's stats report:
 - `drive_lost_cells` and `drive_unsafe_segments`, which must be 0;
 - `footprint_hits`, the real outline check, which must be 0.
 
-The export's `settings.geometry` holds `robot_radius_m`, `coverage_disk_radius_m`, `sensor_offset_m` and `footprint_m`. The robot uses them to refuse a plan made for another sensor.
+The export's `drive_path` also lists `kinds`: the kind of the stretch arriving at each point (`aim` = a corner sweep), so the robot turns only for sweeps at short stops. The export's `settings.geometry` holds `robot_radius_m`, `coverage_disk_radius_m`, `sensor_offset_m` and `footprint_m`. The robot uses them to refuse a plan made for another sensor.
 
 **On the NALA robot**, run the plan with `app3_coverage_pi.launch.py plan:=FILE`; see *App 3* in the repository README. Plan with **robot radius 0.53 m** (the default):
 - NALA refuses a path that comes within 0.498 m of a wall, and this tool's per-cell clearance check is up to half a cell more lenient than NALA's exact one;

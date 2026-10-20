@@ -88,7 +88,10 @@ def _drive_path(result, settings):
             'spacing_m': float(settings['drive']['spacing_m']),
             'min_arc_radius_m': float(settings['drive']['min_arc_radius_m']),
             'stops': [int(i) for i in d['stops']],
-            'points': [[round(float(x), 4), round(float(y), 4)] for x, y in d['points']]}
+            'points': [[round(float(x), 4), round(float(y), 4)] for x, y in d['points']],
+            # kind of the stretch that arrives at each point ('aim' = a corner sweep, 'wall', 'lane', 'transit', ...):
+            # the robot turns only for 'aim' at a short stop, not for a few-cm step between two lanes (2026-10-20).
+            'kinds': [str(k) for k in d['kinds']]}
 
 
 def build(result, map_path, settings, base_station=None):

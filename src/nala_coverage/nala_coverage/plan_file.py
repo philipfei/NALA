@@ -24,13 +24,15 @@ def stop_corners(points,min_deg=20.):
     return out
 
 
-def pieces(points,stops):
-    """The path split at its stop corners; each piece ends with the heading of the next one (turn on the spot there)."""
+def pieces(points,stops,kinds=None):
+    """The path split at its stop corners; each piece ends with the heading of the next one (turn on the spot there).
+    kinds: the planner's kind of the stretch arriving at each point (drive_path 'kinds'), or None (older exports)."""
     cuts=[0]+sorted(i for i in set(stops) if 0<i<len(points)-1)+[len(points)-1]
     out=[]
     for a,b in zip(cuts,cuts[1:]):
         t=poly_target([list(p) for p in points[a:b+1]],'plan')
         t.end_yaw=_heading(points[b],points[b+1]) if b<len(points)-1 else None
+        t.kinds=kinds[a+1:b+1] if kinds else None
         out.append(t)
     return out
 
@@ -44,6 +46,16 @@ def merge_turns(targets,max_length):
     for t in targets:
         pts=points_of(t)
         short=out and _length(pts)<=max_length
+        kinds=getattr(t,'kinds',None)
+        if short and kinds and kinds[-1]!='aim':
+            # A few-cm step that is no corner sweep (e.g. between two lanes 5 cm apart, room Test 2026-10-20): no
+            # turn towards it; the robot drives on to the next piece (followed from up to plan_join_tolerance_m).
+            last=out[-1]
+            if getattr(last,'kind','')=='turn':
+                if last.headings:last.headings.pop()
+                if t.end_yaw is not None:last.headings.append(t.end_yaw)
+            else:last.end_yaw=t.end_yaw
+            continue
         if short and getattr(out[-1],'kind','')!='turn':
             prev=out[-1];end=points_of(prev)[-1]
             turn=poly_target([list(end),list(end)],'turn');turn.headings=[];turn.end_yaw=None
@@ -94,11 +106,14 @@ def load_plan(path,grid,map_yaml,map_frame,collision,sensor=None,turn_merge_m=No
                                  're-plan in coverage_tool with this robot\'s settings')
     drive=data.get('drive_path')
     raw=drive['points'] if isinstance(drive,dict) and drive.get('points') else [[p['x'],p['y']] for p in data['poses']]
-    points=[];index={}
+    raw_kinds=drive.get('kinds') if isinstance(drive,dict) and isinstance(drive.get('kinds'),list) and len(drive['kinds'])==len(raw) else None
+    points=[];index={};kinds=[]
     for i,p in enumerate(raw):
         xy=[float(p[0]),float(p[1])]
         if not all(math.isfinite(v) for v in xy):raise ValueError('PLAN_FILE_INVALID: non-finite pose')
-        if not points or math.dist(points[-1],xy)>1e-6:points.append(xy)
+        if not points or math.dist(points[-1],xy)>1e-6:
+            points.append(xy)
+            if raw_kinds:kinds.append(str(raw_kinds[i]))
         index[i]=len(points)-1
     if len(points)<2:raise ValueError('PLAN_FILE_INVALID: fewer than two distinct poses')
     unsafe=[i for i,(a,b) in enumerate(zip(points,points[1:])) if not grid.segment_safe(a,b,collision)]
@@ -124,7 +139,7 @@ def load_plan(path,grid,map_yaml,map_frame,collision,sensor=None,turn_merge_m=No
     try:area=[[float(p[0]),float(p[1])] for p in area] if area else None
     except (TypeError,ValueError,IndexError):raise ValueError('PLAN_FILE_INVALID: area_polygon needs [x, y] corners') from None
     if area is not None and len(area)<3:raise ValueError('PLAN_FILE_INVALID: area_polygon needs at least 3 corners')
-    targets=pieces(points,stops)
+    targets=pieces(points,stops,kinds or None)
     if turn_merge_m is not None:targets=merge_turns(targets,turn_merge_m)
     return {'points':points,'stops':stops,'targets':targets,'drivable':isinstance(drive,dict),
             'robot_radius':robot_radius,'base_station':station,'area':area,

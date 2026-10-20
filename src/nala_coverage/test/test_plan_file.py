@@ -61,6 +61,23 @@ def test_short_pieces_at_a_corner_become_one_turn(tmp_path,room_map):
     assert north.points[-1]==[2.035,2.]
 
 
+def test_a_few_cm_step_between_lanes_is_no_turn_but_a_corner_sweep_is(tmp_path,room_map):
+    # Lane west, a 5 cm step south to the next lane (kind 'wall'), that lane west, then a corner sweep
+    # (kind 'aim', 5 cm towards south-west) and a lane north. Room Test 2026-10-20: the robot turned south and back
+    # for the step, which covers nothing.
+    grid=Grid.load(room_map)
+    points=[[2.5,1.],[1.6,1.],[1.6,.95],[.7,.95],[.665,.915],[.665,2.]]
+    kinds=['wall','wall','wall','wall','aim','wall']
+    path=write_plan(tmp_path,[[2.5,1.],[.665,2.]],drive_path={'format':1,'points':points,'stops':[1,2,3,4],'kinds':kinds})
+    first,second,turn,north=load_plan(path,grid,room_map,'map',.2,turn_merge_m=.06)['targets']
+    assert first.points[-1]==[1.6,1.] and abs(first.end_yaw-math.pi)<1e-9          # no turn south for the step
+    assert second.points[0]==[1.6,.95] and turn.kind=='turn'
+    assert [round(math.degrees(h)) for h in turn.headings]==[-135,90]              # the sweep, then north
+    # Without kinds (older plans) every short piece still becomes a turn, as before.
+    path=write_plan(tmp_path,[[2.5,1.],[.665,2.]],drive_path={'format':1,'points':points,'stops':[1,2,3,4]})
+    assert [t.kind for t in load_plan(path,grid,room_map,'map',.2,turn_merge_m=.06)['targets']].count('turn')==2
+
+
 def test_stop_corners_ignore_gentle_bends():
     from nala_coverage.plan_file import stop_corners
     pts=[[0.,0.],[1.,0.],[2.,.1],[2.,1.],[3.,1.]]
