@@ -342,7 +342,9 @@ def plan(grid, start_xy, polygon, settings, progress=None):
         covered = result['covered'] & den
         stats['coverage_pct'] = 100.0 * covered.sum() / den.sum()
         stats['covered_m2'] = float(covered.sum() * grid.resolution ** 2)
-        stats['estimated_time_s'] = stats.get('estimated_time_s', 0.0) + result['drive']['stats'].get('drive_spur_s', 0.0)
+        ds = result['drive']['stats']
+        stats['estimated_time_s'] = (stats.get('estimated_time_s', 0.0) + ds.get('drive_spur_s', 0.0)
+                                     - ds.get('drive_trimmed_m', 0.0) / float(settings['motion']['linear_m_s']))
     stats.update({k: v for k, v in result['drive']['stats'].items() if not isinstance(v, dict)})
     g = settings['geometry']
     if g.get('footprint_m'):

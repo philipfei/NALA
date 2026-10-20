@@ -37,6 +37,9 @@ from .params import node_settings
 from .planning import densify, points_of, poly_target, length
 from .health import Trust
 from .plan_file import SPUR_KINDS, check_base_station, load_plan, spur_yaw
+
+# Targets the supervisor drives itself in state SPUR: drive-in, back-out, and the short drive onto a drive-in's start.
+SELF_DRIVEN=SPUR_KINDS+('approach',)
 from .ros_common import (Inputs, ActionSlot, LATCHED, LATEST, decode, json_msg,
                          diagnostic, pose_msg, path_msg, pose3, transform3, yaw, ros_now, stamp_seconds)
 
@@ -397,7 +400,7 @@ class Supervisor(Node):
 
     def pause(self,reason):
         if self.mission.state not in ACTIVE and self.mission.state!='PREPARING':return
-        if self.current and self.mission.state not in ('TEST_PLAN','TEST') and getattr(self.current,'kind','') not in ('turn',*SPUR_KINDS):
+        if self.current and self.mission.state not in ('TEST_PLAN','TEST') and getattr(self.current,'kind','') not in ('turn',*SELF_DRIVEN):
             # Resume continues where the robot stopped on the piece (a corner turn keeps its headings left, a
             # drive-in stretch its line).
             rest=poly_target(self.plan_remainder(),'plan');rest.end_yaw=getattr(self.current,'end_yaw',None)
@@ -444,7 +447,7 @@ class Supervisor(Node):
         if self.mission.state in ('TEST_PLAN','TEST'):raise ValueError('Not during a test navigation')
         if self.returning and self.mission.state!='PAUSED':return 'Already driving back to the base station'
         if self.manual:raise ValueError('Relinquish manual ownership first')
-        if self.mission.state=='SPUR' or (getattr(self.current,'kind','') in SPUR_KINDS and self.pose
+        if self.mission.state=='SPUR' or (getattr(self.current,'kind','') in SELF_DRIVEN and self.pose
                                            and not self.grid.segment_safe(self.pose[:2],self.pose[:2],self.collision)):
             raise ValueError('The robot is in a pocket: wait until it has backed out, then stop')
         rest=([self.plan_remainder()] if self.current else [])+[points_of(t) for t in self.targets]
@@ -463,7 +466,7 @@ class Supervisor(Node):
         """The parts of a target outside the contaminated floor, each a target of its own (driven to first)."""
         pts=points_of(target)
         if self.keepout is None or not self.keepout.any():return [target]
-        if getattr(target,'kind','') in SPUR_KINDS:return [target]      # checked as a whole (begin_spur)
+        if getattr(target,'kind','') in SELF_DRIVEN:return [target]      # checked as a whole (begin_spur)
         dense=densify(pts,self.base.resolution) if len(pts)>1 else pts
         inside=[self.base.valid(rc) and bool(self.keepout[rc]) for rc in map(self.base.cell,dense)]
         if not any(inside):return [target]
@@ -544,7 +547,7 @@ class Supervisor(Node):
         self.current=self.targets.pop(0) if self.targets else None;self.sweep_points=None
         if self.current is None:self.finish_pass();return
         self.target_since=time.monotonic()
-        if getattr(self.current,'kind','') in SPUR_KINDS:self.begin_spur();return
+        if getattr(self.current,'kind','') in SELF_DRIVEN:self.begin_spur();return
         pts=points_of(self.current)
         # The robot normally stands where the previous piece ended; after a detour it is driven to the rest.
         if not getattr(self.current,'connect',False) and math.dist(self.pose[:2],pts[0])<=self.settings['planning']['plan_join_tolerance_m']:
@@ -658,9 +661,10 @@ class Supervisor(Node):
     def begin_spur(self):
         """A drive-in stretch (plan kind 'spur', straight in forwards) or its back-out ('reverse', straight back out
         backwards along the same line), driven by spur_step. The back-out starts only when every cell the outline will
-        pass is floor the meter has measured (or where the robot stood before driving in) and not contaminated."""
+        pass is floor the meter has measured (or where the robot stood before driving in) and not contaminated.
+        'approach': the supervisor's own short straight drive onto the start of a drive-in (begin_spur)."""
         t=self.current;a,b=points_of(t)[0],points_of(t)[-1];kind=t.kind;now=time.monotonic()
-        cfg=self.settings['spur'];yaw_=spur_yaw(a,b,kind);u=(math.cos(yaw_),math.sin(yaw_))
+        cfg=self.settings['spur'];yaw_=spur_yaw(a,b,'reverse' if kind=='reverse' else 'spur');u=(math.cos(yaw_),math.sin(yaw_))
         x,y,h=self.pose;side=-(x-a[0])*u[1]+(y-a[1])*u[0];err=abs(wrap(h-yaw_))
         along=(x-a[0])*u[0]+(y-a[1])*u[1];total=math.dist(a,b)
         progress=along if kind=='spur' else -along
@@ -668,12 +672,21 @@ class Supervisor(Node):
         margin=self.settings['geometry']['planning_padding_m']
         def leave(reason):
             self.mission.events.append({'time':now,'reason':reason,'xy':[round(v,3) for v in b]})
-            if kind=='spur' and self.targets and self.targets[0].kind=='reverse':self.targets.pop(0)
+            if kind=='approach' and self.targets and self.targets[0].kind=='spur':self.targets.pop(0)
+            if kind in ('spur','approach') and self.targets and self.targets[0].kind=='reverse':self.targets.pop(0)
             self.next_target()
-        if kind=='spur':
+        if kind=='spur' and abs(side)>cfg['max_offset_m'] and on_line:
+            # Nav2 stopped beside the start (its goal tolerance is 5 cm; robot 2026-10-20: 6 cm beside it, towards a
+            # box, which the drive-in then nearly touched): first drive straight onto the start, then turn into the line.
+            if math.dist([x,y],a)>self.settings['planning']['rejoin_max_m'] or not self.grid.segment_safe([x,y],a,self.collision):
+                leave('SPUR_SKIPPED');return
+            self.targets.insert(0,t);ap=poly_target([[x,y],list(a)],'approach');ap.end_yaw=yaw_
+            self.current=ap;self.begin_spur();return
+        if kind in ('spur','approach'):
             if not on_line:leave('SPUR_SKIPPED');return
-            swept=self.grid.outline_swept([x,y],b,yaw_,self.outline,margin)
-            if swept is None or (self.keepout is not None and (swept&self.keepout).any()):leave('SPUR_SKIPPED_CONTAMINATION');return
+            swept=self.grid.outline_swept([x,y],b,yaw_,self.outline,margin) if kind=='spur' else None
+            if kind=='spur' and (swept is None or (self.keepout is not None and (swept&self.keepout).any())):
+                leave('SPUR_SKIPPED_CONTAMINATION');return
             if err>math.radians(cfg['max_heading_error_deg']):
                 if math.dist([x,y],a)>self.settings['planning']['plan_join_tolerance_m']:leave('SPUR_SKIPPED');return
                 # At the start, facing elsewhere (after a pause): turn into the pocket first, then drive in.
@@ -683,16 +696,20 @@ class Supervisor(Node):
             if not on_line or err>math.radians(cfg['max_heading_error_deg']):
                 if self.grid.segment_safe([x,y],[x,y],self.collision):leave('SPUR_REVERSE_SKIPPED');return
                 self.pause('SPUR_OFF_LINE: the robot is beside the line it drove into the pocket; drive it out by hand');return
-            swept=self.grid.outline_swept([x,y],b,yaw_,self.outline,margin)
+            # The bare outline against the map (the plan was checked with padding + margin; a few cm of localization
+            # error must not stop it: robot 2026-10-20, a false "wall behind"). Real obstacles: the LiDAR (spur_step).
+            # The back-out ends up to end_tolerance_m PAST its start (spur_step), never short of it on the pocket side.
+            past=[b[0]-u[0]*cfg['end_tolerance_m'],b[1]-u[1]*cfg['end_tolerance_m']]
+            swept=self.grid.outline_swept([x,y],past,yaw_,self.outline,0.)
             if swept is None or (swept&~self.grid.free).any():self.pause('SPUR_REVERSE_BLOCKED: a wall behind the robot');return
             if self.keepout is not None and (swept&self.keepout).any():
                 self.pause('SPUR_REVERSE_CONTAMINATION: contaminated floor behind the robot');return
-            stood=np.zeros(swept.shape,bool);cells=self.grid.outline_cells((b[0],b[1],yaw_),self.outline,margin)
+            stood=np.zeros(swept.shape,bool);cells=self.grid.outline_cells((b[0],b[1],yaw_),self.outline,0.)
             if cells is not None:stood[cells]=True
             covered=np.zeros(swept.size,bool);covered[np.asarray(self.measurement.get('covered_indices',[]),int)]=True
             if (swept&~stood&~covered.reshape(swept.shape)).any():
                 self.pause('SPUR_REVERSE_NOT_MEASURED: floor behind the robot is not measured');return
-        self.spur={'a':list(a),'b':list(b),'yaw':yaw_,'sign':1. if kind=='spur' else -1.,'length':total}
+        self.spur={'a':list(a),'b':list(b),'yaw':yaw_,'sign':-1. if kind=='reverse' else 1.,'length':total}
         self.mission.state='SPUR';self.phase_since=self.target_since=self.last_motion=now;self.motion_pose=list(self.pose)
 
     def spur_blocked(self,sign):
@@ -712,12 +729,15 @@ class Supervisor(Node):
         pub=self.turn_pub if sign>0 else self.reverse_pub
         x,y,h=self.pose;a=sp['a'];u=(math.cos(sp['yaw']),math.sin(sp['yaw']))
         along=(x-a[0])*u[0]+(y-a[1])*u[1];side=-(x-a[0])*u[1]+(y-a[1])*u[0];err=wrap(h-sp['yaw'])
-        left=sp['length']-sign*along
+        # A back-out aims end_tolerance_m past its start: the robot turns there, and stopping short would leave it
+        # on the pocket side, closer to walls than the plan allows for turning (simulation 2026-10-20: rod hit a wall).
+        left=sp['length']+(cfg['end_tolerance_m'] if sign<0 else 0.)-sign*along
         def end(reason=None):
             pub.publish(Twist())
             if reason:self.mission.events.append({'time':now,'reason':reason,'xy':[round(x,3),round(y,3)]})
-            if sign<0 and getattr(self.current,'end_yaw',None) is not None:
-                # Backed out: turn on the spot to the next piece (TURN keeps this target, a pause resumes here).
+            if getattr(self.current,'end_yaw',None) is not None:
+                # Backed out or on the start of a drive-in: turn on the spot to the next heading (TURN keeps this
+                # target, a pause resumes here).
                 self.current.headings=[self.current.end_yaw];self.begin_turn();return
             self.next_target()
         if left<=cfg['end_tolerance_m']:end();return
@@ -725,6 +745,11 @@ class Supervisor(Node):
                                       self.settings['geometry']['planning_padding_m'])
         dirty=cells is not None and self.keepout is not None and bool(self.keepout[cells].any())
         if self.spur_blocked(sign) or dirty:
+            if self.current.kind=='approach':
+                pub.publish(Twist());self.mission.events.append({'time':now,'reason':'SPUR_SKIPPED','xy':[round(x,3),round(y,3)]})
+                for k in ('spur','reverse'):
+                    if self.targets and self.targets[0].kind==k:self.targets.pop(0)
+                self.next_target();return
             if sign>0:end('SPUR_SHORTENED_CONTAMINATION' if dirty else 'SPUR_SHORTENED');return
             pub.publish(Twist())
             self.pause('SPUR_REVERSE_CONTAMINATION: contaminated floor behind the robot' if dirty else
@@ -741,7 +766,7 @@ class Supervisor(Node):
     def begin_sweep(self):
         t=self.current
         if getattr(t,'kind','')=='turn':self.begin_turn();return
-        if getattr(t,'kind','') in SPUR_KINDS:self.begin_spur();return
+        if getattr(t,'kind','') in SELF_DRIVEN:self.begin_spur();return
         if length(points_of(t))<self.settings['planning']['stationary_target_length_m']:
             self.mission.state='DWELL';self.phase_since=time.monotonic();return
         # The exported path is already dense with its corners rounded where that keeps every cell: follow it
@@ -796,8 +821,16 @@ class Supervisor(Node):
         phase=self.mission.state
         success=status==4 and not error and getattr(result,'error_code',0)==0
         if success and phase in DRIVING and self.path:
-            if math.dist(self.pose[:2],self.path[-1])>self.settings['recovery']['endpoint_tolerance_m']:
-                success=False;error='ACTION_SUCCEEDED_WITHOUT_REACHING_ENDPOINT'
+            miss=math.dist(self.pose[:2],self.path[-1])
+            # Nav2 reached the end by its own pose, then AMCL moved the robot's pose a few cm (after corner turns).
+            # A little off is accepted: the next piece rejoins smoothly from there (robot 2026-10-20: a new planned
+            # connection in the south-west corner turned 267 deg on the spot; the return ended RETURN_FAILED).
+            accept=(self.settings['planning']['rejoin_max_m'] if phase in ('CONNECT','SWEEP') else
+                    self.settings['locator']['base_tolerance_m'] if phase=='RETURN' else 0.)
+            if miss>self.settings['recovery']['endpoint_tolerance_m']:
+                if miss<=accept:
+                    self.mission.events.append({'time':time.monotonic(),'reason':'ENDPOINT_MISSED_ACCEPTED','state':phase,'offset_m':round(miss,3)})
+                else:success=False;error='ACTION_SUCCEEDED_WITHOUT_REACHING_ENDPOINT'
         if not success:
             if phase in ('CONNECT','SWEEP','RETURN') and not error:error=f"FOLLOW_PATH_ERROR_{getattr(result,'error_code','')}"
             if phase in ('CONNECT_PLAN','CONNECT','SWEEP','RETURN_PLAN','RETURN'):self.target_failure(error or 'NAVIGATION_FAILED')

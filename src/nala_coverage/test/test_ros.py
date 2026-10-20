@@ -779,3 +779,42 @@ def test_backing_out_needs_measured_clean_floor_behind_the_robot(ros):
     dirty=np.zeros_like(everything);dirty[sup.base.cell([2.45,2.])]=True
     state,reason=try_reverse(everything,dirty)
     assert state=='PAUSED' and reason.startswith('SPUR_REVERSE_CONTAMINATION')
+
+
+def test_a_drive_in_starts_on_its_line_not_where_nav2_stopped_beside_it(ros):
+    # Robot 2026-10-20: Nav2 stopped 6 cm beside the start of a drive-in (its goal tolerance is 5 cm) and the robot
+    # drove in from there, close past a box. Now it first drives straight onto the start, then turns into the line.
+    from nala_coverage.planning import poly_target
+    add,pump,_,_=ros
+    sup=add(Supervisor());sup.mission.start(time.monotonic(),sup.timeout);sup.mission.state='PREPARING'
+    spur=poly_target([[2.,2.],[2.5,2.]],'spur');spur.end_yaw=None
+    back=poly_target([[2.5,2.],[2.,2.]],'reverse');back.end_yaw=None
+    sup.targets=[spur,back];sup.pose=[2.,2.02,0.];sup.next_target()
+    assert sup.mission.state=='SPUR' and sup.current is spur          # 2 cm beside: straight in
+    sup.targets=[spur,back];sup.mission.state='PREPARING';sup.pose=[1.99,2.06,0.];sup.next_target()
+    assert sup.mission.state=='TURN' and sup.current.kind=='turn'      # 6 cm beside: turn towards the start ...
+    assert [t.kind for t in sup.targets[:3]]==['approach','spur','reverse']
+    ap=sup.targets[0];assert points_of_rest_free(ap)[-1]==[2.,2.] and abs(ap.end_yaw)<1e-9   # ... drive onto it, face in
+    sup.targets.pop(0);sup.current=ap;sup.pose=[1.99,2.06,math.atan2(-.06,.01)];sup.begin_spur()
+    assert sup.mission.state=='SPUR' and sup.spur['sign']>0                # forwards onto the start, never backwards
+    sup.targets=[spur,back];sup.mission.state='PREPARING';sup.pose=[2.,2.5,0.];sup.next_target()
+    assert any(e.get('reason')=='SPUR_SKIPPED' for e in sup.mission.events) and spur not in sup.targets and back not in sup.targets
+
+
+def points_of_rest_free(t):
+    from nala_coverage.planning import points_of
+    return points_of(t)
+
+
+def test_a_piece_ended_a_little_off_its_end_is_continued_not_reconnected(ros):
+    # Robot 2026-10-20: Nav2 reported a corner piece done, AMCL then put the robot 12 cm off its end: a new planned
+    # connection turned 267 deg on the spot. Now the next piece follows from there.
+    add,pump,_,_=ros
+    sup=add(Supervisor());sup.mission.start(time.monotonic(),sup.timeout)
+    nxt=[];sup.next_target=lambda:nxt.append(1);fails=[];sup.target_failure=lambda r:fails.append(r)
+    sup.mission.state='SWEEP';sup.path=[[2.,2.],[2.6,2.]];sup.pose=[2.6,2.12,0.]
+    sup.action_result('follow',4,FollowPath.Result(),None)
+    assert nxt and not fails and sup.mission.events[-1]['reason']=='ENDPOINT_MISSED_ACCEPTED'
+    sup.mission.state='SWEEP';sup.pose=[2.6,2.5,0.]                 # 0.5 m off: still a failure
+    sup.action_result('follow',4,FollowPath.Result(),None)
+    assert fails==['ACTION_SUCCEEDED_WITHOUT_REACHING_ENDPOINT']

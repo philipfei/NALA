@@ -361,7 +361,16 @@ SLAM must not jump to a wrong but similar-looking place.
   backing out every cell under the outline on the way back must be measured by the meter (or under the robot where
   it stood at P) and not contaminated, else a pause (SPUR_REVERSE_NOT_MEASURED / _CONTAMINATION). While driving: a
   LiDAR point within spur.clear_m ahead ends the drive-in there (SPUR_SHORTENED), behind pauses (SPUR_REVERSE_BLOCKED).
-  The meter's denominator includes the floor the spurs reach. Not yet driven on the robot.
+  The meter's denominator includes the floor the spurs reach.
+  After the first robot drive (2026-10-20: two drive-ins into one pocket, the route's end went back to the pocket
+  mouth, ~300 deg of turning there, a drive-in started 6 cm beside its line and nearly touched the box, a false
+  "wall behind"): the planner merges drive-ins one drive-in can do, ends each Q as shallow as its cells allow,
+  starts drive-ins only where P has robot_radius + 3 cm (the robot turns there after backing out), and cuts the
+  path end back to its last stop while that end covers nothing new (never into a drive-in). The robot drives onto
+  P itself when Nav2 left it more than spur.max_offset_m beside the line ('approach'), backs out to (not short of)
+  P, checks walls behind with the bare outline, and accepts a piece Nav2 finished up to rejoin_max_m off its end
+  (base: locator.base_tolerance_m) as done (ENDPOINT_MISSED_ACCEPTED) instead of planning a new connection.
+  Simulation test_basement2: 208 s instead of 271 s, 99.9 %, no contacts.
 - Apps 1 and 2 on the robot screen (user, 2026-10-19): buttons "Drive (app 1)" and "Make a map (app 2)" on the map
   list (`nala_panel/apps.py`, `ui.AppScreen`). They start the same launch files as over ssh (log in `log/`), STOP /
   Back stop them with Ctrl-C. Driving only with the Xbox controller (user: no on-screen arrows). App 2 shows the live
