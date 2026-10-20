@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Cyclone DDS on the Pi when no robot network (cyclonedds.xml) is there: loopback only (ros_env.sh picks it).
+  The robot screen and apps 1-3 run on the Pi alone, so they work without any network (user, 2026-10-20).
+  The PC cannot see the robot then. Not used together with cyclonedds.xml: a node with the loopback added
+  disables multicast and could no longer be found over the robot network (tested 2026-10-20).
+-->
+<CycloneDDS xmlns="https://cdds.io/config">
+  <Domain Id="any">
+    <General>
+      <Interfaces>
+        <NetworkInterface address="127.0.0.1" />
+      </Interfaces>
+    </General>
+  </Domain>
+</CycloneDDS>

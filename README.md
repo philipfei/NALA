@@ -26,7 +26,7 @@ plan the path, choose a plan and drive it.
 | Python | 3.12 | 3.12 |
 
 Network: the PC shares its connection on USB Ethernet (10.42.0.1/24). The Pi is on WiFi in that network.
-ROS uses only this network (`config/cyclonedds.xml`), `ROS_DOMAIN_ID=0`.
+ROS uses only this network (`config/cyclonedds.xml`), `ROS_DOMAIN_ID=0`. Without it (no WiFi), the Pi uses the loopback (`config/cyclonedds_local.xml`): the robot screen and the apps still work, the PC does not see the robot.
 
 MCU firmware: ATmega328PB, owned by a teammate, built with Microchip Studio on Windows and flashed with avrdude.
 All dependencies: [requirements.yaml](requirements.yaml).
@@ -101,6 +101,7 @@ NALA/
 │   ├── teleop.yaml                        [1] Fixed teleop speeds: PC keyboard, Pi Xbox controller (buttons, sticks)
 │   ├── ros_env.sh                         [1] ROS environment for PC and Pi: domain ID, Cyclone DDS
 │   ├── cyclonedds.xml                     [1] Cyclone DDS: use only the robot network 10.42.0.0/24 or 192.168.137.0/24
+│   ├── cyclonedds_local.xml               [3] Loopback only: used when no robot network is up (ros_env.sh picks it; robot screen works without WiFi)
 │   ├── robot.yaml                         [2] Robot model: body size, LiDAR and IMU mount poses (read by the URDF)
 │   ├── battery.yaml                       [1] INA260 battery monitor: I2C address, full / low / empty voltage
 │   ├── tune_motors.yaml                   [1] Test settings of scripts/tune_motors.py (step times, sweep speeds, timeouts).

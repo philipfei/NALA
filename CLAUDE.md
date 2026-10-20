@@ -469,5 +469,8 @@ SLAM must not jump to a wrong but similar-looking place.
   the base station, so a robot put on it backwards is only partly caught (AMCL starts at the base station heading
   +-10 deg, no global relocalization). The user placed it backwards at least once. Open: mark the base station
   direction on the floor; maybe a start check that the scan fits much better at the base heading than turned 180 deg.
-- [3] DDS on the Pi uses only the 10.42.0.0/24 network (`config/cyclonedds.xml`). Check that app 3 and the
-  panel also work when the PC network is not there.
+- [3] DDS without the PC network (2026-10-20): with none of cyclonedds.xml's networks up, Cyclone could not create
+  a node and the panel did not start after a boot without WiFi. Now ros_env.sh uses config/cyclonedds_local.xml
+  (loopback) then, start_panel.sh waits up to 30 s for the WiFi first and fixes its choice for everything it starts
+  (NALA_CYCLONEDDS_URI). Not loopback + network together: that disables multicast and the PC no longer finds the
+  robot (tested). Still to check on the robot: a boot with the laptop network off.

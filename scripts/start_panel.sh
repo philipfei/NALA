@@ -8,6 +8,7 @@ set -eo pipefail   # no -u: the ROS setup scripts use unset variables
 
 NALA_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WAIT_S=10          # s, at login GNOME may still be starting XWayland
+NETWORK_WAIT_S=30  # s, wait this long for the robot network (WiFi) at login, then start without it
 
 # The Pi desktop is GNOME on Wayland. PyQt5 runs on its XWayland (the xcb plugin comes with python3-pyqt5).
 export QT_QPA_PLATFORM=xcb
@@ -77,6 +78,14 @@ done
 export DISPLAY="${DISPLAY:-:${socket##*/X}}"
 export XAUTHORITY="$auth"
 
+# WiFi often comes up a few seconds after the desktop login: wait for a robot network (ros_env.sh picks the
+# DDS config from it), but start anyway after NETWORK_WAIT_S: the panel and the apps also run without network.
+source "$NALA_DIR/config/ros_env.sh" 2>/dev/null
+deadline=$((SECONDS + NETWORK_WAIT_S))
+until nala_robot_network || [ "$SECONDS" -ge "$deadline" ]; do sleep 1; done
+unset NALA_CYCLONEDDS_URI
 source "$NALA_DIR/config/ros_env.sh"
+export NALA_CYCLONEDDS_URI="$CYCLONEDDS_URI"
+echo "start_panel.sh: ROS network config $CYCLONEDDS_URI"
 exec ros2 run nala_panel panel --ros-args --params-file "$NALA_DIR/config/panel.yaml" \
   -p repo_dir:="$NALA_DIR" "$@"
