@@ -97,7 +97,7 @@ class Supervisor(Node):
         # Corner turns (TURN): the supervisor turns the robot on the spot itself, through the velocity gate like Nav2.
         self.turn_pub=self.create_publisher(Twist,'/cmd_vel_nav',LATEST);self.turn_left=[]
         # Backing out of a pocket (SPUR): the only reverse commands the gate passes in autodrive.
-        self.reverse_pub=self.create_publisher(Twist,'/cmd_vel_reverse',LATEST);self.spur=None;self.scan_xy=None
+        self.reverse_pub=self.create_publisher(Twist,'/cmd_vel_reverse',LATEST);self.spur=None;self.scan_xy=None;self.spur_line=None
         self.outline=np.asarray(cfg['geometry']['footprint_m'],float)
         self.trust_pub=self.create_publisher(String,'/coverage/trust',LATEST)
         self.sample_pub=self.create_publisher(String,'/coverage/sample',LATEST)
@@ -665,8 +665,21 @@ class Supervisor(Node):
         'approach': the supervisor's own short straight drive onto the start of a drive-in (begin_spur)."""
         t=self.current;a,b=points_of(t)[0],points_of(t)[-1];kind=t.kind;now=time.monotonic()
         cfg=self.settings['spur'];yaw_=spur_yaw(a,b,'reverse' if kind=='reverse' else 'spur');u=(math.cos(yaw_),math.sin(yaw_))
-        x,y,h=self.pose;side=-(x-a[0])*u[1]+(y-a[1])*u[0];err=abs(wrap(h-yaw_))
-        along=(x-a[0])*u[0]+(y-a[1])*u[1];total=math.dist(a,b)
+        # The line is followed in the odometry frame (smooth; AMCL corrections jump a few cm and degrees: robot
+        # 2026-10-20, the drive-in zigzagged +-15-20 deg and the back-out was refused at 15 deg off). It is put into
+        # odom once when the drive-in starts; the back-out uses that same line.
+        line=self.spur_line if kind=='reverse' and self.spur_line and self.spur_line['map']==(list(b),list(a)) else None
+        if line is None:
+            ao,bo=self.to_odom(a),self.to_odom(b)
+            if kind=='spur':self.spur_line={'map':(list(a),list(b)),'odom':(ao,bo)}
+        else:
+            bo,ao=line['odom']
+        yo=math.atan2(bo[1]-ao[1],bo[0]-ao[0]) if kind!='reverse' else math.atan2(ao[1]-bo[1],ao[0]-bo[0])
+        uo=(math.cos(yo),math.sin(yo))
+        xo,yo_,ho=self.odom_pose if self.odom_pose is not None else self.pose
+        side=-(xo-ao[0])*uo[1]+(yo_-ao[1])*uo[0];err=abs(wrap(ho-yo))
+        along=(xo-ao[0])*uo[0]+(yo_-ao[1])*uo[1];total=math.dist(a,b)
+        x,y,h=self.pose
         progress=along if kind=='spur' else -along
         on_line=(abs(side)<=self.settings['planning']['rejoin_max_m'] and -self.settings['planning']['rejoin_max_m']<=progress<=total+cfg['end_tolerance_m'])
         margin=self.settings['geometry']['planning_padding_m']
@@ -710,8 +723,15 @@ class Supervisor(Node):
             covered=np.zeros(swept.size,bool);covered[np.asarray(self.measurement.get('covered_indices',[]),int)]=True
             if (swept&~stood&~covered.reshape(swept.shape)).any():
                 self.pause('SPUR_REVERSE_NOT_MEASURED: floor behind the robot is not measured');return
-        self.spur={'a':list(a),'b':list(b),'yaw':yaw_,'sign':-1. if kind=='reverse' else 1.,'length':total}
+        self.spur={'a':list(ao),'b':list(bo),'yaw':yo,'map_yaw':yaw_,'sign':-1. if kind=='reverse' else 1.,'length':total}
         self.mission.state='SPUR';self.phase_since=self.target_since=self.last_motion=now;self.motion_pose=list(self.pose)
+
+    def to_odom(self,xy):
+        """A map point in the odometry frame, by the current map and odom poses of the robot."""
+        if self.odom_pose is None:return [float(xy[0]),float(xy[1])]
+        (mx,my,mh),(ox,oy,oh)=self.pose,self.odom_pose;d=oh-mh;c,s=math.cos(d),math.sin(d)
+        dx,dy=xy[0]-mx,xy[1]-my
+        return [ox+c*dx-s*dy,oy+s*dx+c*dy]
 
     def spur_blocked(self,sign):
         """A LiDAR point within spur.clear_m ahead of (sign +1) or behind (-1) the outline, outline + padding wide."""
@@ -728,26 +748,28 @@ class Supervisor(Node):
         """Drive along the spur line: forwards in, backwards out, steering back onto the line."""
         sp=self.spur;cfg=self.settings['spur'];m=self.settings['motion'];sign=sp['sign']
         pub=self.turn_pub if sign>0 else self.reverse_pub
-        x,y,h=self.pose;a=sp['a'];u=(math.cos(sp['yaw']),math.sin(sp['yaw']))
+        # Steering and progress in the odometry frame (begin_spur); obstacles and contamination in the map.
+        x,y,h=self.odom_pose if self.odom_pose is not None else self.pose;a=sp['a'];u=(math.cos(sp['yaw']),math.sin(sp['yaw']))
+        mx,my,_=self.pose;mu=(math.cos(sp['map_yaw']),math.sin(sp['map_yaw']))
         along=(x-a[0])*u[0]+(y-a[1])*u[1];side=-(x-a[0])*u[1]+(y-a[1])*u[0];err=wrap(h-sp['yaw'])
         # A back-out aims end_tolerance_m past its start: the robot turns there, and stopping short would leave it
         # on the pocket side, closer to walls than the plan allows for turning (simulation 2026-10-20: rod hit a wall).
         left=sp['length']+(cfg['end_tolerance_m'] if sign<0 else 0.)-sign*along
         def end(reason=None):
             pub.publish(Twist())
-            if reason:self.mission.events.append({'time':now,'reason':reason,'xy':[round(x,3),round(y,3)]})
+            if reason:self.mission.events.append({'time':now,'reason':reason,'xy':[round(mx,3),round(my,3)]})
             if getattr(self.current,'end_yaw',None) is not None:
                 # Backed out or on the start of a drive-in: turn on the spot to the next heading (TURN keeps this
                 # target, a pause resumes here).
                 self.current.headings=[self.current.end_yaw];self.begin_turn();return
             self.next_target()
         if left<=cfg['end_tolerance_m']:end();return
-        cells=self.grid.outline_cells((x+sign*u[0]*cfg['clear_m'],y+sign*u[1]*cfg['clear_m'],sp['yaw']),self.outline,
+        cells=self.grid.outline_cells((mx+sign*mu[0]*cfg['clear_m'],my+sign*mu[1]*cfg['clear_m'],sp['map_yaw']),self.outline,
                                       self.settings['geometry']['planning_padding_m'])
         dirty=cells is not None and self.keepout is not None and bool(self.keepout[cells].any())
         if self.spur_blocked(sign) or dirty:
             if self.current.kind=='approach':
-                pub.publish(Twist());self.mission.events.append({'time':now,'reason':'SPUR_SKIPPED','xy':[round(x,3),round(y,3)]})
+                pub.publish(Twist());self.mission.events.append({'time':now,'reason':'SPUR_SKIPPED','xy':[round(mx,3),round(my,3)]})
                 for k in ('spur','reverse'):
                     if self.targets and self.targets[0].kind==k:self.targets.pop(0)
                 self.next_target();return

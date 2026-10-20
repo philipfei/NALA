@@ -818,3 +818,24 @@ def test_a_piece_ended_a_little_off_its_end_is_continued_not_reconnected(ros):
     sup.mission.state='SWEEP';sup.pose=[2.6,2.5,0.]                 # 0.5 m off: still a failure
     sup.action_result('follow',4,FollowPath.Result(),None)
     assert fails==['ACTION_SUCCEEDED_WITHOUT_REACHING_ENDPOINT']
+
+
+def test_a_drive_in_steers_on_odometry_not_on_amcl_jumps(ros):
+    # Robot 2026-10-20: steering on the AMCL pose zigzagged +-15-20 deg into the pocket, and the back-out was refused
+    # at 15 deg off. The line is put into the odometry frame once; an AMCL correction afterwards changes nothing.
+    from nala_coverage.planning import poly_target
+    add,pump,_,_=ros
+    sup=add(Supervisor());sup.mission.start(time.monotonic(),sup.timeout);sup.mission.state='PREPARING'
+    spur=poly_target([[2.,2.],[2.5,2.]],'spur');spur.end_yaw=None
+    back=poly_target([[2.5,2.],[2.,2.]],'reverse');back.end_yaw=None
+    # odom is 1 m and 90 deg away from map (map->odom not identity), the robot on the line facing in.
+    sup.pose=[2.,2.,0.];sup.odom_pose=[1.,-1.,math.pi/2]
+    sup.targets=[spur,back];sup.next_target()
+    assert sup.mission.state=='SPUR' and np.allclose(sup.spur['a'],[1.,-1.]) and np.allclose(sup.spur['b'],[1.,-.5])
+    sent=[];sup.turn_pub.publish=lambda m:sent.append(m.angular.z)
+    sup.measurement={'covered_indices':[]};sup.motion_pose=list(sup.pose)
+    sup.odom_pose=[1.,-.8,math.pi/2];sup.pose=[2.25,2.05,math.radians(10)]   # AMCL jumped 5 cm, 10 deg
+    sup.spur_step(time.monotonic())
+    assert sent and abs(sent[-1])<1e-6                                     # on the line by odometry: no steering
+    sup.odom_pose=[1.02,-.8,math.pi/2];sup.spur_step(time.monotonic())     # 2 cm right of the line by odometry
+    assert sent[-1]>0                                                       # steers back left
