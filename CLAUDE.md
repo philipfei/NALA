@@ -341,8 +341,10 @@ SLAM must not jump to a wrong but similar-looking place.
   (state TURN) turns the robot on the spot through all its headings itself, via /cmd_vel_nav and the velocity gate,
   slowing only before the last heading in one direction. No motion for no_motion_s skips the rest of the turn
   (TURN_SKIPPED), never a pause. Simulation room Test: 1 standstill > 0.4 s in the whole run.
-- Reversing out of corners: not built. A 90 deg corner needs none (the plan keeps 0.53 m = turning room; with the
-  placeholder sensor the turn sweeps the corner). To plan with the user if the real sensor is much smaller.
+- Reversing out of corners: not built; user decision 2026-10-20: later (too risky now). It needs the planner with
+  the real outline (lanes ~0.25 m from side walls, drive into the corner, reverse ~0.3 m to turning room), a
+  'reverse' piece type, RPP allow_reversing and a reverse-capable velocity gate with a clear-behind check. A 90 deg
+  corner needs none (the plan keeps 0.53 m = turning room). Decide once the real scintillator's reach is known.
 - Apps 1 and 2 on the robot screen (user, 2026-10-19): buttons "Drive (app 1)" and "Make a map (app 2)" on the map
   list (`nala_panel/apps.py`, `ui.AppScreen`). They start the same launch files as over ssh (log in `log/`), STOP /
   Back stop them with Ctrl-C. Driving only with the Xbox controller (user: no on-screen arrows). App 2 shows the live
