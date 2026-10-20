@@ -92,10 +92,10 @@ _REQUIRED = {
     'motion': {'linear_m_s', 'angular_rad_s', 'linear_accel_m_s2', 'angular_accel_rad_s2',
                'controller_angular_accel_rad_s2', 'turn_start_rad_s', 'turn_tolerance_deg', 'manual_forward_m_s', 'manual_reverse_m_s', 'manual_angular_rad_s'},
     'runtime': {'map_frame', 'odom_frame', 'base_frame', 'map_yaml', 'base_station_yaml', 'output_dir'},
-    'coverage': {'planning', 'localization', 'health', 'measurement', 'battery', 'deadlines',
+    'coverage': {'planning', 'spur', 'localization', 'health', 'measurement', 'battery', 'deadlines',
                  'recovery', 'visualization', 'radiation', 'map_changes', 'locator'},
 }
-BEHAVIOR = ('geometry', 'motion', 'planning', 'localization', 'health', 'measurement', 'battery',
+BEHAVIOR = ('geometry', 'motion', 'planning', 'spur', 'localization', 'health', 'measurement', 'battery',
             'deadlines', 'recovery', 'visualization', 'radiation', 'map_changes', 'locator')
 
 
@@ -162,7 +162,7 @@ class Settings:
             raise ValueError('Invalid coverage disk radius')
         if not 0 <= geometry['sensor_offset_m'] < geometry['coverage_disk_radius_m']:
             raise ValueError('geometry.sensor_offset_m must be at least 0 and below the coverage disk radius')
-        for section in ('motion', 'localization', 'health', 'measurement', 'deadlines',
+        for section in ('motion', 'spur', 'localization', 'health', 'measurement', 'deadlines',
                         'recovery', 'visualization', 'radiation', 'map_changes', 'locator'):
             _positive_tree(section, values[section])
         if not 0 < values['radiation']['keepout_cost'] < 100:

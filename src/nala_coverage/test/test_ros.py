@@ -76,6 +76,7 @@ class FakeInputs(Node):
         self.settings=node_settings(self)
         self.battery=.8;self.x=2.;self.y=2.;self.yaw=0.;self.pose_bad=False
         self.turns=False   # True: the fake robot turns with the gate's angular command (corner turn tests)
+        self.drives=False  # True: ... and drives with its linear command (the supervisor's own spur driving)
         self.publish_scan=True;self.scan_ahead=0.;self.tf_lag=0.;self.battery_enabled=True;self.publish_trust=True;self.request_owner='NONE';self.epoch='test'
         self.outputs=[];self.final=(0.,0.)
         # Stands in for locator_node: where the robot is found, and whether it is on the base station.
@@ -95,6 +96,7 @@ class FakeInputs(Node):
     def tick(self):
         stamp=self.get_clock().now().to_msg()
         if self.turns:self.yaw=math.remainder(self.yaw+self.final[1]*.05,2*math.pi)
+        if self.drives:self.x+=self.final[0]*math.cos(self.yaw)*.05;self.y+=self.final[0]*math.sin(self.yaw)*.05
         qz,qw=math.sin(self.yaw/2),math.cos(self.yaw/2)
         od=Odometry();od.header.stamp=stamp;od.header.frame_id='odom';od.child_frame_id='base_footprint'
         od.pose.pose.position.x=self.x;od.pose.pose.position.y=self.y;od.pose.pose.orientation.z=qz;od.pose.pose.orientation.w=qw;self.pubs['odom'].publish(od)
@@ -736,3 +738,44 @@ def test_go_home_from_a_pause_and_refused_without_a_task(ros):
     sup.pause('OPERATOR_PAUSE')
     assert 'driving back' in sup.go_home()
     assert sup.mission.state=='PREPARING' and sup.pending_phase=='RETURN' and sup.returning and not sup.targets
+
+
+def test_a_pocket_is_driven_in_forwards_and_out_backwards_along_the_same_line(ros):
+    # Planner spur (coverage_tool coverage/spurs.py, user 2026-10-20): east into a pocket and straight back out
+    # backwards, the supervisor driving both itself; then a turn north and the next lane.
+    seen=[]
+    def watch(sup):
+        if sup.mission.state=='SPUR':seen.append((sup.spur['sign'],list(sup.pose)))
+    pts=[[2.,2.],[2.6,2.],[2.9,2.],[2.6,2.],[2.6,2.6]]
+    drive={'format':1,'points':pts,'stops':[1,2,3],'kinds':['wall','wall','spur','reverse','wall']}
+    sup,follows,_,_=run_plan(ros,[[2.,2.],[2.6,2.6]],drive=drive,during=watch,turns=True,
+                             fake_hook=lambda f:setattr(f,'drives',True))
+    assert sup.mission.state=='FINISHED' and sup.mission.reason=='RETURNED_TO_BASE',(sup.mission.state,sup.mission.reason,sup.mission.events)
+    inward=[p for s,p in seen if s>0];outward=[p for s,p in seen if s<0]
+    assert inward and outward and max(p[0] for p in inward)>2.85          # it drove in to the end ...
+    assert all(abs(p[2])<.1 and abs(p[1]-2.)<.03 for p in inward+outward)  # ... along the line, facing in both ways
+    assert outward[-1][0]<2.65                                              # and backed out to the start
+    lanes=[p for _,p,_ in follows[:-1]]
+    assert len(lanes)==2 and lanes[1][0]==[2.6,2.] and lanes[1][-1]==[2.6,2.6]   # no Nav2 goal for the spur
+    assert not any(str(e.get('reason','')).startswith('SPUR_') for e in sup.mission.events),sup.mission.events
+
+
+def test_backing_out_needs_measured_clean_floor_behind_the_robot(ros):
+    from nala_coverage.planning import poly_target
+    add,pump,_,_=ros
+    sup=add(Supervisor());sup.mission.start(time.monotonic(),sup.timeout)
+    def try_reverse(covered,keepout=None):
+        back=poly_target([[2.9,2.],[2.6,2.]],'reverse');back.end_yaw=None
+        sup.mission.state='PREPARING';sup.mission.reason=''
+        sup.current=back;sup.targets=[];sup.pose=[2.9,2.,0.];sup.keepout=keepout
+        sup.measurement={'covered_indices':np.flatnonzero(covered).tolist()}
+        sup.begin_spur();return sup.mission.state,sup.mission.reason
+    everything=np.ones(sup.base.cells.shape,bool)
+    state,reason=try_reverse(np.zeros_like(everything))
+    assert state=='PAUSED' and reason.startswith('SPUR_REVERSE_NOT_MEASURED')
+    # Measured, except where the robot stood before driving in: still fine (it was there already).
+    stood=np.zeros_like(everything);stood[sup.base.outline_cells((2.6,2.,0.),sup.outline,sup.settings['geometry']['planning_padding_m'])]=True
+    assert try_reverse(everything&~stood)[0]=='SPUR'
+    dirty=np.zeros_like(everything);dirty[sup.base.cell([2.45,2.])]=True
+    state,reason=try_reverse(everything,dirty)
+    assert state=='PAUSED' and reason.startswith('SPUR_REVERSE_CONTAMINATION')

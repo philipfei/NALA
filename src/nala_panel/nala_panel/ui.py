@@ -795,7 +795,7 @@ class ScanScreen(QtWidgets.QWidget):
         recalculating = running and state == 'PAUSED' and bool(s.state.get('auto_resume'))
         paused = state == 'PAUSED' and not recalculating
         driving = running and (recalculating or state in ('BACKGROUND', 'PREPARING', 'CONNECT_PLAN', 'CONNECT',
-                                                          'SWEEP', 'DWELL', 'TURN', 'PHASE_WAIT', 'RETURN_PLAN',
+                                                          'SWEEP', 'DWELL', 'TURN', 'SPUR', 'PHASE_WAIT', 'RETURN_PLAN',
                                                           'RETURN'))
         # The large progress view of the design while driving; after "Show map" the map stays until "Big view" or
         # a new scan (user, 2026-10-20: it used to switch back by itself after every pause or state change).

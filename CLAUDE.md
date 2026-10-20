@@ -348,10 +348,20 @@ SLAM must not jump to a wrong but similar-looking place.
 - Full coverage first (user decision 2026-10-20): the planner keeps covering every reachable cell, also the few
   against the walls (edge_missed_weight stays 10000). Dropping the corner sweeps (room Test 58 s instead of 77 s,
   99.8 % instead of 100 %) was rejected.
-- Reversing out of corners: not built; user decision 2026-10-20: later (too risky now). It needs the planner with
-  the real outline (lanes ~0.25 m from side walls, drive into the corner, reverse ~0.3 m to turning room), a
-  'reverse' piece type, RPP allow_reversing and a reverse-capable velocity gate with a clear-behind check. A 90 deg
-  corner needs none (the plan keeps 0.53 m = turning room). Decide once the real scintillator's reach is known.
+- Reversing out of pockets (user, 2026-10-20: "it should only drive backwards on already covered area, so that we
+  are sure it doesn't drive into a contamination"). Planner: coverage_tool/coverage/spurs.py runs after the drivable
+  path and adds "spurs" for floor the route misses (also floor beyond the robot radius's reach): from a point P on
+  the route straight forwards to Q and straight back to P (drive_path kinds 'spur', 'reverse'; stops at P, Q, P),
+  checked with the real outline + padding + localisation margin, chosen by covered cells per second. Backwards the
+  robot only passes floor its sensor measured on the way in. test_basement2: 95.8 % -> 100 %, 3 spurs.
+  Robot: plan_file checks spur stretches with the outline + planning_padding_m (not the turning circle) and keeps
+  them as own targets ('spur', 'reverse'); the supervisor drives them itself (state SPUR, spur.* in coverage.yaml,
+  0.06 m/s): forwards via /cmd_vel_nav, backwards via /cmd_vel_reverse, which the gate passes only while NAV owns
+  the robot, only <= 0 and <= spur.speed_m_s, and only from coverage_supervisor (else a graph conflict). Before
+  backing out every cell under the outline on the way back must be measured by the meter (or under the robot where
+  it stood at P) and not contaminated, else a pause (SPUR_REVERSE_NOT_MEASURED / _CONTAMINATION). While driving: a
+  LiDAR point within spur.clear_m ahead ends the drive-in there (SPUR_SHORTENED), behind pauses (SPUR_REVERSE_BLOCKED).
+  The meter's denominator includes the floor the spurs reach. Not yet driven on the robot.
 - Apps 1 and 2 on the robot screen (user, 2026-10-19): buttons "Drive (app 1)" and "Make a map (app 2)" on the map
   list (`nala_panel/apps.py`, `ui.AppScreen`). They start the same launch files as over ssh (log in `log/`), STOP /
   Back stop them with Ctrl-C. Driving only with the Xbox controller (user: no on-screen arrows). App 2 shows the live

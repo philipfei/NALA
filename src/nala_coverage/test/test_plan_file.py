@@ -127,3 +127,24 @@ def test_plan_made_for_another_sensor_is_rejected(tmp_path,room_map):
         load(coverage_disk_radius_m=.6)              # a SIMBA-style plan: sensor at the robot centre
     with pytest.raises(ValueError,match='PLAN_ROBOT_MISMATCH: .*coverage_disk_radius_m'):
         load(sensor_offset_m=.26,coverage_disk_radius_m=.4)
+
+
+def test_a_drive_in_stretch_is_checked_with_the_outline_and_stays_its_own_targets(tmp_path,room_map):
+    # Planner spurs (coverage_tool coverage/spurs.py, 2026-10-20): straight in forwards to a point too close to the
+    # wall for the turning circle, straight back out backwards. Checked with the real outline, never the circle.
+    grid=Grid.load(room_map);outline=[[.2,.18],[.2,-.18],[-.2,-.18],[-.2,.18]]
+    def plan(end,**kw):
+        points=[[1.,1.],[2.,1.],end,[2.,1.],[3.,1.]]
+        path=write_plan(tmp_path,[[1.,1.],[3.,1.]],drive_path={'format':1,'points':points,'stops':[1,2,3],
+                                                               'kinds':['wall','wall','spur','reverse','wall']})
+        return load_plan(path,grid,room_map,'map',.5,turn_merge_m=.06,**kw)
+    p=plan([2.,.3],outline=outline,margin=.02)          # the front stops 3 cm before the south wall
+    lane,spur,back,east=p['targets']
+    assert [t.kind for t in p['targets']]==['plan','spur','reverse','plan'] and p['spurs']==[([2.,1.],[2.,.3])]
+    assert abs(lane.end_yaw+math.pi/2)<1e-9                # turn into the pocket at its start ...
+    assert spur.end_yaw is None                            # ... no turn at its end: the robot backs out as it faces
+    assert back.points==[[2.,.3],[2.,1.]] and abs(back.end_yaw)<1e-9
+    with pytest.raises(ValueError,match='PLAN_TOO_CLOSE_TO_OBSTACLES: 2 of 4'):
+        plan([2.,.2],outline=outline,margin=.02)          # in and out both reach the wall
+    with pytest.raises(ValueError,match='PLAN_TOO_CLOSE_TO_OBSTACLES'):
+        plan([2.,.3])                                      # no outline given: never accepted

@@ -63,7 +63,7 @@ class Ownership:
         self.cfg=settings or load_settings()
         self.linear=linear;self.angular=angular;self.acceleration=acceleration;self.angular_acceleration=angular_acceleration
         self.turn_start=turn_start
-        self.owner='NONE';self.epoch='';self.command=None;self.command_time=-math.inf
+        self.owner='NONE';self.epoch='';self.command=None;self.command_time=-math.inf;self.reverse=False
         self.lease_time=-math.inf;self.output=(0.,0.);self.stopping=False
         self.stop_at=0.;self.fault='';self.events=[]
 
@@ -71,12 +71,16 @@ class Ownership:
         if owner not in ('NONE','MANUAL','NAV'):return
         if (owner,epoch)!=(self.owner,self.epoch):
             if self.owner in ('NAV','MANUAL'):self.stopping=True;self.stop_at=now
-            self.owner=owner;self.epoch=epoch;self.command=None;self.command_time=-math.inf
+            self.owner=owner;self.epoch=epoch;self.command=None;self.command_time=-math.inf;self.reverse=False
         self.lease_time=now
 
     def receive(self, source, command, now):
-        if source==self.owner and all(math.isfinite(x) for x in command):
-            self.command=command;self.command_time=now
+        """source REVERSE: the supervisor reversing out of a pocket (spur) while it holds NAV ownership."""
+        if not all(math.isfinite(x) for x in command):return
+        if source==self.owner:
+            self.command=command;self.command_time=now;self.reverse=False
+        elif source=='REVERSE' and self.owner=='NAV':
+            self.command=command;self.command_time=now;self.reverse=True
 
     def latch(self, reason):
         if not self.fault:self.fault=reason
@@ -87,8 +91,11 @@ class Ownership:
         valid &= self.owner in ('NAV','MANUAL') and self.command is not None and now-self.command_time<=self.cfg['health']['command_age_s']
         if valid:
             v,w=self.command
-            # Autodrive (Nav2) only drives forwards and turns; only manual driving may reverse.
-            if self.owner=='NAV':
+            # Autodrive (Nav2) only drives forwards and turns; only manual driving and the supervisor's spurs reverse.
+            if self.owner=='NAV' and self.reverse:
+                # Only backwards, and slowly (spur.speed_m_s): the supervisor checked the floor behind is measured.
+                v=max(-self.cfg['spur']['speed_m_s'],min(0.,v));w=min(self.angular,max(-self.angular,w))
+            elif self.owner=='NAV':
                 v=min(self.linear,max(0.,v))
                 # A turn on the spot from STANDSTILL asks at least turn_start: Nav2 (RPP) asks only measured rate +
                 # a small step, below the wheels' breakaway (robot, 2026-10-16/19). Still ramped below. Once the

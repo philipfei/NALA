@@ -7,7 +7,7 @@ import numpy as np
 from scipy.ndimage import binary_dilation, label
 
 from . import cost as costmod
-from . import drivable, footprint, localsearch, optimizer, planning, spiral
+from . import drivable, footprint, localsearch, optimizer, planning, spiral, spurs
 from .settings import set_settings
 
 
@@ -335,12 +335,20 @@ def plan(grid, start_xy, polygon, settings, progress=None):
     # The path the robot drives: corners rounded where that keeps every covered cell, stops elsewhere.
     _log(progress, 'Making the path drivable...')
     result['drive'] = drivable.make_drivable(grid, result, settings, progress)
+    # Floor the route cannot reach with turning room (narrow pockets): in-and-out stretches, reversing only over
+    # floor just measured on the way in (spurs.py; user, 2026-10-20).
+    _log(progress, 'Adding drive-in stretches for narrow pockets...')
+    if spurs.add_spurs(grid, result, settings, progress):
+        covered = result['covered'] & den
+        stats['coverage_pct'] = 100.0 * covered.sum() / den.sum()
+        stats['covered_m2'] = float(covered.sum() * grid.resolution ** 2)
+        stats['estimated_time_s'] = stats.get('estimated_time_s', 0.0) + result['drive']['stats'].get('drive_spur_s', 0.0)
     stats.update({k: v for k, v in result['drive']['stats'].items() if not isinstance(v, dict)})
     g = settings['geometry']
     if g.get('footprint_m'):
         _log(progress, 'Checking the robot outline along the path...')
         n, where = footprint.hits(grid, result['drive']['points'], g['footprint_m'],
-                                  float(g.get('footprint_padding_m', 0.0)))
+                                  float(g.get('footprint_padding_m', 0.0)), kinds=result['drive'].get('kinds'))
         stats['footprint_hits'] = n
         result['footprint_hits'] = where
     stats['planning_time_s'] = time.monotonic() - t0

@@ -82,7 +82,8 @@ def draw_result(ax, grid, result, show_coverage=True, show_connectors=True):
     if show_coverage:
         coverable = result.get('coverable', result['region'])
         draw_mask(ax, grid, coverable & ~result['covered'], '#e53935', 0.45)            # missed
-        draw_mask(ax, grid, result['region'] & ~coverable, '#f4b400', 0.35)               # too close to walls to reach
+        # Too close to walls to reach (the drive-ins of coverage/spurs.py may still cover some of it)
+        draw_mask(ax, grid, result['region'] & ~coverable & ~result['covered'], '#f4b400', 0.35)
         draw_mask(ax, grid, result['covered'], COLORS['region'], 0.18)
     if show_connectors:
         for c in result['connections']:
@@ -182,6 +183,13 @@ def coverage_count(grid, result, radius=None):
         prev = t
     for c in chains:
         flat[piece_cells(grid, result['region'], c, r)] += 1
+    # Drive-in stretches into pockets (coverage/spurs.py) are only in the drivable path; the back-out passes the
+    # same floor again and is not counted twice.
+    drive = result.get('drive') or {}
+    points, kinds = drive.get('points') or [], drive.get('kinds') or []
+    for a, b, k in zip(points, points[1:], kinds[1:]):
+        if k == 'spur':
+            flat[piece_cells(grid, result['region'], [a, b], r)] += 1
     return count
 
 
@@ -211,7 +219,7 @@ def draw_robot_path(ax, grid, result, radius=None, arrows=12, show_goals=True, c
     cb = None
     count = coverage_count(grid, result, radius)
     region = result['region']
-    coverable = result.get('coverable', region)
+    coverable = result.get('coverable', region) | (count > 0)    # the drive-ins also reach beyond it
     layers = [(coverable & (count == 0), '#e53935', 0.55), (region & ~coverable, '#f4b400', 0.30),
               (count == 1, '#8fd18f', 0.45), (count == 2, '#f2d541', 0.55), (count >= 3, '#f08a24', 0.6)]
     for mask, color, alpha in layers:

@@ -271,6 +271,30 @@ class Grid:
             if self.visible(xy,self.world((y,x))):result[y,x]=True
         return result
 
+    def outline_cells(self, pose, outline, margin):
+        """(rows, cols) of the cells under the robot's outline at pose = (x, y, yaw): its bounding box widened by
+        margin, sampled every half cell. None when a part lies off the map."""
+        lo=np.min(outline,axis=0)-margin;hi=np.max(outline,axis=0)+margin;step=self.resolution/2
+        xs=np.linspace(lo[0],hi[0],max(2,math.ceil((hi[0]-lo[0])/step)+1))
+        ys=np.linspace(lo[1],hi[1],max(2,math.ceil((hi[1]-lo[1])/step)+1))
+        bx,by=[v.ravel() for v in np.meshgrid(xs,ys)]
+        c,s=math.cos(pose[2]),math.sin(pose[2])
+        xy=np.stack([pose[0]+c*bx-s*by,pose[1]+s*bx+c*by],axis=1)
+        rc=np.floor(self.local(xy)[:,::-1]/self.resolution).astype(int)
+        h,w=self.cells.shape
+        if not ((rc[:,0]>=0)&(rc[:,0]<h)&(rc[:,1]>=0)&(rc[:,1]<w)).all():return None
+        return rc[:,0],rc[:,1]
+
+    def outline_swept(self, a, b, yaw, outline, margin):
+        """Cells (a bool mask) under the outline driven straight from a to b with heading yaw (forwards or
+        backwards), checked every half cell. None when a part lies off the map."""
+        mask=np.zeros(self.cells.shape,bool);n=max(1,math.ceil(math.dist(a,b)/(self.resolution/2)))
+        for i in range(n+1):
+            cells=self.outline_cells((a[0]+(b[0]-a[0])*i/n,a[1]+(b[1]-a[1])*i/n,yaw),outline,margin)
+            if cells is None:return None
+            mask[cells]=True
+        return mask
+
     def sensor_reachable(self, reachable, offset):
         """Where a sensor `offset` m ahead of the robot centre can be: within `offset` of a reachable centre
         (the robot turns on the spot anywhere it can stand), on known-free floor."""

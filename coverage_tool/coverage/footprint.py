@@ -44,15 +44,19 @@ def _edge_distance(poly, P):
     return d
 
 
-def poses(points, step=STEP_M, turn_step=TURN_STEP):
-    """(x, y, yaw) poses of the robot driving `points` forwards, turning on the spot at corners."""
+def poses(points, step=STEP_M, turn_step=TURN_STEP, kinds=None):
+    """(x, y, yaw) poses of the robot driving `points` forwards, turning on the spot at corners. kinds (the kind
+    of the stretch arriving at each point): a 'reverse' stretch is driven backwards, the robot keeps facing the
+    other way (spurs.py), so there is no turn where it starts."""
     pts = [np.asarray(p, float) for p in points]
     out, yaw = [], None
-    for a, b in zip(pts, pts[1:]):
+    for i, (a, b) in enumerate(zip(pts, pts[1:])):
         d = float(np.linalg.norm(b - a))
         if d < 1e-9:
             continue
         h = math.atan2(b[1] - a[1], b[0] - a[0])
+        if kinds is not None and kinds[i + 1] == 'reverse':
+            h = math.atan2(math.sin(h + math.pi), math.cos(h + math.pi))
         if yaw is not None:
             dh = math.atan2(math.sin(h - yaw), math.cos(h - yaw))
             n = int(math.ceil(abs(dh) / turn_step))
@@ -63,10 +67,10 @@ def poses(points, step=STEP_M, turn_step=TURN_STEP):
     return out
 
 
-def hits(grid, points, footprint, padding=0.0, chunk=2000):
+def hits(grid, points, footprint, padding=0.0, chunk=2000, kinds=None):
     """Poses where the footprint overlaps a cell that is not known-free: (count, [(x, y, yaw), ...])."""
     body = _body_points(footprint, padding, grid.resolution / 2)
-    P = np.asarray(poses(points), float)
+    P = np.asarray(poses(points, kinds=kinds), float)
     if not len(P):
         return 0, []
     bad = np.zeros(len(P), bool)

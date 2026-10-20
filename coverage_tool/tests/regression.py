@@ -76,7 +76,10 @@ def run(case):
     # The drivable path (rounded corners) must keep every covered cell and stay clear of walls,
     # and the real outline driven along it (forwards, turning on the spot) must touch nothing.
     dp = r['drive']['points']
-    bad_drive = sum(not g.segment_safe(a, b, rr) for a, b in zip(dp, dp[1:]))
+    # Drive-in stretches into narrow pockets and their way back out (spurs.py) do not keep the turning circle;
+    # they are checked with the real outline (outline hits below).
+    dk = r['drive'].get('kinds') or [''] * len(dp)
+    bad_drive = sum(not g.segment_safe(a, b, rr) for a, b, k in zip(dp, dp[1:], dk[1:]) if k not in ('spur', 'reverse'))
     lost = S['drive_lost_cells']
     hits = S.get('footprint_hits', 0)
     ok = open_missed == 0 and bad == 0 and lost == 0 and bad_drive == 0 and hits == 0

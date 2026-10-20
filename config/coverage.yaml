@@ -56,6 +56,23 @@
       # Plan pieces up to this long (the aimed goals' 5 cm moves) are no separate Nav2 goals: with the stop before
       # them they become one continuous turn on the spot per corner (supervisor TURN; user, 2026-10-19).
       turn_merge_length_m: 0.06
+    spur:
+      # Drive-in stretches into pockets the route cannot turn in (coverage_tool coverage/spurs.py, user 2026-10-20):
+      # straight in forwards, then straight back out backwards along the same line, only over floor the sensor has
+      # measured (checked before and while reversing). The supervisor drives them itself, through the velocity gate,
+      # which passes a reverse speed only from the supervisor's /cmd_vel_reverse and never more than speed_m_s.
+      speed_m_s: 0.06
+      # Steering along the line: rad/s per rad of heading error and per m beside the line.
+      heading_gain: 1.5
+      track_gain: 3.0
+      # The end of the line counts as reached within this.
+      end_tolerance_m: 0.02
+      # Starting (or resuming) a stretch: at most planning.rejoin_max_m beside its line and this far off its heading.
+      # Off the line, a drive-in is left out; a back-out is left out only where the robot can turn (else a pause).
+      max_heading_error_deg: 20.0
+      # LiDAR: a scan point within this distance ahead of the outline (in the driving direction, outline + the
+      # planning padding wide) ends the drive-in there, or stops the reversing (SPUR_REVERSE_BLOCKED).
+      clear_m: 0.06
     localization:
       position_sigma_m: 0.1
       heading_sigma_deg: 10.0

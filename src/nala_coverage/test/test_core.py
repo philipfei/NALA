@@ -240,3 +240,18 @@ def test_trajectory_never_bridges_untrusted_interval_or_sampling_gap():
     assert len(m.trajectory_edges)==1 and m.trajectory_segment_start==2
     m.sample([1.04,1.,0.],2.)
     assert len(m.trajectory_edges)==1 and m.trajectory_segment_start==3
+
+
+def test_only_the_supervisors_reverse_channel_reverses_autodrive_and_slowly():
+    p=Ownership();p.lease('NAV','a',0)
+    limit=p.cfg['spur']['speed_m_s']
+    for i in range(40):
+        p.lease('NAV','a',i*.05);p.receive('REVERSE',(-.2,.1),i*.05);v=p.tick(i*.05,True,False)
+    assert v[0]==pytest.approx(-limit) and v[1]>0          # backwards, capped at spur.speed_m_s
+    p.lease('NAV','a',2.);p.receive('REVERSE',(.1,0.),2.)
+    assert p.tick(2.,True,False)[0]<=0.                     # never forwards from the reverse channel
+    for i in range(40):
+        p.lease('NAV','a',3+i*.05);p.receive('NAV',(-.1,0.),3+i*.05);v=p.tick(3+i*.05,True,False)
+    assert v[0]==0.                                         # Nav2 itself still cannot reverse
+    p.lease('NONE','b',6);p.receive('REVERSE',(-.05,0.),6)
+    assert p.command is None                                # and nothing reverses without NAV ownership

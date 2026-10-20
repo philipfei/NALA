@@ -28,6 +28,8 @@ class SafetyGate(Node):
         self.diag=self.create_publisher(DiagnosticArray,'/safety/status',10)
         self.create_subscription(Twist,'/cmd_vel_nav',lambda m:self.command('NAV',m),LATEST)
         self.create_subscription(Twist,'/cmd_vel_remote',lambda m:self.command('MANUAL',m),LATEST)
+        # Reversing out of a pocket: only the coverage supervisor may publish here (check_graph).
+        self.create_subscription(Twist,'/cmd_vel_reverse',lambda m:self.command('REVERSE',m),LATEST)
         self.create_subscription(String,'/coverage/lease',self.lease,LATEST)
         self.create_subscription(String,'/coverage/trust',self.trust,LATEST)
         self.create_subscription(EmptyMsg,'/control/manual_heartbeat',self.manual_heartbeat,10)
@@ -76,7 +78,10 @@ class SafetyGate(Node):
         extra=[f'{item.node_namespace}/{item.node_name}:{bytes(item.endpoint_gid).hex()}' for item in publishers if item not in own]
         names=[name for name,_ in nodes]
         localization_conflict=('amcl' in names if self.mapping else any('slam_toolbox' in name for name in names))
-        self.graph_conflicts=extra+duplicate+(['LOCALIZATION_OWNER_CONFLICT'] if localization_conflict else [])
+        reverse=[f'{item.node_namespace}/{item.node_name}' for item in self.get_publishers_info_by_topic('/cmd_vel_reverse')
+                 if item.node_name!='coverage_supervisor']
+        self.graph_conflicts=extra+duplicate+(['LOCALIZATION_OWNER_CONFLICT'] if localization_conflict else [])+\
+            [f'REVERSE_PUBLISHER:{name}' for name in reverse]
         self.graph_ok=len(publishers)==1 and len(own)==1 and not self.graph_conflicts
         self.graph_reason='' if self.graph_ok else 'CMD_VEL_OR_NODE_OWNERSHIP_CONFLICT'
         if not self.graph_ok and time.monotonic()-self.graph_started>=1.0:self.policy.latch(self.graph_reason)

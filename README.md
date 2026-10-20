@@ -166,12 +166,14 @@ NALA/
 │   ├── app.py                             PC: interactive planner window (Tkinter)
 │   ├── plan_cli.py                        Plan from the command line: map + base station (+ start, area) -> plan .yaml/.png
 │   ├── send_to_nav2.py                    Only for a plain Nav2 stack, not used by NALA (see coverage_tool/README.md)
-│   ├── coverage/                          The planner: grid, sensor model, patterns, cost, optimiser, drivable path, export
+│   ├── coverage/                          The planner: grid, sensor model, patterns, cost, optimiser, drivable path,
+│   │                                      drive-ins into pockets (spurs.py), export
 │   │   └── *.py                           (one module per step; list in coverage_tool/README.md)
 │   ├── examples/                          Example maps (*.yaml + *.pgm), map generators (make_*.py), NALA example plans
 │   │                                      (*_nala.yaml) and their base stations (*_base_station.yaml)
 │   └── tests/
 │       ├── test_sensor.py                 Unit tests: sensor ahead of the robot, outline check, geometry from config/
+│       ├── test_spurs.py                  Unit test: drive-in stretch into a narrow pocket, backing out over measured floor
 │       └── regression.py                  Acceptance test on the example maps (about 15 minutes; --quick for 2 cases)
 │
 ├── maps/                                  Saved maps and base station files. The map files are not in git.
@@ -279,18 +281,21 @@ NALA/
     │   ├── nala_coverage/
     │   │   ├── __init__.py                [3] Python package marker
     │   │   ├── supervisor.py              [3] Mission: preview/start/pause/resume/cancel/go home, background measurement,
-    │   │   │                                  Nav2 actions, detours, avoiding contaminated floor, return to base
+    │   │   │                                  Nav2 actions, detours, avoiding contaminated floor, return to base,
+    │   │   │                                  drive-ins into pockets (SPUR: in forwards, out backwards over measured floor)
     │   │   ├── radiation.py               [3] Radiation map: background, readings at trusted poses, hotspots, keepout (no ROS)
     │   │   ├── radiation_node.py          [3] Scintillator readings -> heatmap, hotspots, keepout zone, run folder files
     │   │   ├── mapchange.py               [3] Map changes: new objects and removed objects from LiDAR scans (no ROS)
     │   │   ├── mapchange_node.py          [3] LiDAR scans at trusted poses -> /map_changes, changes.npz in the run folder
     │   │   ├── locate.py                  [3] Find the robot on the map from one scan; on the base station / backwards (no ROS)
     │   │   ├── locator_node.py            [3] /scan -> /coverage/located while no task drives (Start needs ON_BASE)
-    │   │   ├── plan_file.py               [3] Load and check a coverage_tool plan (map, wall clearance, sensor, base station)
+    │   │   ├── plan_file.py               [3] Load and check a coverage_tool plan (map, wall clearance, outline on
+    │   │   │                                  drive-ins, sensor, base station)
     │   │   ├── planning.py                [3] Plan pieces and path helpers (no ROS)
     │   │   ├── base_station.py            [3] Load, save and check base_station.yaml (no ROS)
     │   │   ├── base_station_picker_node.py   [3] PC: RViz "2D Goal Pose" -> maps/<name>/base_station.yaml
-    │   │   ├── gate_node.py               [3] Velocity gate: the only /cmd_vel publisher in app 3; forward only for Nav2
+    │   │   ├── gate_node.py               [3] Velocity gate: the only /cmd_vel publisher in app 3; forward only for Nav2,
+    │   │   │                                  slow reverse only from the supervisor's /cmd_vel_reverse (backing out)
     │   │   ├── health.py                  [3] Ownership and localization trust checks (no ROS)
     │   │   ├── meter.py                   [3] Coverage meter node: covered floor from trusted poses, at the sensor (avoided floor not counted)
     │   │   ├── measurement.py             [3] Coverage painting (no ROS)

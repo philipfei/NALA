@@ -15,6 +15,16 @@ def map_image_sha256(map_yaml):
 def _heading(a,b):return math.atan2(b[1]-a[1],b[0]-a[0])
 
 
+# Drive-in stretches into a pocket (coverage_tool coverage/spurs.py): 'spur' drives straight in forwards, 'reverse'
+# straight back out backwards along the same line. The supervisor drives both itself (state SPUR).
+SPUR_KINDS=('spur','reverse')
+
+
+def spur_yaw(a,b,kind):
+    """The robot's heading on a spur stretch from a to b: facing into the pocket both ways."""
+    return _heading(a,b) if kind=='spur' else _heading(b,a)
+
+
 def stop_corners(points,min_deg=20.):
     """Corners of an older plan without a drivable path where the robot has to stop and turn."""
     out=[]
@@ -30,9 +40,12 @@ def pieces(points,stops,kinds=None):
     cuts=[0]+sorted(i for i in set(stops) if 0<i<len(points)-1)+[len(points)-1]
     out=[]
     for a,b in zip(cuts,cuts[1:]):
-        t=poly_target([list(p) for p in points[a:b+1]],'plan')
-        t.end_yaw=_heading(points[b],points[b+1]) if b<len(points)-1 else None
-        t.kinds=kinds[a+1:b+1] if kinds else None
+        k=kinds[a+1:b+1] if kinds else None
+        spur=k[0] if k and len(k)==1 and k[0] in SPUR_KINDS else None
+        t=poly_target([list(p) for p in points[a:b+1]],spur or 'plan')
+        # No turn at the end of a drive-in: the robot backs out the same way it faces.
+        t.end_yaw=_heading(points[b],points[b+1]) if b<len(points)-1 and spur!='spur' else None
+        t.kinds=k
         out.append(t)
     return out
 
@@ -46,6 +59,10 @@ def merge_turns(targets,max_length):
     piece (no stop, no turn)."""
     out=[]
     for t in targets:
+        if getattr(t,'kind','') in SPUR_KINDS:
+            # Drive-in and back-out stretches stay their own targets, whatever their length.
+            if out:out[-1].join_next=False
+            out.append(t);continue
         pts=points_of(t)
         short=out and _length(pts)<=max_length
         kinds=getattr(t,'kinds',None)
@@ -54,6 +71,8 @@ def merge_turns(targets,max_length):
             # room Test 2026-10-20): no turn towards it, and no stop either: the piece before, the step and the
             # next piece become one piece (the planner's own, safe stretches), which Nav2 follows in one go.
             last=out[-1]
+            if getattr(last,'kind','') in SPUR_KINDS:
+                out.append(t);continue
             if getattr(last,'kind','')=='turn':
                 if last.headings:last.headings.pop()
                 if t.end_yaw is not None:last.headings.append(t.end_yaw)
@@ -63,6 +82,8 @@ def merge_turns(targets,max_length):
         if not short and out and getattr(out[-1],'join_next',False):
             out[-1]=_joined(out[-1],t);continue
         if out:out[-1].join_next=False
+        if short and getattr(out[-1],'kind','') in SPUR_KINDS:
+            out.append(t);continue
         if short and getattr(out[-1],'kind','')!='turn':
             prev=out[-1];end=points_of(prev)[-1]
             turn=poly_target([list(end),list(end)],'turn');turn.headings=[];turn.end_yaw=None
@@ -95,7 +116,14 @@ def check_base_station(plan,station,tolerance):
                          f'the base station is now {list(station[:2])}; plan again')
 
 
-def load_plan(path,grid,map_yaml,map_frame,collision,sensor=None,turn_merge_m=None):
+def spur_unsafe(grid,a,b,kind,outline,margin):
+    """A spur stretch where the robot's outline (+ margin) would touch a wall or unknown floor."""
+    if outline is None:return True
+    swept=grid.outline_swept(a,b,spur_yaw(a,b,kind),outline,margin)
+    return swept is None or bool((swept&~grid.free).any())
+
+
+def load_plan(path,grid,map_yaml,map_frame,collision,sensor=None,turn_merge_m=None,outline=None,margin=0.):
     """Return the plan's driven path and its pieces between stop corners, or raise ValueError naming the problem.
 
     A coverage_tool export with `drive_path` gives the exact path to follow (corners rounded where that
@@ -103,7 +131,9 @@ def load_plan(path,grid,map_yaml,map_frame,collision,sensor=None,turn_merge_m=No
     joined by straight lines and every corner of 20 degrees or more is a stop.
 
     `sensor` = (offset, radius) of this robot's coverage sensor: a plan made for another sensor covers
-    different floor, so it is rejected (PLAN_ROBOT_MISMATCH). `turn_merge_m`: merge_turns() with that length."""
+    different floor, so it is rejected (PLAN_ROBOT_MISMATCH). `turn_merge_m`: merge_turns() with that length.
+    Drive-in stretches (kinds 'spur'/'reverse') are driven straight without turning, so they are checked with the
+    robot's `outline` widened by `margin` instead of the turning circle (`collision`)."""
     path=Path(path)
     if not path.is_file():raise ValueError('PLAN_FILE_MISSING: '+str(path))
     text=path.read_text()
@@ -132,7 +162,9 @@ def load_plan(path,grid,map_yaml,map_frame,collision,sensor=None,turn_merge_m=No
             if raw_kinds:kinds.append(str(raw_kinds[i]))
         index[i]=len(points)-1
     if len(points)<2:raise ValueError('PLAN_FILE_INVALID: fewer than two distinct poses')
-    unsafe=[i for i,(a,b) in enumerate(zip(points,points[1:])) if not grid.segment_safe(a,b,collision)]
+    unsafe=[i for i,(a,b) in enumerate(zip(points,points[1:]))
+            if (spur_unsafe(grid,a,b,kinds[i+1],outline,margin) if kinds and kinds[i+1] in SPUR_KINDS
+                else not grid.segment_safe(a,b,collision))]
     if unsafe:
         x,y=points[unsafe[0]]
         raise ValueError(f'PLAN_TOO_CLOSE_TO_OBSTACLES: {len(unsafe)} of {len(points)-1} segments come within '
@@ -157,6 +189,7 @@ def load_plan(path,grid,map_yaml,map_frame,collision,sensor=None,turn_merge_m=No
     if area is not None and len(area)<3:raise ValueError('PLAN_FILE_INVALID: area_polygon needs at least 3 corners')
     targets=pieces(points,stops,kinds or None)
     if turn_merge_m is not None:targets=merge_turns(targets,turn_merge_m)
-    return {'points':points,'stops':stops,'targets':targets,'drivable':isinstance(drive,dict),
+    spurs=[(points[i-1],points[i]) for i in range(1,len(points)) if kinds and kinds[i]=='spur']
+    return {'points':points,'stops':stops,'targets':targets,'drivable':isinstance(drive,dict),'spurs':spurs,
             'robot_radius':robot_radius,'base_station':station,'area':area,
             'plan_sha256':hashlib.sha256(text.encode()).hexdigest()}
