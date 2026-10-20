@@ -740,23 +740,21 @@ def test_go_home_from_a_pause_and_refused_without_a_task(ros):
     assert sup.mission.state=='PREPARING' and sup.pending_phase=='RETURN' and sup.returning and not sup.targets
 
 
-def test_a_pocket_is_driven_in_forwards_and_out_backwards_along_the_same_line(ros):
-    # Planner spur (coverage_tool coverage/spurs.py, user 2026-10-20): east into a pocket and straight back out
-    # backwards, the supervisor driving both itself; then a turn north and the next lane.
+def test_a_pocket_is_driven_in_like_any_piece_and_backed_out_by_the_supervisor(ros):
+    # User 2026-10-20: driving in is a normal part of the path (Nav2 follows it, the corner at its start like every
+    # corner); only backing out is the supervisor's (state SPUR), straight back along the same line.
     seen=[]
     def watch(sup):
-        if sup.mission.state=='SPUR':seen.append((sup.spur['sign'],list(sup.pose)))
+        if sup.mission.state=='SPUR':seen.append(list(sup.pose))
     pts=[[2.,2.],[2.6,2.],[2.9,2.],[2.6,2.],[2.6,2.6]]
-    drive={'format':1,'points':pts,'stops':[1,2,3],'kinds':['wall','wall','spur','reverse','wall']}
+    drive={'format':1,'points':pts,'stops':[2,3],'kinds':['wall','wall','spur','reverse','wall']}
     sup,follows,_,_=run_plan(ros,[[2.,2.],[2.6,2.6]],drive=drive,during=watch,turns=True,
                              fake_hook=lambda f:setattr(f,'drives',True))
     assert sup.mission.state=='FINISHED' and sup.mission.reason=='RETURNED_TO_BASE',(sup.mission.state,sup.mission.reason,sup.mission.events)
-    inward=[p for s,p in seen if s>0];outward=[p for s,p in seen if s<0]
-    assert inward and outward and max(p[0] for p in inward)>2.85          # it drove in to the end ...
-    assert all(abs(p[2])<.1 and abs(p[1]-2.)<.03 for p in inward+outward)  # ... along the line, facing in both ways
-    assert outward[-1][0]<2.65                                              # and backed out to the start
-    lanes=[p for _,p,_ in follows[:-1]]
-    assert len(lanes)==2 and lanes[1][0]==[2.6,2.] and lanes[1][-1]==[2.6,2.6]   # no Nav2 goal for the spur
+    paths=[p for _,p,_ in follows[:-1]]
+    assert paths[0][0]==[2.,2.] and paths[0][-1]==[2.9,2.]                 # one Nav2 piece straight into the pocket
+    assert seen and all(abs(p[2])<.1 and abs(p[1]-2.)<.03 for p in seen)  # backing out along the line, facing in
+    assert seen[-1][0]<2.65 and paths[1][0]==[2.6,2.]                      # back out to the start, then on
     assert not any(str(e.get('reason','')).startswith('SPUR_') for e in sup.mission.events),sup.mission.events
 
 
@@ -781,29 +779,26 @@ def test_backing_out_needs_measured_clean_floor_behind_the_robot(ros):
     assert state=='PAUSED' and reason.startswith('SPUR_REVERSE_CONTAMINATION')
 
 
-def test_a_drive_in_starts_on_its_line_not_where_nav2_stopped_beside_it(ros):
-    # Robot 2026-10-20: Nav2 stopped 6 cm beside the start of a drive-in (its goal tolerance is 5 cm) and the robot
-    # drove in from there, close past a box. Now it first drives straight onto the start, then turns into the line.
+def test_the_way_into_a_pocket_is_checked_with_the_outline_and_a_stop_inside_backs_out(ros):
     from nala_coverage.planning import poly_target
     add,pump,_,_=ros
-    sup=add(Supervisor());sup.mission.start(time.monotonic(),sup.timeout);sup.mission.state='PREPARING'
-    spur=poly_target([[2.,2.],[2.5,2.]],'spur');spur.end_yaw=None
-    back=poly_target([[2.5,2.],[2.,2.]],'reverse');back.end_yaw=None
-    sup.targets=[spur,back];sup.pose=[2.,2.02,0.];sup.next_target()
-    assert sup.mission.state=='SPUR' and sup.current is spur          # 2 cm beside: straight in
-    sup.targets=[spur,back];sup.mission.state='PREPARING';sup.pose=[1.99,2.06,0.];sup.next_target()
-    assert sup.mission.state=='TURN' and sup.current.kind=='turn'      # 6 cm beside: turn towards the start ...
-    assert [t.kind for t in sup.targets[:3]]==['approach','spur','reverse']
-    ap=sup.targets[0];assert points_of_rest_free(ap)[-1]==[2.,2.] and abs(ap.end_yaw)<1e-9   # ... drive onto it, face in
-    sup.targets.pop(0);sup.current=ap;sup.pose=[1.99,2.06,math.atan2(-.06,.01)];sup.begin_spur()
-    assert sup.mission.state=='SPUR' and sup.spur['sign']>0                # forwards onto the start, never backwards
-    sup.targets=[spur,back];sup.mission.state='PREPARING';sup.pose=[2.,2.5,0.];sup.next_target()
-    assert any(e.get('reason')=='SPUR_SKIPPED' for e in sup.mission.events) and spur not in sup.targets and back not in sup.targets
-
-
-def points_of_rest_free(t):
-    from nala_coverage.planning import points_of
-    return points_of(t)
+    sup=add(Supervisor());sup.mission.start(time.monotonic(),sup.timeout)
+    sent=[];sup.slot.send=lambda typ,name,goal,*_:sent.append(goal)
+    # 4 m box, walls in the outer 0.05 m: Q is closer to the south wall than the turning circle, the outline fits.
+    into=poly_target([[2.,.8],[2.,.32]],'plan');into.drive_in=[2.,.8];into.end_yaw=None
+    back=poly_target([[2.,.32],[2.,.8]],'reverse');back.end_yaw=None
+    assert not sup.grid.segment_safe([2.,.8],[2.,.32],sup.collision)
+    sup.current=into;sup.pose=[2.,.8,-math.pi/2];sup.follow([[2.,.8],[2.,.32]],'SWEEP')
+    assert sent                                                             # accepted on the outline
+    plain=poly_target([[2.,.8],[2.,.32]],'plan');plain.drive_in=None;sup.current=plain
+    with pytest.raises(ValueError):sup.follow([[2.,.8],[2.,.32]],'SWEEP')  # a normal piece needs the circle
+    # Nav2 stops inside the pocket (blocked, phantom collision): back out from there, never skip on deeper.
+    sup.current=into;sup.targets=[back];sup.pose=[2.,.5,-math.pi/2];sup.mission.state='SWEEP'
+    sup.target_failure('FOLLOW_PATH_ERROR_106')
+    assert sup.mission.events[-1]['reason']=='SPUR_SHORTENED' and sup.current is None and sup.targets==[back]
+    # A pause inside the pocket: resume backs out (the rest of the drive-in is left out).
+    sup.current=into;sup.targets=[back];sup.mission.state='SWEEP';sup.pause('OPERATOR_PAUSE')
+    assert sup.current is None and sup.targets==[back] and [e['reason'] for e in sup.mission.events[-2:]]==['SPUR_SHORTENED','OPERATOR_PAUSE']
 
 
 def test_a_piece_ended_a_little_off_its_end_is_continued_not_reconnected(ros):
@@ -820,22 +815,22 @@ def test_a_piece_ended_a_little_off_its_end_is_continued_not_reconnected(ros):
     assert fails==['ACTION_SUCCEEDED_WITHOUT_REACHING_ENDPOINT']
 
 
-def test_a_drive_in_steers_on_odometry_not_on_amcl_jumps(ros):
-    # Robot 2026-10-20: steering on the AMCL pose zigzagged +-15-20 deg into the pocket, and the back-out was refused
-    # at 15 deg off. The line is put into the odometry frame once; an AMCL correction afterwards changes nothing.
+def test_backing_out_steers_on_odometry_not_on_amcl_jumps(ros):
+    # Robot 2026-10-20: steering on the AMCL pose zigzagged +-15-20 deg in a pocket. The line is put into the
+    # odometry frame once; an AMCL correction afterwards changes nothing.
     from nala_coverage.planning import poly_target
     add,pump,_,_=ros
     sup=add(Supervisor());sup.mission.start(time.monotonic(),sup.timeout);sup.mission.state='PREPARING'
-    spur=poly_target([[2.,2.],[2.5,2.]],'spur');spur.end_yaw=None
     back=poly_target([[2.5,2.],[2.,2.]],'reverse');back.end_yaw=None
-    # odom is 1 m and 90 deg away from map (map->odom not identity), the robot on the line facing in.
-    sup.pose=[2.,2.,0.];sup.odom_pose=[1.,-1.,math.pi/2]
-    sup.targets=[spur,back];sup.next_target()
-    assert sup.mission.state=='SPUR' and np.allclose(sup.spur['a'],[1.,-1.]) and np.allclose(sup.spur['b'],[1.,-.5])
-    sent=[];sup.turn_pub.publish=lambda m:sent.append(m.angular.z)
-    sup.measurement={'covered_indices':[]};sup.motion_pose=list(sup.pose)
-    sup.odom_pose=[1.,-.8,math.pi/2];sup.pose=[2.25,2.05,math.radians(10)]   # AMCL jumped 5 cm, 10 deg
+    # odom is rotated 90 deg against map (map->odom not identity); the robot at Q facing in (east in the map).
+    sup.pose=[2.5,2.,0.];sup.odom_pose=[1.,-.5,math.pi/2]
+    sup.measurement={'covered_indices':np.flatnonzero(np.ones(sup.base.cells.size,bool)).tolist()}
+    sup.targets=[back];sup.next_target()
+    assert sup.mission.state=='SPUR' and np.allclose(sup.spur['a'],[1.,-.5]) and np.allclose(sup.spur['b'],[1.,-1.])
+    sent=[];sup.reverse_pub.publish=lambda m:sent.append((m.linear.x,m.angular.z))
+    sup.motion_pose=list(sup.pose)
+    sup.odom_pose=[1.,-.7,math.pi/2];sup.pose=[2.3,2.05,math.radians(10)]   # AMCL jumped 5 cm, 10 deg
     sup.spur_step(time.monotonic())
-    assert sent and abs(sent[-1])<1e-6                                     # on the line by odometry: no steering
-    sup.odom_pose=[1.02,-.8,math.pi/2];sup.spur_step(time.monotonic())     # 2 cm right of the line by odometry
-    assert sent[-1]>0                                                       # steers back left
+    assert sent and sent[-1][0]<0 and abs(sent[-1][1])<1e-6                 # backwards, on the line: no steering
+    sup.odom_pose=[1.02,-.7,math.pi/2];sup.spur_step(time.monotonic())      # 2 cm right of the line by odometry
+    assert sent[-1][1]<0                                                     # turns right: the back swings left

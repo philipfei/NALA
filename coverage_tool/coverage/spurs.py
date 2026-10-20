@@ -70,10 +70,11 @@ def turn_room(settings):
 
 
 def drive_in_time(settings, depth):
-    """Seconds of one drive-in: in and out at the drive-in speed, and a stop at Q and back at P. The turns into it
-    and out of it are charged at its junctions, like for every piece."""
-    v = float(settings['motion']['linear_m_s']) * float(settings['spur']['speed_factor'])
-    return 2 * depth / v + 2 * float(settings['cost']['stop_penalty_s'])
+    """Seconds of one drive-in: in at the normal speed (the robot drives in like any stretch of the path), back out
+    at the drive-in speed (user 2026-10-20), and a stop at Q and back at P. The turns into it and out of it are
+    charged at its junctions, like for every piece."""
+    v = float(settings['motion']['linear_m_s'])
+    return depth / v + depth / (v * float(settings['spur']['speed_factor'])) + 2 * float(settings['cost']['stop_penalty_s'])
 
 
 def _shortest(grid, region, target, p, q, radius, gain, step):

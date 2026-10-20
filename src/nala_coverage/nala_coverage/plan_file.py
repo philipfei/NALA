@@ -16,7 +16,8 @@ def _heading(a,b):return math.atan2(b[1]-a[1],b[0]-a[0])
 
 
 # Drive-in stretches into a pocket (coverage_tool coverage/spurs.py): 'spur' drives straight in forwards, 'reverse'
-# straight back out backwards along the same line. The supervisor drives both itself (state SPUR).
+# straight back out backwards along the same line. Driving in is a normal piece (Nav2 follows it like any other;
+# user 2026-10-20); only backing out is driven by the supervisor (state SPUR).
 SPUR_KINDS=('spur','reverse')
 
 
@@ -41,11 +42,14 @@ def pieces(points,stops,kinds=None):
     out=[]
     for a,b in zip(cuts,cuts[1:]):
         k=kinds[a+1:b+1] if kinds else None
-        spur=k[0] if k and len(k)==1 and k[0] in SPUR_KINDS else None
-        t=poly_target([list(p) for p in points[a:b+1]],spur or 'plan')
+        back=bool(k) and len(k)==1 and k[0]=='reverse'
+        t=poly_target([list(p) for p in points[a:b+1]],'reverse' if back else 'plan')
         # No turn at the end of a drive-in: the robot backs out the same way it faces.
-        t.end_yaw=_heading(points[b],points[b+1]) if b<len(points)-1 and spur!='spur' else None
+        into=bool(k) and k[-1]=='spur'
+        t.end_yaw=_heading(points[b],points[b+1]) if b<len(points)-1 and not into else None
         t.kinds=k
+        # Where its drive-in starts (P): the stretch from there is checked with the outline (supervisor.follow).
+        t.drive_in=list(points[a+k.index('spur')]) if into else None
         out.append(t)
     return out
 
@@ -102,6 +106,7 @@ def _joined(a,b):
     t=poly_target([list(p) for p in pa]+[list(p) for p in pb[1:]],'plan')
     t.end_yaw=b.end_yaw
     t.kinds=(getattr(a,'kinds',None) or [])+(getattr(b,'kinds',None) or []) or None
+    t.drive_in=getattr(b,'drive_in',None)
     return t
 
 

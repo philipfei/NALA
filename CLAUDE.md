@@ -355,16 +355,19 @@ SLAM must not jump to a wrong but similar-looking place.
   2026-10-20: no post-processing of a finished path (the first version added drive-ins afterwards and then merged,
   trimmed and straightened the path: rejected); only as deep as the sensor model needs; drive-in time at the robot's
   drive-in speed (half); start anywhere with turning room (robot radius + 3 cm). test_basement2: 100 %, 2 drive-ins.
-  Robot: plan_file checks drive-ins with the outline + planning_padding_m and keeps them as own targets ('spur',
-  'reverse'); the supervisor drives them itself (state SPUR, spur.* in coverage.yaml, 0.06 m/s): forwards via
-  /cmd_vel_nav, backwards via /cmd_vel_reverse, which the gate passes only while NAV owns the robot, only <= 0 and
-  <= spur.speed_m_s, and only from coverage_supervisor. Before backing out every cell under the bare outline on the
-  way back must be measured by the meter (or under the robot where it stood at P) and not contaminated, else a pause
-  (SPUR_REVERSE_NOT_MEASURED / _CONTAMINATION); a LiDAR point within spur.clear_m ahead ends the drive-in there
-  (SPUR_SHORTENED), behind pauses (SPUR_REVERSE_BLOCKED). More than spur.max_offset_m beside the line at the start:
-  it first drives straight onto P ('approach'). The back-out ends at or just past P (it turns there). A piece Nav2
-  finished up to rejoin_max_m off its end (base: locator.base_tolerance_m) counts as done (ENDPOINT_MISSED_ACCEPTED).
-  The meter's denominator includes the floor the drive-ins reach.
+  Robot (user 2026-10-20: the drive-in is a normal part of the path): driving in is a normal plan piece that Nav2
+  follows (plan_file: piece kind 'plan' with drive_in = its start P; supervisor.follow checks the stretch from P with
+  the outline + planning_padding_m instead of the turning circle). A stop inside the pocket (Nav2 failure, timeout,
+  pause, new contamination ahead) ends the drive-in there (SPUR_SHORTENED) and the robot backs out; contamination on
+  a drive-in before it starts drops it (SPUR_SKIPPED_CONTAMINATION). Backing out ('reverse', state SPUR) is the
+  supervisor's: on odometry along the line put into odom when it starts (steering on AMCL zigzagged), 0.06 m/s,
+  via /cmd_vel_reverse (the gate passes it only while NAV owns the robot, only <= 0, <= spur.speed_m_s, only from
+  coverage_supervisor). Before it every cell under the bare outline must be measured (or under the robot at P) and
+  not contaminated, else a pause (SPUR_REVERSE_NOT_MEASURED / _CONTAMINATION); LiDAR behind: SPUR_REVERSE_BLOCKED.
+  It ends at or just past P (it turns there). Earlier versions (same day) drove in with the supervisor too and
+  needed a turn-drive-turn onto P after Nav2's 5 cm point goal: many random turns; rejected.
+  A piece Nav2 finished up to rejoin_max_m off its end (base: locator.base_tolerance_m) counts as done
+  (ENDPOINT_MISSED_ACCEPTED). The meter's denominator includes the floor the drive-ins reach.
 - Apps 1 and 2 on the robot screen (user, 2026-10-19): buttons "Drive (app 1)" and "Make a map (app 2)" on the map
   list (`nala_panel/apps.py`, `ui.AppScreen`). They start the same launch files as over ssh (log in `log/`), STOP /
   Back stop them with Ctrl-C. Driving only with the Xbox controller (user: no on-screen arrows). App 2 shows the live

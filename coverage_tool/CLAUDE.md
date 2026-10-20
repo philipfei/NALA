@@ -35,8 +35,9 @@ robot's Pi: the touchscreen panel (`src/nala_panel`) runs `plan_cli.py` as a chi
   outline + padding + margin, never the circle; Q only as deep as the sensor needs (user). In `localsearch` a
   drive-in is an aimed-goal-like piece (`drivein`: fixed heading, never flipped/trimmed/straightened); `detours`
   offers the candidates covering a missed cell; time = in and out at `spur.speed_factor` x speed + 2 stops (user:
-  count the robot's half speed). Coverage of a drive-in = its way in (`planning.coverage_points`). The drivable path
-  keeps it exact (P stop, Q kind 'spur', P kind 'reverse'). NOT a post-processing step: the user rejected changing a
+  count the robot's half speed for backing out; it drives in at normal speed). Coverage of a drive-in = its way in
+  (`planning.coverage_points`). The drivable path makes driving in part of the route stretch before it (P carries
+  kind 'spur'; the corner at P like every corner), then Q is a stop and P (kind 'reverse') a stop. NOT a post-processing step: the user rejected changing a
   finished path (2026-10-20: leftover hairpins and a route end back to a pocket mouth) - planner logic only.
 - `drivable.py` counts the corner swing (`pivot`) as coverage: rounding a corner loses that swing.
 - `sensor_path` always emits both shifted end points at a corner (no shortcut at gentle bends), so the

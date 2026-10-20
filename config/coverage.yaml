@@ -57,30 +57,27 @@
       # them they become one continuous turn on the spot per corner (supervisor TURN; user, 2026-10-19).
       turn_merge_length_m: 0.06
     spur:
-      # Drive-in stretches into pockets the route cannot turn in (coverage_tool coverage/spurs.py, user 2026-10-20):
-      # straight in forwards, then straight back out backwards along the same line, only over floor the sensor has
-      # measured (checked before and while reversing). The supervisor drives them itself, through the velocity gate,
-      # which passes a reverse speed only from the supervisor's /cmd_vel_reverse and never more than speed_m_s.
+      # Drive-ins into pockets the robot cannot turn in (coverage_tool coverage/spurs.py, user 2026-10-20). Driving in
+      # is a normal piece of the path (Nav2 follows it); backing out, straight back along the same line, is driven by
+      # the supervisor, only over floor the meter has measured (checked before and while backing out). The velocity
+      # gate passes a reverse speed only from the supervisor's /cmd_vel_reverse and never more than speed_m_s.
       speed_m_s: 0.06
-      # Steering along the line (in the odometry frame): rad/s per rad of heading error and per m beside the line.
-      # At speed_m_s these pull the robot from max_offset_m beside the line onto it within ~0.3 m without
-      # overshoot (heading_gain^2 > 4 x track_gain x speed_m_s). Robot 2026-10-20: 2.0 / 20 on the AMCL pose
-      # zigzagged +-15-20 deg.
+      # Steering while backing out (on odometry): rad/s per rad of heading error and per m beside the line, no
+      # overshoot at speed_m_s (heading_gain^2 > 4 x track_gain x speed_m_s). Robot 2026-10-20: 2.0 / 20 on the
+      # AMCL pose zigzagged +-15-20 deg.
       heading_gain: 1.5
       track_gain: 6.0
-      # The end of the line counts as reached within this. A back-out ends between its start and this much past it
-      # (onto the route), never short of it: the robot turns on the spot there.
+      # The end of backing out: between P and this much past it (onto the route), never short of it: the robot turns
+      # on the spot there.
       end_tolerance_m: 0.02
-      # A drive-in starts at most this far beside its line and steers onto it while driving in (user 2026-10-20:
-      # rather than a turn-drive-turn onto the start; Nav2 stops within 5 cm of a goal). coverage_tool checks the line
-      # with this much margin. Further off, the supervisor first drives straight onto its start (up to
-      # planning.rejoin_max_m away), else the drive-in is left out (SPUR_SKIPPED).
+      # How far beside its line the robot may be on a drive-in (Nav2's tracking, AMCL): coverage_tool checks the
+      # line with this much margin around the outline.
       max_offset_m: 0.05
-      # Facing further off the line at the start: turn on the spot first. A back-out this far off its heading or
-      # rejoin_max_m beside its line is left out where the robot can turn, else a pause (SPUR_OFF_LINE).
+      # Backing out starts only within planning.rejoin_max_m of the line and this far off its heading; otherwise it
+      # is left out where the robot can turn (SPUR_REVERSE_SKIPPED), else a pause (SPUR_OFF_LINE).
       max_heading_error_deg: 10.0
-      # LiDAR: a scan point within this distance ahead of the outline (in the driving direction, outline + the
-      # planning padding wide) ends the drive-in there, or stops the reversing (SPUR_REVERSE_BLOCKED).
+      # LiDAR: a scan point within this distance behind the outline (outline + the planning padding wide) stops
+      # backing out (SPUR_REVERSE_BLOCKED).
       clear_m: 0.06
     localization:
       position_sigma_m: 0.1

@@ -250,9 +250,10 @@ def make_drivable(grid, result, settings, progress=None):
     'kinds': kind per point (of the stretch arriving there),
     'stops': indices of the corners where the robot stops and turns, 'stats': {...}}.
 
-    A drive-in (target kind 'spur': P, Q, P; spurs.py) is kept exactly: the route up to P and from P on are made
-    drivable each on their own, the drive-in in between becomes P (stop), Q (kind 'spur', stop), P (kind 'reverse',
-    stop). It is never rounded or simplified: it is checked with the robot outline, not the turning circle."""
+    A drive-in (target kind 'spur': P, Q, P; spurs.py): driving in, P -> Q (kind 'spur'), is part of the route
+    stretch before it; the corner at P is treated like every corner (it stays a stop unless it is straight: P -> Q is
+    checked with the robot outline, not the turning circle, so no arc or shortcut uses it). Then Q is a stop, the way
+    back out is P (kind 'reverse', stop), and the route goes on from P."""
     radius = float(settings['geometry']['coverage_disk_radius_m'])
     collision = settings.collision
     region = result['region']
@@ -265,8 +266,11 @@ def make_drivable(grid, result, settings, progress=None):
         kind = getattr(t, 'kind', 'spiral')
         add = [(list(map(float, q)), 'transit') for q in conn]
         if kind == 'spur':
+            # Driving in is a normal stretch of the route (the robot follows it like any other); only the way back
+            # out is special. The stretch P -> Q keeps its outline check (never rounded or simplified away: it is not
+            # turning-circle safe, so _section keeps it exactly), the corner at P is handled like every corner.
             p, q = [list(map(float, x)) for x in points_of(t)[:2]]
-            add.append((p, 'transit'))
+            add += [(p, 'spur'), (q, 'spur')]           # (a vertex carries the kind of the stretch after it)
         else:
             add += [(list(map(float, q)), kind) for q in points_of(t)]
         for x, k in add:
@@ -277,21 +281,18 @@ def make_drivable(grid, result, settings, progress=None):
             kinds.append(k)
         if kind == 'spur':
             parts.append(('route', v, kinds))
-            parts.append(('spur', p, q))
+            parts.append(('back_out', q, p))
             v, kinds = [list(p)], ['transit']
     parts.append(('route', v, kinds))
 
     out, out_kinds, stops, arcs, radii, reasons, planned, kept, n_spurs = [], [], [], 0, [], {}, 0, 0, 0
     for part in parts:
-        if part[0] == 'spur':
-            _, p, q = part
-            if not out or math.dist(out[-1], p) > 1e-6:
-                out.append(list(p))
-                out_kinds.append('transit')
-            stops.append(len(out) - 1)
-            out += [list(q), list(p)]
-            out_kinds += ['spur', 'reverse']
-            stops += [len(out) - 2, len(out) - 1]
+        if part[0] == 'back_out':                        # the route stretch before ended at Q
+            _, q, p = part
+            stops.append(len(out) - 1)                   # stop at Q
+            out.append(list(p))
+            out_kinds.append('reverse')
+            stops.append(len(out) - 1)                   # and back at P
             n_spurs += 1
             continue
         _, pv, pk = part
