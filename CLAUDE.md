@@ -358,6 +358,12 @@ SLAM must not jump to a wrong but similar-looking place.
   /map with the robot (TF map -> base_footprint) and saves with scripts/save_map.sh; the name is typed on an
   on-screen keyboard (user), letters/digits/-/_ only, never an existing map. A start is refused while another app's
   nodes (base_node, slam_toolbox, coverage_supervisor, velocity gate) run.
+- Rejoining the plan (user, 2026-10-20: reconnect to the actual path smoothly, few turns on the spot): when a piece
+  starts and the robot is beside it (more than plan_join_tolerance_m from its start, up to rejoin_max_m 0.3 m from
+  the piece), one path from the robot straight to the point rejoin_ahead_m 0.4 m further along the piece and on
+  along it (REJOINED event); corner turns are done where the robot stands. Otherwise (or after a detour around an
+  obstacle, or when that straight line is not safe) a planned connection as before. Robot 2026-10-20: a pause 12-16 cm
+  beside the lane after a corner turn led to a planned connection with turns on the spot and 35 s of pauses.
 - Scan screen (user, 2026-10-20): it switches to the big driving view by itself when a scan drives; after "Show
   map" the map stays until "Big view" or a new scan (it used to switch back after every pause or state change).
 - Map screen: no zoom buttons (they did not work on the robot screen; pinch and drag do; user 2026-10-19).

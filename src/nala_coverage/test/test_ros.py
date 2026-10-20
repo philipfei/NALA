@@ -308,7 +308,7 @@ class FakeRadiation(Node):
         m.data=np.where(mask,cost,0).astype(np.int8).ravel().tolist();self.keepout.publish(m)
 
 
-def run_plan(ros,poses,drive=None,block_at=None,base_station=None,radiation=None,keepout=None,during=None,turns=False):
+def run_plan(ros,poses,drive=None,block_at=None,base_station=None,radiation=None,keepout=None,during=None,turns=False,fake_hook=None,until_done=False):
     """Drive an exported plan through fake planner and controller servers.
 
     FollowPath moves the fake robot along exactly the path it is given. With `block_at` the first goal that
@@ -326,6 +326,7 @@ def run_plan(ros,poses,drive=None,block_at=None,base_station=None,radiation=None
     gate=add(SafetyGate());sup=add(Supervisor());meter=add(CoverageMeter());fake=add(FakeInputs())
     fake.request_owner=None;fake.publish_trust=False;fake.publish_map(sup.base);sup.plan_file=str(plan)
     fake.turns=turns
+    if fake_hook:fake_hook(fake)
     if radiation is not None:
         add(radiation);sup.settings['radiation']['enabled']=True
         if keepout is not None:radiation.publish_keepout(sup.base,keepout)
@@ -365,7 +366,9 @@ def run_plan(ros,poses,drive=None,block_at=None,base_station=None,radiation=None
     sup.start()
     end=time.monotonic()+30.
     # A pause that ends by itself (localization) does not end the test drive.
-    while (sup.mission.state not in ('FINISHED','FAILED','PAUSED') or sup.auto_resumable(time.monotonic())) and time.monotonic()<end:
+    # until_done: also through operator pauses (the test's `during` resumes them).
+    while (sup.mission.state not in ('FINISHED','FAILED','PAUSED') or sup.auto_resumable(time.monotonic())
+           or (until_done and sup.mission.state=='PAUSED')) and time.monotonic()<end:
         pump(.2)
         if during:during(sup)
     for server in servers:server.destroy()
@@ -388,6 +391,27 @@ def test_planning_from_a_start_a_little_too_close_to_a_wall_starts_at_a_safe_poi
     sup.follow([sup.pose[:2],sup.escape,[2.5,2.]],'CONNECT',escape=sup.escape)   # the short way out is accepted
     assert sent
     with pytest.raises(ValueError):sup.follow([sup.pose[:2],sup.escape,[2.5,2.]],'CONNECT')   # without: refused
+
+
+def test_a_pause_beside_the_lane_rejoins_it_while_driving_without_a_planned_connection(ros):
+    # Robot 2026-10-20: after a pause 12-16 cm beside the lane the supervisor planned a connection (turn on the
+    # spot, drive, turn on the spot) and AMCL lost certainty in those turns. Now: one path back onto the lane.
+    moved=[]
+    def push_aside(sup):
+        if sup.mission.state=='SWEEP' and not moved and sup.pose and sup.pose[0]>2.8:
+            moved.append('paused');sup.pause('OPERATOR_PAUSE')
+        elif moved==['paused'] and sup.mission.state=='PAUSED' and sup.slot.idle:
+            # The fake controller has stopped: put the robot 0.2 m beside the lane, then resume.
+            push_aside.fake.y+=.2;moved.append('pushed')
+        elif moved==['paused','pushed'] and abs(sup.pose[1]-2.2)<.02:
+            moved.append('resumed');sup.resume()
+    sup,follows,plans,_=run_plan(ros,[[2.,2.],[3.6,2.]],during=push_aside,fake_hook=lambda f:setattr(push_aside,'fake',f),until_done=True)
+    assert moved[-1]=='resumed' and sup.mission.state=='FINISHED' and sup.mission.reason=='RETURNED_TO_BASE',(moved,sup.mission.state,sup.mission.events)
+    assert plans==[[2.,2.]]                                   # only the way back: no planned connection to the lane
+    rejoin=[e for e in sup.mission.events if e.get('reason')=='REJOINED']
+    assert rejoin and abs(rejoin[0]['offset_m']-.2)<.05
+    path=follows[-2][1]                                       # the path after the pause
+    assert abs(path[0][1]-2.2)<.03 and abs(path[-1][0]-3.6)<1e-6 and abs(path[-1][1]-2.)<1e-6
 
 
 def test_a_localization_pause_resumes_by_itself_once_trusted_again(ros):

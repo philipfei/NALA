@@ -47,6 +47,11 @@
       output_dir: output
     planning:
       plan_join_tolerance_m: 0.15
+      # Rejoining the plan after a pause a little beside it (user, 2026-10-20: smoothly, without turns on the spot):
+      # up to rejoin_max_m from the piece, one path straight to the point rejoin_ahead_m further along it and on
+      # along the piece (no planned connection, which turned on the spot twice and upset AMCL in a corner).
+      rejoin_max_m: 0.3
+      rejoin_ahead_m: 0.4
       stationary_target_length_m: 0.01
       # Plan pieces up to this long (the aimed goals' 5 cm moves) are no separate Nav2 goals: with the stop before
       # them they become one continuous turn on the spot per corner (supervisor TURN; user, 2026-10-19).

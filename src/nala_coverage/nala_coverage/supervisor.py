@@ -526,9 +526,28 @@ class Supervisor(Node):
         # The robot normally stands where the previous piece ended; after a detour it is driven to the rest.
         if not getattr(self.current,'connect',False) and math.dist(self.pose[:2],pts[0])<=self.settings['planning']['plan_join_tolerance_m']:
             self.begin_sweep();return
+        if not getattr(self.current,'connect',False) and self.rejoin(pts):return
         heading=math.atan2(pts[1][1]-pts[0][1],pts[1][0]-pts[0][0]) if len(pts)>1 and math.dist(pts[0],pts[1])>1e-9 else \
             (self.current.headings[0] if getattr(self.current,'headings',None) else None)
         self.plan_to(pts[0],'CONNECT_PLAN',heading)
+
+    def rejoin(self,pts):
+        """A little beside the piece (after a pause, a pose correction): back onto it while driving, without a planned
+        connection. True when done; False -> the caller plans a connection as before."""
+        cfg=self.settings['planning'];here=list(self.pose[:2])
+        if getattr(self.current,'kind','')=='turn':
+            if math.dist(here,pts[0])>cfg['rejoin_max_m']:return False
+            self.begin_turn();return True                  # a corner turn is done where the robot stands
+        dense=densify(pts,self.base.resolution)
+        d=[math.dist(here,p) for p in dense];k=int(np.argmin(d))
+        if d[k]>cfg['rejoin_max_m']:return False
+        j=k;along=0.
+        while j<len(dense)-1 and along<cfg['rejoin_ahead_m']:along+=math.dist(dense[j],dense[j+1]);j+=1
+        path=densify([here]+dense[j:],self.base.resolution)
+        if len(path)<2 or not self.grid.segment_safe(here,dense[j],self.collision):return False
+        self.mission.events.append({'time':time.monotonic(),'reason':'REJOINED','offset_m':round(d[k],3)})
+        self.sweep_points=path;self.sweep_index=0
+        self.follow(path,'SWEEP',getattr(self.current,'end_yaw',None));return True
 
     def update_sweep_index(self):
         # Nearest point of the piece ahead of the last one, so a piece that returns near itself is not skipped.
