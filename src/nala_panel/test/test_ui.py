@@ -188,9 +188,20 @@ def test_scan_screen_shows_progress_heatmap_hotspots_and_controls(panel, monkeyp
     # The map while driving still has STOP, Pause and Stop and go home, and a way back to the big view.
     assert all(b.isVisible() for b in (scan.stop_button, scan.pause_button, scan.home_button, scan.big_button))
     shot(window, '7_scan_driving_map')
+    # After "Show map" the map stays, also through a recalculating pause and a corner turn (user, 2026-10-20).
+    for st in ({'state': 'PAUSED', 'reason': 'POSITION_UNCERTAIN', 'auto_resume': True, 'trusted': False, 'fraction': .5},
+               {'state': 'TURN', 'trusted': True, 'fraction': .5}, {'state': 'SWEEP', 'trusted': True, 'fraction': .5}):
+        session.state = st
+        scan.refresh()
+        assert scan.left.currentIndex() == 0, st
+    assert scan.pause_button.isEnabled()                    # also in a corner turn (TURN is an active state)
     scan.big_button.click()
     scan.refresh()
     assert scan.left.currentIndex() == 1 and scan.stop_button.isVisible()
+    session.state = {'state': 'TURN', 'trusted': True, 'fraction': .5}
+    scan.refresh()
+    assert scan.left.currentIndex() == 1                    # a corner turn keeps the big view
+    session.state = {'state': 'SWEEP', 'trusted': True, 'fraction': 0.42}
     scan._toggle_map(True)
     scan.refresh()
 

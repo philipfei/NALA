@@ -358,6 +358,8 @@ SLAM must not jump to a wrong but similar-looking place.
   /map with the robot (TF map -> base_footprint) and saves with scripts/save_map.sh; the name is typed on an
   on-screen keyboard (user), letters/digits/-/_ only, never an existing map. A start is refused while another app's
   nodes (base_node, slam_toolbox, coverage_supervisor, velocity gate) run.
+- Scan screen (user, 2026-10-20): it switches to the big driving view by itself when a scan drives; after "Show
+  map" the map stays until "Big view" or a new scan (it used to switch back after every pause or state change).
 - Map screen: no zoom buttons (they did not work on the robot screen; pinch and drag do; user 2026-10-19).
 - Auto-resume (user, 2026-10-19: rather localize longer than stop with an error): a pause for a localization or
   late-data reason (`AUTO_RESUME` in supervisor.py) ends by itself once trust is back (settle_s), within

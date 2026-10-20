@@ -25,7 +25,7 @@ TRIGGERS = ('/coverage/preview', '/coverage/start', '/coverage/pause', '/coverag
 # Supervisor states in which a task is running (the robot may move).
 # No task holds the robot (it may be moved by hand); the same as the supervisor's IDLE_STATES.
 IDLE_STATES = ('IDLE', 'FINISHED', 'CANCELED', 'FAILED')
-ACTIVE = ('BACKGROUND', 'PREPARING', 'CONNECT_PLAN', 'CONNECT', 'SWEEP', 'DWELL', 'PHASE_WAIT', 'RETURN_PLAN',
+ACTIVE = ('BACKGROUND', 'PREPARING', 'CONNECT_PLAN', 'CONNECT', 'SWEEP', 'DWELL', 'TURN', 'PHASE_WAIT', 'RETURN_PLAN',
           'RETURN')
 STOP_FAULT = 'OPERATOR_OR_ACTION_STOP'   # the velocity gate's latched fault after STOP
 
