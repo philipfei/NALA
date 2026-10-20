@@ -106,7 +106,8 @@ def plan_status(entry, plan, grid, settings, station):
     geometry = settings['geometry']
     try:
         loaded = load_plan(plan.path, grid, entry.map_yaml, settings['runtime']['map_frame'], settings.collision,
-                           sensor=(geometry['sensor_offset_m'], geometry['coverage_disk_radius_m']))
+                           sensor=(geometry['sensor_offset_m'], geometry['coverage_disk_radius_m']),
+                           outline=geometry['footprint_m'], margin=geometry['planning_padding_m'])
         check_base_station(loaded, station, settings['planning']['plan_join_tolerance_m'])
     except ValueError as error:
         return str(error)

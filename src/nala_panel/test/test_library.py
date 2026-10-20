@@ -110,3 +110,38 @@ def test_all_previous_scans_are_listed_newest_first_and_load(maps_dir):
     assert old['value'] is None and old['covered'] == [5, 6, 7] and old['trail'] == [[[1., 2.], [1.1, 2.]]]
     assert library.load_run(runs[0]['folder'])['background'] == 30.
 
+
+
+def test_plan_with_a_drive_in_closer_to_a_wall_than_the_turning_circle_is_drivable(maps_dir, settings):
+    # Robot 2026-10-20: the screen refused the test_basement2 plan with drive-ins (spurs) as "too close to
+    # obstacles": its check used the turning circle for them too, not the outline like the robot.
+    import math
+    entry = room(maps_dir)
+    grid = Grid.load(entry.map_yaml)
+    station = library.load_station(entry, 'map')
+    [plan] = library.list_plans(entry)
+    data = yaml.safe_load(plan.path.read_text())
+    drive = data['drive_path']
+    g = settings['geometry']
+    p = drive['points'][-1]
+    found = None
+    for k in range(16):                                   # straight on from the end towards a wall
+        yaw = k * math.pi / 8
+        d = 0.05
+        while True:
+            q = [p[0] + (d + 0.05) * math.cos(yaw), p[1] + (d + 0.05) * math.sin(yaw)]
+            swept = grid.outline_swept(p, q, yaw, g['footprint_m'], g['planning_padding_m'])
+            if swept is None or (swept & ~grid.free).any():
+                break
+            d += 0.05
+        q = [p[0] + d * math.cos(yaw), p[1] + d * math.sin(yaw)]
+        if d > 0.05 and not grid.segment_safe(p, q, settings.collision):
+            found = q
+            break
+    assert found, 'no wall within reach of the plan end'
+    drive['points'] += [found, list(p)]
+    drive['kinds'] = (drive.get('kinds') or ['wall'] * (len(drive['points']) - 2)) + ['spur', 'reverse']
+    n = len(drive['points'])
+    drive['stops'] = sorted(set(drive.get('stops', [])) | {n - 3, n - 2})
+    plan.path.write_text(yaml.safe_dump(data))
+    assert library.plan_status(entry, plan, grid, settings, station) == ''
