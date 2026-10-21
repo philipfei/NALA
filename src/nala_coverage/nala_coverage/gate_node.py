@@ -11,7 +11,7 @@ from std_srvs.srv import Trigger, SetBool
 from diagnostic_msgs.msg import DiagnosticArray
 from .health import Ownership
 from .params import node_settings
-from .ros_common import make_executor, run_until_stopped, Inputs, LATEST, parameter, decode, json_msg, diagnostic
+from .ros_common import run_until_stopped, Inputs, LATEST, parameter, decode, json_msg, diagnostic
 
 
 class SafetyGate(Node):
@@ -147,7 +147,7 @@ def main(args=None):
     for sig in previous:signal.signal(sig,interrupt)
     executor=None
     try:
-        executor=run_until_stopped(node,make_executor(node),stop=lambda:stopping,step_s=.05)
+        executor=run_until_stopped(node,stop=lambda:stopping,step_s=.05)
     finally:
         _stop_before_shutdown(node,executor or rclpy.executors.SingleThreadedExecutor(context=node.context))
         node.destroy_node()

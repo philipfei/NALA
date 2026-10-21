@@ -69,10 +69,9 @@ DEFAULTS = {
         'angle_step_deg': 5.0,           # ... in these steps
         'max_starts': 150,               # start points tried per pocket (evenly spread over the candidates)
         'per_pocket': 6,                 # drive-ins per pocket offered to the route optimiser
-        # Back-out speed / normal driving speed: the robot backs out at spur.speed_m_s of config/coverage.yaml
-        # (0.06 m/s, half its 0.12 m/s; user 2026-10-20: count it at that speed; it drives in at normal speed).
-        # Set by robot_config().
-        'speed_factor': 0.5,
+        # Back-out speed / normal driving speed: spur.speed_m_s / motion.linear_m_s of config/coverage.yaml (user
+        # 2026-10-21: back out at the normal speed, 0.12 m/s; before: half). Set by robot_config().
+        'speed_factor': 1.0,
         # The robot may start a drive-in this far beside its line and steers onto it while driving in, so the line is
         # checked with this much margin (if more than the localisation margin). spur.max_offset_m of
         # config/coverage.yaml; set by robot_config().

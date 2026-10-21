@@ -14,7 +14,7 @@ from nav_msgs.msg import OccupancyGrid, Path as PathMsg
 from .geometry import Grid
 from .params import node_settings
 from .measurement import Meter
-from .ros_common import make_executor,run_until_stopped,LATCHED,LATEST,parameter,decode,json_msg,grid_msg,path_msg,pose_msg,ros_now
+from .ros_common import run_until_stopped,LATCHED,LATEST,parameter,decode,json_msg,grid_msg,path_msg,pose_msg,ros_now
 
 
 class CoverageMeter(Node):
@@ -139,5 +139,5 @@ class CoverageMeter(Node):
 
 def main(args=None):
     rclpy.init(args=args, signal_handler_options=SignalHandlerOptions.NO);node=CoverageMeter()
-    try:run_until_stopped(node,make_executor(node))
+    try:run_until_stopped(node)
     finally:node.destroy_node();rclpy.try_shutdown()

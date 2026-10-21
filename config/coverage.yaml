@@ -61,12 +61,13 @@
       # is a normal piece of the path (Nav2 follows it); backing out, straight back along the same line, is driven by
       # the supervisor, only over floor the meter has measured (checked before and while backing out). The velocity
       # gate passes a reverse speed only from the supervisor's /cmd_vel_reverse and never more than speed_m_s.
-      speed_m_s: 0.06
+      # User 2026-10-21: back out at the normal driving speed (motion.linear_m_s; was 0.06).
+      speed_m_s: 0.12
       # Steering while backing out (on odometry): rad/s per rad of heading error and per m beside the line, no
-      # overshoot at speed_m_s (heading_gain^2 > 4 x track_gain x speed_m_s). Robot 2026-10-20: 2.0 / 20 on the
-      # AMCL pose zigzagged +-15-20 deg.
+      # overshoot at speed_m_s (heading_gain^2 >= 4 x track_gain x speed_m_s). Robot 2026-10-20: 2.0 / 20 on the
+      # AMCL pose zigzagged +-15-20 deg; 1.5 / 6.0 at 0.06 m/s.
       heading_gain: 1.5
-      track_gain: 6.0
+      track_gain: 4.5
       # The end of backing out: between P and this much past it (onto the route), never short of it: the robot turns
       # on the spot there.
       end_tolerance_m: 0.02
@@ -77,8 +78,9 @@
       # is left out where the robot can turn (SPUR_REVERSE_SKIPPED), else a pause (SPUR_OFF_LINE).
       max_heading_error_deg: 10.0
       # LiDAR: a scan point within this distance behind the outline (outline + the planning padding wide) stops
-      # backing out (SPUR_REVERSE_BLOCKED).
-      clear_m: 0.06
+      # backing out (SPUR_REVERSE_BLOCKED). At least the braking distance at speed_m_s (speed^2 / (2 x
+      # motion.linear_accel_m_s2) = 0.072 m at 0.12 m/s) plus a reaction step (0.1 s); was 0.06 at 0.06 m/s.
+      clear_m: 0.10
     localization:
       position_sigma_m: 0.1
       heading_sigma_deg: 10.0

@@ -22,7 +22,7 @@ from nala_interfaces.msg import CountRate
 from .geometry import Grid
 from .params import node_settings
 from .radiation import RadiationMap
-from .ros_common import make_executor, run_until_stopped, LATCHED, LATEST, decode, json_msg, stamp_seconds
+from .ros_common import run_until_stopped, LATCHED, LATEST, decode, json_msg, stamp_seconds
 
 
 class RadiationNode(Node):
@@ -158,7 +158,7 @@ def main(args=None):
     rclpy.init(args=args, signal_handler_options=SignalHandlerOptions.NO)
     node = RadiationNode()
     try:
-        run_until_stopped(node, make_executor(node))
+        run_until_stopped(node)
     except KeyboardInterrupt:
         pass
     finally:

@@ -14,6 +14,7 @@ from pathlib import Path
 import gc
 import os
 import signal
+import sys
 import hashlib
 import json
 import math
@@ -43,7 +44,7 @@ from .plan_file import check_base_station, load_plan, spur_yaw
 
 # Targets the supervisor drives itself in state SPUR: backing out of a pocket (driving in is a normal piece).
 SELF_DRIVEN=('reverse',)
-from .ros_common import (make_executor, run_until_stopped, Inputs, ActionSlot, LATCHED, LATEST, decode, json_msg,
+from .ros_common import (run_until_stopped, Inputs, ActionSlot, LATCHED, LATEST, decode, json_msg,
                          diagnostic, pose_msg, path_msg, pose3, transform3, yaw, ros_now, stamp_seconds)
 
 # Pauses that end by themselves once localization is trusted again (recovery.auto_resume_s). Not: operator
@@ -1092,10 +1093,13 @@ def main(args=None):
     for sig in previous:signal.signal(sig,interrupt)
     executor=None
     try:
-        executor=run_until_stopped(node,make_executor(node))
+        executor=run_until_stopped(node)
     finally:
         node.inputs.close()
         _shutdown_supervisor(node,executor or rclpy.executors.SingleThreadedExecutor(context=node.context))
         node.destroy_node()
         if rclpy.ok():rclpy.shutdown()
         for sig,handler in previous.items():signal.signal(sig,handler)
+    # Every shutdown step is done (lease released, report saved). End here: Python's own clean-up at exit then crashed
+    # the supervisor (exit code -11) on the robot and in the simulation, 2026-10-21, after all of the above.
+    sys.stdout.flush();sys.stderr.flush();os._exit(0)

@@ -1,4 +1,5 @@
 """ROS message adapters, timestamp checks, diagnostics and bounded action handling."""
+import gc
 import json
 import math
 import signal
@@ -92,7 +93,7 @@ def make_executor(node, settings=None):
     return executor
 
 
-def run_until_stopped(node, executor, stop=None, step_s=0.1):
+def run_until_stopped(node, stop=None, step_s=0.1):
     """Run the node's callbacks until the context shuts down (rclpy's own Ctrl-C handling) or stop() is true (a
     node's own signal handler), then return a single-threaded default executor that holds the node, for its own
     shutdown steps (spin_once, exactly as before).
@@ -102,17 +103,19 @@ def run_until_stopped(node, executor, stop=None, step_s=0.1):
     signal handlers run at once. Without stop: Ctrl-C / SIGTERM stop it here (initialize rclpy with
     SignalHandlerOptions.NO: rclpy's own handler kept the events executor's handles in use, and destroy_node() then
     waited until launch sent the next signal; simulation 2026-10-21)."""
+    executor = make_executor(node)      # made here: only this function holds it, so it is freed below
     if stop is None:
         stopping = threading.Event()
         for sig in (signal.SIGINT, signal.SIGTERM):
             signal.signal(sig, lambda *_: stopping.set())
         stop = stopping.is_set
-    def spin():
+    def spin(ex=executor):              # (a default, not a closure: the thread drops it when it ends)
         try:
-            executor.spin()
+            ex.spin()
         except (rclpy.executors.ExternalShutdownException, KeyboardInterrupt):
             pass
     thread = threading.Thread(target=spin, name='executor', daemon=True)
+    del spin
     thread.start()
     try:
         while rclpy.ok(context=node.context) and not stop() and thread.is_alive():
@@ -125,6 +128,14 @@ def run_until_stopped(node, executor, stop=None, step_s=0.1):
         executor.remove_node(node)      # else the events executor keeps it and destroy_node() waits for ever
     except Exception:                   # noqa: BLE001 (already removed or the executor is gone: nothing to do)
         pass
+    if thread.is_alive():
+        # Still inside a callback: keep the executor alive rather than free it under the running thread.
+        node.get_logger().warning('Executor thread did not stop in time')
+        node._stopped_executor = executor
+    # Free the executor here, while rclpy still runs: freed later, at interpreter exit, the events executor crashed the
+    # process once (exit code -11, simulation 2026-10-21).
+    del executor
+    gc.collect()
     if not rclpy.ok(context=node.context):
         return None                     # rclpy's own Ctrl-C handling shut the context down: nothing more to spin
     last = rclpy.executors.SingleThreadedExecutor(context=node.context)

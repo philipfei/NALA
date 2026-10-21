@@ -16,7 +16,7 @@ from sensor_msgs.msg import Joy
 from std_srvs.srv import Trigger
 
 from .buttons import rising
-from .ros_common import make_executor, run_until_stopped
+from .ros_common import run_until_stopped
 
 
 class XboxPause(Node):
@@ -66,7 +66,7 @@ def main(args=None):
     rclpy.init(args=args, signal_handler_options=SignalHandlerOptions.NO)
     node = XboxPause()
     try:
-        run_until_stopped(node, make_executor(node))
+        run_until_stopped(node)
     except (KeyboardInterrupt, ExternalShutdownException):
         pass
     finally:

@@ -23,7 +23,7 @@ from tf2_ros import Buffer, TransformException, TransformListener
 from .geometry import Grid
 from .mapchange import ChangeMap
 from .params import node_settings
-from .ros_common import make_executor, run_until_stopped, LATCHED, LATEST, decode, transform3
+from .ros_common import run_until_stopped, LATCHED, LATEST, decode, transform3
 
 NEW, REMOVED = 100, 50
 
@@ -103,7 +103,7 @@ def main(args=None):
     rclpy.init(args=args, signal_handler_options=SignalHandlerOptions.NO)
     node = MapChangeNode()
     try:
-        run_until_stopped(node, make_executor(node))
+        run_until_stopped(node)
     except KeyboardInterrupt:
         pass
     finally:

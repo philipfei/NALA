@@ -17,7 +17,7 @@ from . import base_station
 from .geometry import Grid
 from .locate import Locator, endpoints
 from .params import node_settings
-from .ros_common import make_executor, run_until_stopped, LATEST, decode, json_msg, transform3
+from .ros_common import run_until_stopped, LATEST, decode, json_msg, transform3
 
 # Supervisor states in which no task holds the robot: the locator works only then.
 IDLE_STATES = ('', 'IDLE', 'FINISHED', 'CANCELED', 'FAILED')
@@ -75,7 +75,7 @@ def main(args=None):
     rclpy.init(args=args, signal_handler_options=SignalHandlerOptions.NO)
     node = LocatorNode()
     try:
-        run_until_stopped(node, make_executor(node))
+        run_until_stopped(node)
     except KeyboardInterrupt:
         pass
     finally:
