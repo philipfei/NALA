@@ -8,7 +8,7 @@ Status 2026-10-21: works on the robot. `i2cdetect -y 1` shows `40`; `battery_nod
 
 - Chip: TI INA219 on the Pi I2C bus 1 (GPIO2 = SDA, GPIO3 = SCL, 3.3 V). I2C address **0x40** (user, 2026-10-21).
 - IN+ and IN- are shorted: the chip measures only the battery voltage (bus voltage register). **No current is measured.**
-- Battery: 4S2P Li-ion 18650, 16.8 V full (4.2 V/cell), 14.0 V low alarm (3.5 V/cell), 12.0 V empty (3.0 V/cell), 6.6 Ah.
+- Battery: 4S2P Li-ion 18650, 16.8 V full (4.2 V/cell), 14.4 V low alarm (3.6 V/cell), 12.8 V empty (3.2 V/cell), 6.6 Ah.
 - An old INA260 (dead, never answered) is still soldered on the same I2C lines. It must not pull SDA or SCL low and
   must not use address 0x40. Before the first test: `i2cdetect -y 1` must show `40`.
 
@@ -37,11 +37,11 @@ The node reads the voltage once per `publish_rate` (1 Hz) and publishes:
 | `current` | `NaN` (not measured) |
 | `charge`, `capacity` | `NaN` |
 | `design_capacity` | 6.6 (Ah, from `battery.yaml`) |
-| `percentage` | 0.0 .. 1.0 (a fraction, not percent). Linear between `empty_voltage` 12.0 V and `full_voltage` 16.8 V, clamped. Rough: the 18650 curve is not linear and the voltage sags under load |
+| `percentage` | 0.0 .. 1.0 (a fraction, not percent). Linear between `empty_voltage` 12.8 V and `full_voltage` 16.8 V, clamped. Rough: the 18650 curve is not linear and the voltage sags under load |
 | `present` | `True` |
 | `power_supply_technology` | Li-ion. Status and health are UNKNOWN |
 
-`/battery_low` (`std_msgs/Bool`): `True` while the voltage is below `low_voltage` (14.0 V), otherwise `False`. Published at the
+`/battery_low` (`std_msgs/Bool`): `True` while the voltage is below `low_voltage` (14.4 V), otherwise `False`. Published at the
 same rate. While low, the node logs a warning at most every 30 s.
 
 If the chip does not answer, the node logs "Cannot read the INA219" (at most every 30 s) and publishes nothing.

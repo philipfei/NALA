@@ -46,7 +46,7 @@ All dependencies: [requirements.yaml](requirements.yaml).
 - IMU: WitMotion WT901C-TTL (3.3 V) on a CH340G USB-to-TTL adapter (`/dev/ttyIMU`), flat, chip side up.
   Only its turn rate is used (EKF in apps 2 and 3): [docs/imu_ekf.md](docs/imu_ekf.md).
 - Battery: 4S2P Li-ion 18650 (3300 mAh per cell: 16.8 V full, 6.6 Ah). Battery monitor: TI INA219 (address 0x40, IN+ and IN- shorted: voltage only, no current)
-  on the Pi I2C bus 1 (GPIO2/3), read by `battery_node` (`/battery_state`, `/battery_low` below 14.0 V): [docs/battery.md](docs/battery.md).
+  on the Pi I2C bus 1 (GPIO2/3), read by `battery_node` (`/battery_state`, `/battery_low` below 14.4 V): [docs/battery.md](docs/battery.md).
 - Xbox Wireless Controller (`C8:3F:26:93:1B:B2`), paired with the Pi over Bluetooth.
 - Screen (app 3): Waveshare 7 inch HDMI LCD (C), 1024 x 600, capacitive touch over USB. On the Pi HDMI port.
 

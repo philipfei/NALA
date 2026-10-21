@@ -170,7 +170,7 @@ Everything below is project-specific and must be kept up to date.
 | Motor driver MCU | ATmega328PB, 16 MHz, 5 V. **UART** (user, 2026-10-12): MCU PD0 RX / PD1 TX <-> level shifter <-> Pi GPIO14 TX / GPIO15 RX = PL011 `/dev/ttyAMA0`, 38400 baud. (2026-10-09 to 12: I2C on PC4/PC5, never worked) |
 | Level shifter | The schematic says TXS0104E, but the part on the board is a **TXB** type (found 2026-10-12). A TXB works for UART but **cannot do I2C** (it oscillates against pull-ups; seen as random ACKs and a ~60 kHz square wave on SCL/SDA). No pull-ups on lines through it |
 | IMU | WitMotion WT901C-TTL, 3.3 V, flat with the chip side up, on a **CH340G USB-to-TTL adapter** (USB id 1a86:7523) = `/dev/ttyIMU` (udev rule from `setup_pi.sh`). Already set to 115200 baud / 50 Hz / acc + gyro (2026-10-09). Position on the robot not measured (placeholder in `config/robot.yaml`). Example code (Arduino) in `JY901 uno r3/` (local, ignored by git) |
-| Battery | 4S2P Li-ion 18650, 3300 mAh per cell: 16.8 V full (4.2 V/cell), 6.6 Ah. Low-voltage alarm at 14.0 V (3.5 V/cell, user), 0 % at 12.0 V (3.0 V/cell). 16.1 V measured 2026-10-15 |
+| Battery | 4S2P Li-ion 18650, 3300 mAh per cell: 16.8 V full (4.2 V/cell), 6.6 Ah. Low-voltage alarm at 14.4 V (3.6 V/cell, user, 2026-10-21), 0 % at 12.8 V (3.2 V/cell). 16.1 V measured 2026-10-15 |
 | Motor supply | Always 12 V from a DC-DC converter (user, 2026-10-15): the motor speed for a PWM does not depend on the battery voltage |
 | Battery monitor | TI **INA219** at **0x40** on the Pi I2C bus 1 (GPIO2 SDA / GPIO3 SCL, directly, not through the level shifter), voltage only (IN+ and IN- shorted, no current; user, 2026-10-21). Works: 16.44 V read on 2026-10-21 (`docs/battery.md`). The old INA260 (0x4F) never answered and is dead |
 | Pi pins | GPIO14/15 = UART to the MCU, GPIO2/3 = I2C to the INA219, USB = LiDAR (CP2102) and IMU (CH340G). Two devices must never share a UART (two TX outputs would drive one RX pin) |
@@ -277,7 +277,7 @@ SLAM must not jump to a wrong but similar-looking place.
   time); stamp = Pi time of arrival (no artificial time stamps: clock drift would make jumps).
   Tested on the PC with a fake MCU on a pty (garbage, CRC error, dropped frame).
 - Battery: `battery_node` reads the INA219 (I2C, voltage only) at 1 Hz -> `/battery_state` (percentage is rough: linear in the
-  voltage, the 18650 curve is not) and `/battery_low` (true below 14.0 V), for a later "drive home on low battery".
+  voltage, the 18650 curve is not) and `/battery_low` (true below 14.4 V), for a later "drive home on low battery".
   Started by the app 1 and app 3 launch files. The robot screen panel reads the INA219 itself (battery icon on every
   screen, 20 s moving average; user, 2026-10-21), because battery_node runs only with an app.
 - IMU + EKF (apps 2 and 3, `docs/imu_ekf.md`, user decision 2026-10-09): robot_localization EKF fuses `/odom` vx, vy
