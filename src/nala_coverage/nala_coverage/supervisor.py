@@ -428,7 +428,16 @@ class Supervisor(Node):
         return bool(self.background_requested is not None and self.radiation_time>self.background_requested
                     and self.radiation.get('background_ready') and not self.radiation.get('measuring'))
 
+    def backing_out_next(self):
+        """The robot is in a pocket and the next thing it does is back out: paused while backing out, or while
+        driving in (the rest of that drive-in was left out, pause())."""
+        if getattr(self.current,'kind','')=='reverse':return True
+        return self.current is None and bool(self.targets) and getattr(self.targets[0],'kind','')=='reverse'
+
     def check_start_component(self):
+        # In a pocket there is never turning room: backing out has its own checks (begin_spur: on its line, measured
+        # and clean floor, LiDAR clear behind). Robot 2026-10-20: a pause inside a pocket could never be resumed.
+        if self.backing_out_next():return
         try:
             rc,_,_,_=self.grid.escape_start(self.pose[:2],self.collision,self.settings['recovery']['planner_start_tolerance_m'])
         except ValueError as error:

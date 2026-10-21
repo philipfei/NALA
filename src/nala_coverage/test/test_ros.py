@@ -853,3 +853,18 @@ def test_the_meters_cached_trace_is_the_same_message_as_before(ros):
         assert len(got)==len(ref) and all(np.allclose([a.pose.position.x,a.pose.position.y,a.pose.orientation.z,a.pose.orientation.w],
                                                       [b.pose.position.x,b.pose.position.y,b.pose.orientation.z,b.pose.orientation.w])
                                           for a,b in zip(got,ref))
+
+
+def test_a_pause_inside_a_pocket_can_be_resumed_by_backing_out(ros):
+    # Robot 2026-10-20: a pause inside a pocket (SCAN_STALE, AMCL_STALE) could never be resumed: the resume check
+    # wanted turning room, which a pocket never has. Backing out has its own checks.
+    from nala_coverage.planning import poly_target
+    add,pump,_,_=ros
+    sup=add(Supervisor());sup.mission.start(time.monotonic(),sup.timeout)
+    sup.preview={'reachable':np.zeros(sup.base.cells.shape,bool)}           # no turning room anywhere near
+    back=poly_target([[2.,.3],[2.,.8]],'reverse');back.end_yaw=None
+    sup.pose=[2.,.35,-math.pi/2]
+    sup.current=None;sup.targets=[back];sup.check_start_component()        # paused while driving in: fine
+    sup.current=back;sup.targets=[];sup.check_start_component()            # paused while backing out: fine
+    lane=poly_target([[1.,1.],[2.,1.]],'plan');sup.current=None;sup.targets=[lane]
+    with pytest.raises(ValueError):sup.check_start_component()             # anywhere else: checked as before
