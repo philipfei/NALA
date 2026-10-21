@@ -172,8 +172,8 @@ Everything below is project-specific and must be kept up to date.
 | IMU | WitMotion WT901C-TTL, 3.3 V, flat with the chip side up, on a **CH340G USB-to-TTL adapter** (USB id 1a86:7523) = `/dev/ttyIMU` (udev rule from `setup_pi.sh`). Already set to 115200 baud / 50 Hz / acc + gyro (2026-10-09). Position on the robot not measured (placeholder in `config/robot.yaml`). Example code (Arduino) in `JY901 uno r3/` (local, ignored by git) |
 | Battery | 4S2P Li-ion 18650, 3300 mAh per cell: 16.8 V full (4.2 V/cell), 6.6 Ah. Low-voltage alarm at 14.0 V (3.5 V/cell, user), 0 % at 12.0 V (3.0 V/cell). 16.1 V measured 2026-10-15 |
 | Motor supply | Always 12 V from a DC-DC converter (user, 2026-10-15): the motor speed for a PWM does not depend on the battery voltage |
-| Battery monitor | TI INA260 on the Pi I2C bus 1 (GPIO2 SDA / GPIO3 SCL, directly, not through the level shifter). A0 and A1 to SCL = address 0x4F (user, 2026-10-14). **No answer on the bus** (2026-10-14, VCC connected, Pi pins OK): the IC may be broken. Battery work is on hold (user) |
-| Pi pins | GPIO14/15 = UART to the MCU, GPIO2/3 = I2C to the INA260, USB = LiDAR (CP2102) and IMU (CH340G). Two devices must never share a UART (two TX outputs would drive one RX pin) |
+| Battery monitor | TI **INA219** at **0x40** on the Pi I2C bus 1 (GPIO2 SDA / GPIO3 SCL, directly, not through the level shifter), voltage only (IN+ and IN- shorted, no current; user, 2026-10-21). Works: 16.44 V read on 2026-10-21 (`docs/battery.md`). The old INA260 (0x4F) never answered and is dead |
+| Pi pins | GPIO14/15 = UART to the MCU, GPIO2/3 = I2C to the INA219, USB = LiDAR (CP2102) and IMU (CH340G). Two devices must never share a UART (two TX outputs would drive one RX pin) |
 | Robot screen (app 3) | Waveshare 7 inch HDMI LCD (C), 1024 x 600, capacitive touch over USB, on the Pi HDMI port. The Pi runs headed for app 3 (user, 2026-10-08) |
 
 ## Reference code (`ref/`, local only)

@@ -1,6 +1,7 @@
 # Battery voltage monitor (INA219)
 
-Status 2026-10-21: code changed, **not tested on the robot yet**. The battery check in app 3 stays off
+Status 2026-10-21: works on the robot. `i2cdetect -y 1` shows `40`; `battery_node` alone + `ros2 topic echo
+/battery_state --field voltage` printed 16.44 V at 1 Hz (not compared with a multimeter yet). The battery check in app 3 stays off
 (`battery.enabled: false` in `config/coverage.yaml`) and the robot screen does not show the battery yet.
 
 ## Hardware

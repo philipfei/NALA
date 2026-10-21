@@ -408,6 +408,12 @@ IMU (only for a new IMU; ours is already set since 2026-10-09 and keeps it): wit
 
 Battery monitor: `i2cdetect -y 1` must show the INA219 at `40` (see [docs/battery.md](docs/battery.md)); if it is at another address,
 change `i2c_address` in `config/battery.yaml`.
+Read the battery voltage in the Pi SSH terminal (app 1 and app 3 already start `battery_node`; otherwise start it alone):
+
+```bash
+ros2 run nala_base battery_node --ros-args --params-file ~/NALA/config/battery.yaml   # only if no app runs
+ros2 topic echo /battery_state --field voltage                                        # second terminal, V every 1 s
+```
 When a pull changes `setup_pi.sh` (new packages), run it again and log in again (new groups need a new login).
 
 Boot splash (one time, optional): `bash ~/NALA/scripts/setup_splash.sh` (asks for the sudo password, about 1 minute).
