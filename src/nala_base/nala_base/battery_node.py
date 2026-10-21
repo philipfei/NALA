@@ -1,6 +1,7 @@
-"""ROS node: INA260 power monitor on the Pi I2C bus -> /battery_state and /battery_low.
+"""ROS node: INA219 power monitor on the Pi I2C bus -> /battery_state and /battery_low.
 
 All parameters come from config/battery.yaml (no defaults here).
+Only the battery voltage is read (IN+ and IN- of the INA219 are shorted): the current is not measured.
 The charge percentage is only a rough value: it is linear between empty_voltage and
 full_voltage, but the discharge curve of 18650 Li-ion cells is not linear (flat in the
 middle, steep at both ends), and the voltage sags under load.
@@ -17,7 +18,7 @@ from smbus2 import SMBus
 from std_msgs.msg import Bool
 
 from nala_base.ina260 import (
-    charge_ratio, decode_current, decode_voltage, REG_CURRENT, REG_VOLTAGE)
+    charge_ratio, decode_voltage, REG_VOLTAGE)
 
 LOG_THROTTLE = 30.0   # s, repeat warnings at most this often
 
@@ -33,14 +34,13 @@ class BatteryNode(Node):
         self.low = self.param('low_voltage', Parameter.Type.DOUBLE)
         self.empty = self.param('empty_voltage', Parameter.Type.DOUBLE)
         self.capacity = self.param('design_capacity', Parameter.Type.DOUBLE)
-        self.current_sign = self.param('current_sign', Parameter.Type.DOUBLE)
 
         self.bus = SMBus(bus)
         self.state_pub = self.create_publisher(BatteryState, 'battery_state', 10)
         self.low_pub = self.create_publisher(Bool, 'battery_low', 10)
         self.create_timer(1.0 / rate, self.on_timer)
         self.get_logger().info(
-            f'INA260 at 0x{self.address:02x} on I2C bus {bus}. '
+            f'INA219 at 0x{self.address:02x} on I2C bus {bus}. '
             f'Full {self.full} V, low {self.low} V, empty {self.empty} V.')
 
     def param(self, name, param_type):
@@ -50,15 +50,14 @@ class BatteryNode(Node):
     def on_timer(self):
         try:
             voltage = decode_voltage(self.bus.read_i2c_block_data(self.address, REG_VOLTAGE, 2))
-            current = decode_current(self.bus.read_i2c_block_data(self.address, REG_CURRENT, 2))
         except OSError as error:
-            self.get_logger().warn(f'Cannot read the INA260: {error}', throttle_duration_sec=LOG_THROTTLE)
+            self.get_logger().warn(f'Cannot read the INA219: {error}', throttle_duration_sec=LOG_THROTTLE)
             return
 
         msg = BatteryState()
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.voltage = voltage
-        msg.current = self.current_sign * current     # ROS: negative when discharging
+        msg.current = float('nan')                    # not measured
         msg.charge = float('nan')
         msg.capacity = float('nan')
         msg.design_capacity = self.capacity

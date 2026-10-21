@@ -72,7 +72,7 @@ sudo systemctl mask serial-getty@ttyS0.service serial-getty@ttyAMA0.service
 # mini UART. core_freq + core_freq_min fix the VPU clock, so the mini UART baud rate does not
 # change with the CPU load. Fixed at 500 MHz, not 250: on the Pi 4 the display driver (vc4 KMS)
 # needs a core clock of at least 500 MHz; with 250 it logged kernel warnings ~9 times per second
-# and filled the SD card (2026-10-15). I2C bus 1 on GPIO2/3 is for the INA260 battery monitor.
+# and filled the SD card (2026-10-15). I2C bus 1 on GPIO2/3 is for the INA219 battery monitor.
 config=/boot/firmware/config.txt
 sudo sed -i '/^core_freq=250$/d' "$config"
 for setting in enable_uart=1 dtoverlay=miniuart-bt core_freq=500 core_freq_min=500 dtparam=i2c_arm=on; do

@@ -132,8 +132,8 @@
       rotation_slack_deg: 5.0
       publish_period_s: 0.5
     battery:
-      # battery_node (nala_base, INA260) publishes /battery_state. Keep false until the INA260 answers on I2C
-      # (it does not yet, 2026-10-14): with true and no battery data the robot does not start (BATTERY_STALE).
+      # battery_node (nala_base, INA219) publishes /battery_state. Keep false until the INA219 answers on I2C
+      # and the voltage is checked: with true and no battery data the robot does not start (BATTERY_STALE).
       enabled: false
       start_ratio: 0.3
       critical_ratio: 0.15

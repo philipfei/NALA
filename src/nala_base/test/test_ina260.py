@@ -1,16 +1,15 @@
 import pytest
 
-from nala_base.ina260 import charge_ratio, decode_current, decode_voltage
+from nala_base.ina260 import charge_ratio, decode_voltage
 
 
-def test_voltage_is_unsigned_big_endian():
-    assert decode_voltage([0x34, 0x80]) == pytest.approx(16.8)      # 0x3480 = 13440 x 1.25 mV
-    assert decode_voltage([0xFF, 0xFF]) == pytest.approx(81.91875)  # not negative
+def test_voltage_is_unsigned_big_endian_in_4_mv_after_dropping_3_flag_bits():
+    assert decode_voltage([0x83, 0x40]) == pytest.approx(16.8)      # 0x8340 >> 3 = 4200 x 4 mV
+    assert decode_voltage([0xFF, 0xF8]) == pytest.approx(32.764)    # full scale, not negative
 
 
-def test_current_is_signed_big_endian():
-    assert decode_current([0x03, 0x20]) == pytest.approx(1.0)       # 0x0320 = 800 x 1.25 mA
-    assert decode_current([0xFC, 0xE0]) == pytest.approx(-1.0)      # two's complement
+def test_voltage_ignores_the_cnvr_and_ovf_flags():
+    assert decode_voltage([0x83, 0x43]) == decode_voltage([0x83, 0x40])
 
 
 def test_charge_ratio_linear_and_clamped():

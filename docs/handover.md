@@ -302,7 +302,7 @@ Other points seen during the tests:
   so a turn on the spot leaves ~6 cm. With AMCL error of 5-10 cm the controller may see a collision. A larger plan
   robot radius (e.g. 0.38 m) gives 11 cm but less coverage in narrow places (not changed; ask the user).
 - AMCL put the robot ~3-10 cm from the tapped base station. Fine (limit 10 cm), but tap the base station carefully.
-- The battery check stays off (`battery.enabled: false`): the INA260 does not answer on I2C.
+- The battery check stays off (`battery.enabled: false`): the battery monitor was changed to an INA219 at 0x40 on 2026-10-21 (voltage only, see `docs/battery.md`) and is not tested on the robot yet.
 - Shutdown of app 3 prints tracebacks (base_node "publisher's context is invalid", supervisor/meter
   KeyboardInterrupt during destroy). They were there before the fixes; harmless.
 

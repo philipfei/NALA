@@ -14,7 +14,7 @@ setup(
     zip_safe=True,
     maintainer='philipfei',
     maintainer_email='feijinghao2002@gmail.com',
-    description='NALA mecanum base: MCU driver, wheel odometry, WT901 IMU driver, INA260 battery monitor',
+    description='NALA mecanum base: MCU driver, wheel odometry, WT901 IMU driver, INA219 battery monitor',
     license='TODO',
     extras_require={'test': ['pytest']},
     entry_points={

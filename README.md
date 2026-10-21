@@ -45,8 +45,8 @@ All dependencies: [requirements.yaml](requirements.yaml).
 - Level shifter on the board: a TXB type (the schematic says TXS0104E). Fine for UART, cannot do I2C.
 - IMU: WitMotion WT901C-TTL (3.3 V) on a CH340G USB-to-TTL adapter (`/dev/ttyIMU`), flat, chip side up.
   Only its turn rate is used (EKF in apps 2 and 3): [docs/imu_ekf.md](docs/imu_ekf.md).
-- Battery: 4S2P Li-ion 18650 (3300 mAh per cell: 16.8 V full, 6.6 Ah). Battery monitor: TI INA260 on the Pi I2C
-  bus 1 (GPIO2/3), read by `battery_node` (`/battery_state`, `/battery_low` below 14.0 V).
+- Battery: 4S2P Li-ion 18650 (3300 mAh per cell: 16.8 V full, 6.6 Ah). Battery monitor: TI INA219 (address 0x40, IN+ and IN- shorted: voltage only, no current)
+  on the Pi I2C bus 1 (GPIO2/3), read by `battery_node` (`/battery_state`, `/battery_low` below 14.0 V): [docs/battery.md](docs/battery.md).
 - Xbox Wireless Controller (`C8:3F:26:93:1B:B2`), paired with the Pi over Bluetooth.
 - Screen (app 3): Waveshare 7 inch HDMI LCD (C), 1024 x 600, capacitive touch over USB. On the Pi HDMI port.
 
@@ -58,7 +58,7 @@ nala_teleop keyboard --/cmd_vel-->   nala_base --UART command frame, 20 Hz-->  m
 Xbox --Bluetooth--> joy_node -> nala_teleop xbox_teleop --/cmd_vel--> nala_base
                                      nala_base <--UART state frame, 20 Hz----  (PI per wheel)
                                      nala_base: wheel odometry (/odom; TF odom->base_footprint in app 1)
-INA260 --I2C--> battery_node (/battery_state, /battery_low)
+INA219 --I2C--> battery_node (/battery_state, /battery_low)
 WT901 IMU --USB serial--> imu_node (/imu)                                      [stage 2]
                                      ekf_node: /odom vx,vy + /imu turn rate -> TF odom->base_footprint
 RViz <--/map /scan /tf--             rplidar_ros  (/scan)                       [stage 2]
@@ -103,7 +103,7 @@ NALA/
 │   ├── cyclonedds.xml                     [1] Cyclone DDS: use only the robot network 10.42.0.0/24 or 192.168.137.0/24
 │   ├── cyclonedds_local.xml               [3] Loopback only: used when no robot network is up (ros_env.sh picks it; robot screen works without WiFi)
 │   ├── robot.yaml                         [2] Robot model: body size, LiDAR and IMU mount poses (read by the URDF)
-│   ├── battery.yaml                       [1] INA260 battery monitor: I2C address, full / low / empty voltage
+│   ├── battery.yaml                       [1] INA219 battery monitor: I2C address, full / low / empty voltage
 │   ├── tune_motors.yaml                   [1] Test settings of scripts/tune_motors.py (step times, sweep speeds, timeouts).
 │   │                                      The controller parameters themselves are in the MCU EEPROM
 │   ├── imu.yaml                           [2] WT901 IMU: serial port, baud rate, gyro variance; rate written by setup_imu.py
@@ -120,6 +120,7 @@ NALA/
 │   ├── handover.md                        State on 2026-10-12, steps after the Pi reinstall, prompt for the next Claude session
 │   ├── mcu_protocol.md                    Pi-side summary of the Pi <-> MCU UART protocol, first hardware test
 │   ├── imu_ekf.md                         [2] IMU wiring and setup, EKF design: why only the gyro turn rate
+│   ├── battery.md                         [1] INA219 battery voltage monitor: wiring, code, /battery_state data format
 │   └── scintillator.md                    [3] Scintillator input (/scintillator/count_rate), heatmap, hotspots, avoidance
 │
 ├── firmware/                              MCU motor driver (ATmega328PB), Microchip Studio project.
@@ -231,8 +232,8 @@ NALA/
     │   │   ├── step_metrics.py            [1] Step-response metrics of the wheel speeds, for tune_motors.py (no ROS)
     │   │   ├── kinematics.py              [1] Wheel speed limit. [2] Wheel speeds -> body speed, pose integration (no ROS)
     │   │   ├── base_node.py               [1] ROS node: UART, wheel speed limit, /cmd_vel timeout. [2] /odom (and TF)
-    │   │   ├── ina260.py                  [1] INA260 register decoding, voltage -> charge (no ROS)
-    │   │   ├── battery_node.py            [1] ROS node: INA260 -> /battery_state, /battery_low
+    │   │   ├── ina260.py                  [1] INA219 register decoding (bus voltage only; the file name is old), voltage -> charge (no ROS)
+    │   │   ├── battery_node.py            [1] ROS node: INA219 -> /battery_state, /battery_low
     │   │   ├── wt901.py                   [2] WT901 IMU serial frames (no ROS)
     │   │   └── imu_node.py                [2] ROS node: IMU serial port -> /imu
     │   └── test/
@@ -405,7 +406,7 @@ IMU (only for a new IMU; ours is already set since 2026-10-09 and keeps it): wit
 `python3 ~/NALA/scripts/setup_imu.py`. It sets the IMU to 115200 baud, 50 Hz, acceleration + angular velocity only
 (see [docs/imu_ekf.md](docs/imu_ekf.md)).
 
-Battery monitor: `i2cdetect -y 1` must show the INA260 (expected at `40`); if it is at another address,
+Battery monitor: `i2cdetect -y 1` must show the INA219 at `40` (see [docs/battery.md](docs/battery.md)); if it is at another address,
 change `i2c_address` in `config/battery.yaml`.
 When a pull changes `setup_pi.sh` (new packages), run it again and log in again (new groups need a new login).
 

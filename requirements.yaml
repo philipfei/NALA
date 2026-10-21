@@ -77,8 +77,8 @@ apt:
       - ros-jazzy-nav2-map-server           # map_saver_cli: save the map
       - ros-jazzy-rviz2                     # RViz on the Pi desktop (Ubuntu Desktop since 2026-10-12)
       - ros-jazzy-robot-localization        # EKF: wheel odometry + IMU turn rate
-      - python3-smbus2                      # I2C to the INA260 battery monitor
-      - i2c-tools                           # i2cdetect: find the INA260 on the I2C bus (also makes the group i2c)
+      - python3-smbus2                      # I2C to the INA219 battery monitor
+      - i2c-tools                           # i2cdetect: find the INA219 on the I2C bus (also makes the group i2c)
       - gcc-avr                             # firmware compile check only
       - avr-libc                            # firmware compile check only
     splash:                                 # installed by scripts/setup_splash.sh (optional boot splash)

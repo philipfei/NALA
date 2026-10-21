@@ -3,7 +3,7 @@
 <package format="3">
   <name>nala_base</name>
   <version>0.1.0</version>
-  <description>NALA mecanum base: Pi to MCU driver over UART (/cmd_vel, wheel odometry /odom), WT901 IMU driver (/imu), INA260 battery monitor (/battery_state).</description>
+  <description>NALA mecanum base: Pi to MCU driver over UART (/cmd_vel, wheel odometry /odom), WT901 IMU driver (/imu), INA219 battery monitor (/battery_state).</description>
   <maintainer email="feijinghao2002@gmail.com">philipfei</maintainer>
   <license>TODO</license>
 
