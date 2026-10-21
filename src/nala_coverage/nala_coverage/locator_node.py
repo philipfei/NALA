@@ -5,6 +5,7 @@ Out: /coverage/located (JSON: status ON_BASE / BACKWARDS / NOT_ON_BASE, pose, fi
 Settings: locator in config/coverage.yaml. Idle while a task runs or is paused (CPU on the Pi; AMCL tracks it then).
 """
 import rclpy
+from rclpy.signals import SignalHandlerOptions
 from rclpy.duration import Duration
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
@@ -16,7 +17,7 @@ from . import base_station
 from .geometry import Grid
 from .locate import Locator, endpoints
 from .params import node_settings
-from .ros_common import LATEST, decode, json_msg, transform3
+from .ros_common import make_executor, run_until_stopped, LATEST, decode, json_msg, transform3
 
 # Supervisor states in which no task holds the robot: the locator works only then.
 IDLE_STATES = ('', 'IDLE', 'FINISHED', 'CANCELED', 'FAILED')
@@ -71,10 +72,10 @@ class LocatorNode(Node):
 
 
 def main(args=None):
-    rclpy.init(args=args)
+    rclpy.init(args=args, signal_handler_options=SignalHandlerOptions.NO)
     node = LocatorNode()
     try:
-        rclpy.spin(node)
+        run_until_stopped(node, make_executor(node))
     except KeyboardInterrupt:
         pass
     finally:

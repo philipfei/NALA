@@ -766,7 +766,7 @@ def test_backing_out_needs_measured_clean_floor_behind_the_robot(ros):
         back=poly_target([[2.9,2.],[2.6,2.]],'reverse');back.end_yaw=None
         sup.mission.state='PREPARING';sup.mission.reason=''
         sup.current=back;sup.targets=[];sup.pose=[2.9,2.,0.];sup.keepout=keepout
-        sup.measurement={'covered_indices':np.flatnonzero(covered).tolist()}
+        sup.covered_grid=covered.reshape(sup.base.cells.shape)
         sup.begin_spur();return sup.mission.state,sup.mission.reason
     everything=np.ones(sup.base.cells.shape,bool)
     state,reason=try_reverse(np.zeros_like(everything))
@@ -824,7 +824,7 @@ def test_backing_out_steers_on_odometry_not_on_amcl_jumps(ros):
     back=poly_target([[2.5,2.],[2.,2.]],'reverse');back.end_yaw=None
     # odom is rotated 90 deg against map (map->odom not identity); the robot at Q facing in (east in the map).
     sup.pose=[2.5,2.,0.];sup.odom_pose=[1.,-.5,math.pi/2]
-    sup.measurement={'covered_indices':np.flatnonzero(np.ones(sup.base.cells.size,bool)).tolist()}
+    sup.covered_grid=np.ones(sup.base.cells.shape,bool)
     sup.targets=[back];sup.next_target()
     assert sup.mission.state=='SPUR' and np.allclose(sup.spur['a'],[1.,-.5]) and np.allclose(sup.spur['b'],[1.,-1.])
     sent=[];sup.reverse_pub.publish=lambda m:sent.append((m.linear.x,m.angular.z))
@@ -834,3 +834,22 @@ def test_backing_out_steers_on_odometry_not_on_amcl_jumps(ros):
     assert sent and sent[-1][0]<0 and abs(sent[-1][1])<1e-6                 # backwards, on the line: no steering
     sup.odom_pose=[1.02,-.7,math.pi/2];sup.spur_step(time.monotonic())      # 2 cm right of the line by odometry
     assert sent[-1][1]<0                                                     # turns right: the back swings left
+
+
+def test_the_meters_cached_trace_is_the_same_message_as_before(ros):
+    # CPU (robot 2026-10-20): the trace is built once per point instead of all of it twice per second; the Path must
+    # stay what path_msg() made (each pose facing the next point, the last one the way it came), also after a gap.
+    add,pump,_,_=ros
+    meter=add(CoverageMeter())
+    class Trace:
+        trajectory=[];trajectory_segment_start=0;trajectory_edges=[]
+    meter.meter=Trace();rng=np.random.default_rng(1)
+    for step in range(40):
+        for _ in range(int(rng.integers(0,4))):meter.meter.trajectory.append([0.,*rng.normal(size=2).tolist(),0.])
+        if step==20:meter.meter.trajectory_segment_start=len(meter.meter.trajectory)      # a gap
+        begin=meter.meter.trajectory_segment_start
+        ref=path_msg(meter,[x[1:3] for x in meter.meter.trajectory[begin:]]).poses
+        got=meter.trace_path().poses
+        assert len(got)==len(ref) and all(np.allclose([a.pose.position.x,a.pose.position.y,a.pose.orientation.z,a.pose.orientation.w],
+                                                      [b.pose.position.x,b.pose.position.y,b.pose.orientation.z,b.pose.orientation.w])
+                                          for a,b in zip(got,ref))

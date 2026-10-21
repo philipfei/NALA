@@ -1,9 +1,12 @@
 """ROS message adapters, timestamp checks, diagnostics and bounded action handling."""
 import json
 import math
+import signal
+import threading
 import time
 import numpy as np
 import rclpy
+import rclpy.executors
 from rclpy.action import ActionClient
 from rclpy.qos import QoSProfile, DurabilityPolicy, ReliabilityPolicy, qos_profile_sensor_data
 from rclpy.time import Time
@@ -72,6 +75,61 @@ def diagnostic(node,pub,name,state,values,level=0):
 
 
 from .params import load_settings
+
+
+def make_executor(node, settings=None):
+    """The executor for a NALA node. health.events_executor: rclpy's EventsExecutor (in rclpy since Jazzy, marked
+    experimental), which does not rebuild its wait set for every message: on the PC the supervisor needed 8 %
+    instead of 19 % CPU and the velocity gate 4 % instead of 12 % (simulation 2026-10-20; 75-80 % of their CPU was
+    the default executor). Same callbacks and timers. false: rclpy's default executor."""
+    settings = settings or getattr(node, 'settings', None) or load_settings()
+    if settings['health'].get('events_executor'):
+        from rclpy.experimental import EventsExecutor
+        executor = EventsExecutor(context=node.context)
+    else:
+        executor = rclpy.executors.SingleThreadedExecutor(context=node.context)
+    executor.add_node(node)
+    return executor
+
+
+def run_until_stopped(node, executor, stop=None, step_s=0.1):
+    """Run the node's callbacks until the context shuts down (rclpy's own Ctrl-C handling) or stop() is true (a
+    node's own signal handler), then return a single-threaded default executor that holds the node, for its own
+    shutdown steps (spin_once, exactly as before).
+
+    The executor spins in a background thread with its blocking spin(): with the events executor, spin_once() in a
+    loop cost more CPU than the default executor (simulation 2026-10-21). The main thread only waits, so Python
+    signal handlers run at once. Without stop: Ctrl-C / SIGTERM stop it here (initialize rclpy with
+    SignalHandlerOptions.NO: rclpy's own handler kept the events executor's handles in use, and destroy_node() then
+    waited until launch sent the next signal; simulation 2026-10-21)."""
+    if stop is None:
+        stopping = threading.Event()
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            signal.signal(sig, lambda *_: stopping.set())
+        stop = stopping.is_set
+    def spin():
+        try:
+            executor.spin()
+        except (rclpy.executors.ExternalShutdownException, KeyboardInterrupt):
+            pass
+    thread = threading.Thread(target=spin, name='executor', daemon=True)
+    thread.start()
+    try:
+        while rclpy.ok(context=node.context) and not stop() and thread.is_alive():
+            time.sleep(step_s)
+    except KeyboardInterrupt:
+        pass
+    executor.shutdown()
+    thread.join((getattr(node, 'settings', None) or load_settings())['deadlines']['action_cancel_s'])
+    try:
+        executor.remove_node(node)      # else the events executor keeps it and destroy_node() waits for ever
+    except Exception:                   # noqa: BLE001 (already removed or the executor is gone: nothing to do)
+        pass
+    if not rclpy.ok(context=node.context):
+        return None                     # rclpy's own Ctrl-C handling shut the context down: nothing more to spin
+    last = rclpy.executors.SingleThreadedExecutor(context=node.context)
+    last.add_node(node)
+    return last
 
 
 class Inputs:

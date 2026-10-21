@@ -369,6 +369,16 @@ SLAM must not jump to a wrong but similar-looking place.
   needed a turn-drive-turn onto P after Nav2's 5 cm point goal: many random turns; rejected.
   A piece Nav2 finished up to rejoin_max_m off its end (base: locator.base_tolerance_m) counts as done
   (ENDPOINT_MISSED_ACCEPTED). The meter's denominator includes the floor the drive-ins reach.
+- CPU (robot 2026-10-20: load 15 on the Pi 4, SCAN_STALE / AMCL_STALE because the supervisor handled messages too
+  late; the supervisor logs its timing every health.timing_log_period_s). 75-80 % of the supervisor's and the gate's
+  CPU was rclpy's default executor (wait set rebuilt per message). All NALA Python nodes now use rclpy's EventsExecutor
+  (health.events_executor; ros_common.make_executor / run_until_stopped): blocking spin() in a background thread,
+  the main thread waits for its own Ctrl-C/SIGTERM flag (rclpy initialized with SignalHandlerOptions.NO: rclpy's own
+  handler made destroy_node() wait for ever), then the node's own shutdown steps run single-threaded on a default
+  executor as before (the gate's stop burst). spin_once() in a loop with the events executor cost MORE CPU than the
+  default executor. Simulation: supervisor 19 -> 8 %, gate 12 -> 4 %, meter 8 -> 4 %; every node exits cleanly.
+  Meter: trace messages built once per point (cached), covered cells no longer in /coverage/measurement (the
+  supervisor reads /coverage/covered). Panel: same executor switch, map repaints only when its data changed.
 - Apps 1 and 2 on the robot screen (user, 2026-10-19): buttons "Drive (app 1)" and "Make a map (app 2)" on the map
   list (`nala_panel/apps.py`, `ui.AppScreen`). They start the same launch files as over ssh (log in `log/`), STOP /
   Back stop them with Ctrl-C. Driving only with the Xbox controller (user: no on-screen arrows). App 2 shows the live

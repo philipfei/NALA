@@ -126,6 +126,9 @@
       stop_confirm_timeout_s: 1.0
       # Supervisor diagnostics: one log line this often on its step time and how old messages are when handled.
       timing_log_period_s: 5.0
+      # NALA's Python nodes use rclpy's EventsExecutor (ros_common.make_executor): far less CPU per message than the
+      # default executor (robot 2026-10-20: load 15 on the Pi 4, SCAN_STALE / AMCL_STALE). false: the default one.
+      events_executor: true
     measurement:
       max_sample_gap_s: 0.3
       translation_slack_m: 0.05

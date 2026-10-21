@@ -8,6 +8,7 @@ The node never waits in a callback: the request is sent with call_async and the 
 """
 
 import rclpy
+from rclpy.signals import SignalHandlerOptions
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.parameter import Parameter
@@ -15,6 +16,7 @@ from sensor_msgs.msg import Joy
 from std_srvs.srv import Trigger
 
 from .buttons import rising
+from .ros_common import make_executor, run_until_stopped
 
 
 class XboxPause(Node):
@@ -61,10 +63,10 @@ class XboxPause(Node):
 
 
 def main(args=None):
-    rclpy.init(args=args)
+    rclpy.init(args=args, signal_handler_options=SignalHandlerOptions.NO)
     node = XboxPause()
     try:
-        rclpy.spin(node)
+        run_until_stopped(node, make_executor(node))
     except (KeyboardInterrupt, ExternalShutdownException):
         pass
     finally:

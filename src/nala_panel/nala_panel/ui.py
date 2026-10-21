@@ -41,6 +41,11 @@ def read_params(node):
     return {name: node.get_parameter(name).value for name in PARAMS}
 
 
+def _same(a, b):
+    """Two map layers (numpy arrays) with the same content."""
+    return b is not None and a.shape == b.shape and np.array_equal(a, b)
+
+
 def plan_points(data):
     """The path a plan drives: its drivable path, or its poses for older plans."""
     drive = data.get('drive_path') or {}
@@ -876,10 +881,12 @@ class ScanScreen(QtWidgets.QWidget):
             lines.append(f'Paused: {reason}')
         self.area.setText('<br>'.join(lines))
         self.message.setText(s.message)
-        self.chip_loc.setText('Localized' if s.state.get('trusted') else 'Not localized')
-        self.chip_loc.setProperty('on', bool(s.state.get('trusted')))
-        self.chip_loc.style().unpolish(self.chip_loc)
-        self.chip_loc.style().polish(self.chip_loc)
+        trusted = bool(s.state.get('trusted'))
+        if self.chip_loc.property('on') != trusted:          # restyling every refresh cost CPU for nothing
+            self.chip_loc.setText('Localized' if trusted else 'Not localized')
+            self.chip_loc.setProperty('on', trusted)
+            self.chip_loc.style().unpolish(self.chip_loc)
+            self.chip_loc.style().polish(self.chip_loc)
         self.alert.show_hotspots(s.hotspots)
         self.d_alert.show_hotspots(s.hotspots)
 
@@ -900,18 +907,26 @@ class ScanScreen(QtWidgets.QWidget):
     def _draw(self):
         """Redraw only the map layers whose data changed (cheap on the Pi)."""
         s, v, d = self.session, self.view, self.drawn
+        # Each layer is redrawn only when its content changed: the meter sends the covered floor twice per second
+        # even while the robot stands still.
         if s.covered is not None and s.covered is not d.get('covered'):
-            v.set_mask('coverage', s.covered, style.TEAL, 120)
+            if not _same(s.covered, d.get('covered_shown')):
+                v.set_mask('coverage', s.covered, style.TEAL, 120)
+                d['covered_shown'] = s.covered
             d['covered'] = s.covered
         if s.keepout is not None and s.keepout is not d.get('keepout'):
-            v.set_mask('keepout', s.keepout, style.MAG, 90)
+            if not _same(s.keepout, d.get('keepout_shown')):
+                v.set_mask('keepout', s.keepout, style.MAG, 90)
+                d['keepout_shown'] = s.keepout
             d['keepout'] = s.keepout
         heat = (s.heatmap, s.radiation.get('threshold'))
         if s.heatmap is not None and (heat[0] is not d.get('heat', (None, None))[0] or heat[1] != d['heat'][1]):
             v.set_heatmap(*heat)
             d['heat'] = heat
         if s.changes is not None and s.changes is not d.get('changes'):
-            v.set_changes(s.changes == 100, s.changes == 50)
+            if not _same(s.changes, d.get('changes_shown')):
+                v.set_changes(s.changes == 100, s.changes == 50)
+                d['changes_shown'] = s.changes
             d['changes'] = s.changes
         v.refresh(trail=s.trail, hotspots=s.hotspots, robot=s.display_pose())
         if v.selected is not None:
@@ -1237,7 +1252,13 @@ def main(args=None):
     rclpy.init(args=args)
     node = Node('nala_panel')
     params = read_params(node)
-    executor = MultiThreadedExecutor()
+    # rclpy's EventsExecutor (health.events_executor in config/coverage.yaml, as for app 3's nodes): far less CPU per
+    # message than the default executors (robot 2026-10-20: the panel used 30-65 % of a Pi 4 core).
+    if load_settings(Path(params['repo_dir']) / 'config')['health'].get('events_executor'):
+        from rclpy.experimental import EventsExecutor
+        executor = EventsExecutor()
+    else:
+        executor = MultiThreadedExecutor()
     executor.add_node(node)
     app = make_app(params)
     panel = Panel(node, executor, params)

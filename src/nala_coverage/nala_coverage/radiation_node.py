@@ -12,6 +12,7 @@ import time
 from pathlib import Path
 import numpy as np
 import rclpy
+from rclpy.signals import SignalHandlerOptions
 from rclpy.node import Node
 from nav_msgs.msg import OccupancyGrid
 from sensor_msgs.msg import Image
@@ -21,7 +22,7 @@ from nala_interfaces.msg import CountRate
 from .geometry import Grid
 from .params import node_settings
 from .radiation import RadiationMap
-from .ros_common import LATCHED, LATEST, decode, json_msg, stamp_seconds
+from .ros_common import make_executor, run_until_stopped, LATCHED, LATEST, decode, json_msg, stamp_seconds
 
 
 class RadiationNode(Node):
@@ -154,10 +155,10 @@ class RadiationNode(Node):
 
 
 def main(args=None):
-    rclpy.init(args=args)
+    rclpy.init(args=args, signal_handler_options=SignalHandlerOptions.NO)
     node = RadiationNode()
     try:
-        rclpy.spin(node)
+        run_until_stopped(node, make_executor(node))
     except KeyboardInterrupt:
         pass
     finally:

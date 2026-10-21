@@ -11,6 +11,17 @@ from . import style
 TAP_PX = 12          # a touch that moves less than this is a tap
 
 
+def _equal(a, b):
+    """Same drawing data (positions, lists, numbers; numpy arrays by content)."""
+    try:
+        same = a == b
+        if isinstance(same, np.ndarray):
+            return np.shape(a) == np.shape(b) and bool(same.all())
+        return bool(same)
+    except (ValueError, TypeError):
+        return False
+
+
 def rgba_image(rgba):
     """QImage from an (rows, cols, 4) uint8 array; row 0 of the grid (lowest y) at the bottom of the image."""
     a = np.ascontiguousarray(rgba[::-1])
@@ -66,6 +77,7 @@ class MapWidget(QtWidgets.QWidget):
         super().__init__(parent)
         self.setAttribute(QtCore.Qt.WA_AcceptTouchEvents)
         self.setMinimumSize(200, 200)
+        self._trail_mark = None
         self.grid = None
         self.base = None
         self.images = {}                       # layer name -> QImage on the grid
@@ -98,6 +110,7 @@ class MapWidget(QtWidgets.QWidget):
         self.base = rgba_image(rgba)
         self.images = {}
         self.trail, self.plan, self.route, self.hotspots = [], [], [], []
+        self._trail_mark = None
         self.robot = self.station = self.selected = None
         self.marks = {'start': None, 'area': [], 'area_closed': False, 'pending': None}
         if fit:
@@ -134,9 +147,21 @@ class MapWidget(QtWidgets.QWidget):
         self.update()
 
     def refresh(self, **data):
+        """New data to draw; repaints only when some of it changed (the screen asks every update_period; a repaint
+        draws the whole map with every trail point, and cost 30-65 % of a Pi 4 core while nothing changed)."""
+        changed = False
         for key, value in data.items():
+            if key == 'trail':
+                # The trail is one list that grows in place: compare its size and its newest point.
+                mark = (len(value), len(value[-1]) if value else 0,
+                        tuple(value[-1][-1]) if value and value[-1] else None)
+                changed |= mark != self._trail_mark
+                self._trail_mark = mark
+            elif not _equal(getattr(self, key, None), value):
+                changed = True
             setattr(self, key, value)
-        self.update()
+        if changed:
+            self.update()
 
     # ---------------------------------------------------------------- view
     def fit(self):

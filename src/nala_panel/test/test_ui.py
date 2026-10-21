@@ -342,3 +342,21 @@ def test_results_tab_lists_every_scan_and_shows_the_chosen_one(panel, maps_dir):
     assert 'No scintillator readings' in screen.result_text.text()
     shot(window, '13_results')
 
+
+
+def test_the_map_repaints_only_when_what_it_shows_changed(panel):
+    # CPU (robot 2026-10-20): the screen asked for a full repaint every 0.3 s, also when nothing had changed.
+    window, app = panel
+    view = window.scan.view
+    repaints = []
+    view.update = lambda *a: repaints.append(1)
+    trail = [[[0., 0.], [0.1, 0.]]]
+    view.refresh(trail=trail, hotspots=[], robot=(0.1, 0., 0.))
+    n = len(repaints)
+    view.refresh(trail=trail, hotspots=[], robot=(0.1, 0., 0.))
+    assert len(repaints) == n                                   # the same data: no repaint
+    trail[-1].append([0.2, 0.])                                 # the trail grows in place
+    view.refresh(trail=trail, hotspots=[], robot=(0.1, 0., 0.))
+    assert len(repaints) == n + 1
+    view.refresh(trail=trail, hotspots=[], robot=(0.2, 0., 0.))  # the robot moved
+    assert len(repaints) == n + 2

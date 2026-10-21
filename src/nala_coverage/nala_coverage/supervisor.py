@@ -11,6 +11,7 @@ Drive-ins into pockets: driving in (plan kind 'spur') is a normal piece Nav2 fol
 state SPUR) is driven by the supervisor itself, straight back, only over floor the meter has measured."""
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+import gc
 import os
 import signal
 import hashlib
@@ -20,6 +21,7 @@ import time
 import numpy as np
 from scipy.spatial import cKDTree
 import rclpy
+import rclpy.executors
 from rclpy.node import Node
 from rclpy.signals import SignalHandlerOptions
 from rclpy.time import Time
@@ -41,7 +43,7 @@ from .plan_file import check_base_station, load_plan, spur_yaw
 
 # Targets the supervisor drives itself in state SPUR: backing out of a pocket (driving in is a normal piece).
 SELF_DRIVEN=('reverse',)
-from .ros_common import (Inputs, ActionSlot, LATCHED, LATEST, decode, json_msg,
+from .ros_common import (make_executor, run_until_stopped, Inputs, ActionSlot, LATCHED, LATEST, decode, json_msg,
                          diagnostic, pose_msg, path_msg, pose3, transform3, yaw, ros_now, stamp_seconds)
 
 # Pauses that end by themselves once localization is trusted again (recovery.auto_resume_s). Not: operator
@@ -117,6 +119,9 @@ class Supervisor(Node):
         self.create_subscription(PoseWithCovarianceStamped,'/amcl_pose',self.amcl_pose,10)
         self.create_subscription(String,'/safety/state',self.gate_received,LATEST)
         self.create_subscription(String,'/coverage/measurement',self.meter_received,LATEST)
+        # The floor the meter has measured (backing out of a pocket only passes measured floor).
+        self.covered_grid=None
+        self.create_subscription(OccupancyGrid,'/coverage/covered',self.covered_received,LATCHED)
         self.create_subscription(String,'/coverage/meter_config',self.meter_config_received,LATCHED)
         self.create_subscription(String,'/radiation/state',self.radiation_received,LATEST)
         self.create_subscription(OccupancyGrid,'/radiation/keepout',self.keepout_received,LATCHED)
@@ -125,6 +130,8 @@ class Supervisor(Node):
         # Where the locator finds the robot from the scan (locator_node): Start needs it on the base station.
         self.located={};self.located_time=0.;self.paused_at=0.;self.escape=None
         self.timing=dict(since=time.monotonic(),ticks=0,tick=0.,trust=0.,gap=0.,last=None,amcl_n=0,amcl_age=0.)
+        self.gc_pause={'max':0.,'gen':-1,'start':0.}
+        gc.callbacks.append(self.gc_timing)
         self.create_subscription(String,'/coverage/located',self.located_received,LATEST)
         self.create_service(SetBool,'/control/manual',self.manual_service)
         for name,fn in [('preview',self.preview_service),('start',self.start),
@@ -161,6 +168,12 @@ class Supervisor(Node):
         self.amcl=msg;self.amcl_received=time.monotonic()
         tm=self.timing;tm['amcl_n']+=1;tm['amcl_age']=max(tm['amcl_age'],ros_now(self)-stamp_seconds(msg.header.stamp))
 
+    def gc_timing(self,phase,info):
+        """Diagnostics: the longest garbage-collection pause (Python stops every thread while it runs)."""
+        g=self.gc_pause
+        if phase=='start':g['start']=time.perf_counter()
+        elif time.perf_counter()-g['start']>g['max']:g['max']=time.perf_counter()-g['start'];g['gen']=info['generation']
+
     def log_timing(self,now):
         """Diagnostics (robot 2026-10-20: SCAN_STALE / AMCL_STALE at the pocket ends while the LiDAR and AMCL were fine
         and the Pi had a load of 15): one log line per health.timing_log_period_s on how far this node falls behind."""
@@ -171,7 +184,9 @@ class Supervisor(Node):
             f"timing: state {self.mission.state} ticks {tm['ticks']} tick max {1000*tm['tick']:.0f} ms "
             f"(trust {1000*tm['trust']:.0f} ms) gap max {1000*tm['gap']:.0f} ms | amcl {tm['amcl_n']} msgs oldest "
             f"{tm['amcl_age']:.2f} s | scan {cnt.get('scan',0)} msgs oldest {lag.get('scan',0.):.2f} s | odom "
-            f"{cnt.get('odom',0)} msgs oldest {lag.get('odom',0.):.2f} s | load {os.getloadavg()[0]:.1f}")
+            f"{cnt.get('odom',0)} msgs oldest {lag.get('odom',0.):.2f} s | gc max {1000*self.gc_pause['max']:.0f} ms "
+            f"(gen {self.gc_pause['gen']}) | load {os.getloadavg()[0]:.1f}")
+        self.gc_pause['max']=0.;self.gc_pause['gen']=-1
         self.timing=dict(since=now,ticks=0,tick=0.,trust=0.,gap=0.,last=tm['last'],amcl_n=0,amcl_age=0.)
         self.inputs.lag={};self.inputs.count={}
 
@@ -214,6 +229,10 @@ class Supervisor(Node):
             d=decode(msg)
             if d['generation']==self.mission.generation:self.measurement=d;self.meter_time=time.monotonic()
         except (ValueError,KeyError):pass
+
+    def covered_received(self,msg):
+        if (msg.info.height,msg.info.width)==self.base.cells.shape:
+            self.covered_grid=np.asarray(msg.data,np.int8).reshape(msg.info.height,msg.info.width)>0
 
     def radiation_received(self,msg):
         try:self.radiation=decode(msg);self.radiation_time=time.monotonic()
@@ -381,6 +400,7 @@ class Supervisor(Node):
         self.definition={'generation':self.mission.generation,'map_id':self.base.identity,
                          'config_hash':self.settings.hash,'denominator':np.flatnonzero(self.preview['denominator']).tolist()}
         self.definition_pub.publish(json_msg(self.definition));self.measurement={};self.meter_time=0.
+        self.covered_grid=None         # until the meter sends this task's measured floor
         self.targets=list(self.preview['targets']);self.current=None;self.pending_phase='NEXT';self.stuck=None;self.returning=False
         self.phase_since=time.monotonic();self.manual=False;self.background_done=False
         if self.settings['radiation']['enabled']:self.begin_background()
@@ -762,8 +782,8 @@ class Supervisor(Node):
             self.pause('SPUR_REVERSE_CONTAMINATION: contaminated floor behind the robot');return
         stood=np.zeros(swept.shape,bool);cells=self.grid.outline_cells((p[0],p[1],yaw_),self.outline,0.)
         if cells is not None:stood[cells]=True
-        covered=np.zeros(swept.size,bool);covered[np.asarray(self.measurement.get('covered_indices',[]),int)]=True
-        if (swept&~stood&~covered.reshape(swept.shape)).any():
+        covered=self.covered_grid if self.covered_grid is not None else np.zeros(swept.shape,bool)
+        if (swept&~stood&~covered).any():
             self.pause('SPUR_REVERSE_NOT_MEASURED: floor behind the robot is not measured');return
         self.mission.state='SPUR';self.phase_since=self.target_since=self.last_motion=now;self.motion_pose=list(self.pose)
 
@@ -1041,13 +1061,13 @@ class Supervisor(Node):
             self.route_pub.publish(path_msg(self,points))
 
 
-def _shutdown_supervisor(node):
+def _shutdown_supervisor(node,executor):
     node.manual=False
     node.slot.cancel()
     node.lease_pub.publish(json_msg({'owner':'NONE','epoch':'shutdown','config_hash':node.settings.hash}))
     deadline=time.monotonic()+node.settings['deadlines']['action_cancel_s']
     while rclpy.ok() and not node.slot.idle and time.monotonic()<deadline:
-        rclpy.spin_once(node,timeout_sec=0.05)
+        executor.spin_once(timeout_sec=0.05)
     if not node.slot.idle:
         node.get_logger().error('Action cancellation was not confirmed before shutdown')
         if node.stop_client.service_is_ready():node.stop_client.call_async(Trigger.Request())
@@ -1061,13 +1081,12 @@ def main(args=None):
     previous={sig:signal.getsignal(sig) for sig in (signal.SIGINT,signal.SIGTERM)}
     def interrupt(_signum,_frame):raise KeyboardInterrupt
     for sig in previous:signal.signal(sig,interrupt)
+    executor=None
     try:
-        rclpy.spin(node)
-    except KeyboardInterrupt:
-        pass
+        executor=run_until_stopped(node,make_executor(node))
     finally:
         node.inputs.close()
-        _shutdown_supervisor(node)
+        _shutdown_supervisor(node,executor or rclpy.executors.SingleThreadedExecutor(context=node.context))
         node.destroy_node()
         if rclpy.ok():rclpy.shutdown()
         for sig,handler in previous.items():signal.signal(sig,handler)

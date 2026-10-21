@@ -2,6 +2,7 @@
 import signal
 import time
 import rclpy
+import rclpy.executors
 from rclpy.node import Node
 from rclpy.signals import SignalHandlerOptions
 from geometry_msgs.msg import Twist
@@ -10,7 +11,7 @@ from std_srvs.srv import Trigger, SetBool
 from diagnostic_msgs.msg import DiagnosticArray
 from .health import Ownership
 from .params import node_settings
-from .ros_common import Inputs, LATEST, parameter, decode, json_msg, diagnostic
+from .ros_common import make_executor, run_until_stopped, Inputs, LATEST, parameter, decode, json_msg, diagnostic
 
 
 class SafetyGate(Node):
@@ -124,14 +125,14 @@ class SafetyGate(Node):
         diagnostic(self,self.diag,'velocity_safety_gate',self.policy.fault or reason or 'READY',state,2 if self.policy.fault else int(bool(reason)))
 
 
-def _stop_before_shutdown(node):
+def _stop_before_shutdown(node,executor):
     if node.policy.owner not in ('NAV','MANUAL'):
         return
     started=time.monotonic();sent=0
     while rclpy.ok() and (sent<node.settings['health']['shutdown_stop_messages'] or
                           (not node.inputs.stopped() and time.monotonic()-started<node.settings['health']['stop_confirm_timeout_s'])):
         node.pub.publish(Twist());sent+=1
-        rclpy.spin_once(node,timeout_sec=1/node.settings['health']['gate_rate_hz'])
+        executor.spin_once(timeout_sec=1/node.settings['health']['gate_rate_hz'])
     if not node.inputs.stopped():node.policy.latch('SHUTDOWN_STOP_NOT_CONFIRMED')
 
 
@@ -144,11 +145,11 @@ def main(args=None):
         nonlocal stopping
         stopping=True
     for sig in previous:signal.signal(sig,interrupt)
+    executor=None
     try:
-        while rclpy.ok() and not stopping:
-            rclpy.spin_once(node,timeout_sec=.05)
+        executor=run_until_stopped(node,make_executor(node),stop=lambda:stopping,step_s=.05)
     finally:
-        _stop_before_shutdown(node)
+        _stop_before_shutdown(node,executor or rclpy.executors.SingleThreadedExecutor(context=node.context))
         node.destroy_node()
         if rclpy.ok():rclpy.shutdown()
         for sig,handler in previous.items():signal.signal(sig,handler)

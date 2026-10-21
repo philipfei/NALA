@@ -11,6 +11,7 @@ from pathlib import Path
 import time
 import numpy as np
 import rclpy
+from rclpy.signals import SignalHandlerOptions
 from rclpy.duration import Duration
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
@@ -22,7 +23,7 @@ from tf2_ros import Buffer, TransformException, TransformListener
 from .geometry import Grid
 from .mapchange import ChangeMap
 from .params import node_settings
-from .ros_common import LATCHED, LATEST, decode, transform3
+from .ros_common import make_executor, run_until_stopped, LATCHED, LATEST, decode, transform3
 
 NEW, REMOVED = 100, 50
 
@@ -99,10 +100,10 @@ class MapChangeNode(Node):
 
 
 def main(args=None):
-    rclpy.init(args=args)
+    rclpy.init(args=args, signal_handler_options=SignalHandlerOptions.NO)
     node = MapChangeNode()
     try:
-        rclpy.spin(node)
+        run_until_stopped(node, make_executor(node))
     except KeyboardInterrupt:
         pass
     finally:
