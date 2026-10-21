@@ -16,7 +16,7 @@ from nala_panel import library, ui
 
 PARAMS = {'maps_dir': 'maps', 'fullscreen': False, 'window_width': 1024, 'window_height': 600, 'font_size': 13,
           'button_height': 52, 'update_period': 0.3, 'manual_period': 0.05, 'heatmap_width_m': 0.15, 'launch_stop_timeout': 5.0, 'preview_retry': 10.0,
-          'hardware': False}
+          'hardware': False, 'battery_period': 2.0, 'battery_samples': 10}
 
 
 def shot(widget, name):

@@ -15,4 +15,6 @@ nala_panel:
                                   # and the keepout zone use the exact cells)
     launch_stop_timeout: 20.0     # s, wait this long for app 3 to stop before it is killed
     preview_retry: 10.0           # s, ask app 3 for the plan check again if it has not come by then
-    hardware: true                # false: app 3 without base_node, battery, IMU, EKF and LiDAR driver (tools/sim)
+    battery_period: 2.0           # s, the panel reads the battery voltage (INA219, config/battery.yaml) this often
+    battery_samples: 10           # shown value = mean of the last readings (10 x 2 s = 20 s), so it does not jump
+    hardware: true               # false: app 3 without base_node, battery, IMU, EKF and LiDAR driver (tools/sim)

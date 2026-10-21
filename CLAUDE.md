@@ -276,9 +276,10 @@ SLAM must not jump to a wrong but similar-looking place.
   movement -> pose. A lost frame loses no distance. `/odom` speed = movement / (seq periods x 0.05 s, exact MCU
   time); stamp = Pi time of arrival (no artificial time stamps: clock drift would make jumps).
   Tested on the PC with a fake MCU on a pty (garbage, CRC error, dropped frame).
-- Battery: `battery_node` reads the INA260 (I2C) at 1 Hz -> `/battery_state` (percentage is rough: linear in the
+- Battery: `battery_node` reads the INA219 (I2C, voltage only) at 1 Hz -> `/battery_state` (percentage is rough: linear in the
   voltage, the 18650 curve is not) and `/battery_low` (true below 14.0 V), for a later "drive home on low battery".
-  Started by the app 1 launch file. Tested on the PC with a fake smbus2.
+  Started by the app 1 and app 3 launch files. The robot screen panel reads the INA219 itself (battery icon on every
+  screen, 20 s moving average; user, 2026-10-21), because battery_node runs only with an app.
 - IMU + EKF (apps 2 and 3, `docs/imu_ekf.md`, user decision 2026-10-09): robot_localization EKF fuses `/odom` vx, vy
   and **only the IMU gyro z** for yaw (no wheel turn rate: mecanum slip). No IMU orientation (magnetometer is
   distorted indoors), no acceleration. TF odom -> base_footprint: base_node in app 1 (`publish_tf`), the EKF
@@ -477,7 +478,7 @@ SLAM must not jump to a wrong but similar-looking place.
 - [3] First robot tests of app 3: localization at the base station, costmaps, a short plan, an obstacle, the
   return; coverage speeds (`motion` in `config/coverage.yaml`: 0.12 m/s, 0.4 rad/s are start values; the
   acceleration limits 0.1 m/s^2 / 0.35 rad/s^2 come from the floor test). Battery check stays off
-  (`battery.enabled: false`) until the INA260 answers.
+  (`battery.enabled: false`) until it is turned on (the INA219 works since 2026-10-21).
 - [3] Obstacles lower or higher than the LiDAR scan plane are not seen (no bumper).
 - [3] Pi set up for app 3 on 2026-10-16: `setup_pi_screen.sh` ran, after a reboot the panel starts full-screen by
   itself (GNOME autostart), touch and picture checked by the user, the screen stays on. Xbox on the Pi without

@@ -19,7 +19,9 @@ from rclpy.parameter import Parameter
 from PyQt5 import QtCore, QtGui, QtWidgets
 from nala_coverage.geometry import Grid
 from nala_coverage.params import load_settings
-from . import apps, library, planning, style
+import yaml
+from nala_base.ina260 import charge_ratio
+from . import apps, battery, library, planning, style
 from .drive import DriveSession, plain_state
 from .mapwidget import MapWidget
 
@@ -28,7 +30,8 @@ PARAMS = {'repo_dir': Parameter.Type.STRING, 'maps_dir': Parameter.Type.STRING, 
           'font_size': Parameter.Type.INTEGER, 'button_height': Parameter.Type.INTEGER,
           'update_period': Parameter.Type.DOUBLE, 'manual_period': Parameter.Type.DOUBLE,
           'launch_stop_timeout': Parameter.Type.DOUBLE, 'preview_retry': Parameter.Type.DOUBLE, 'hardware': Parameter.Type.BOOL,
-          'heatmap_width_m': Parameter.Type.DOUBLE}
+          'heatmap_width_m': Parameter.Type.DOUBLE, 'battery_period': Parameter.Type.DOUBLE,
+          'battery_samples': Parameter.Type.INTEGER}
 
 
 def read_params(node):
@@ -97,6 +100,35 @@ class AlertBar(QtWidgets.QFrame):
                 w.style().polish(w)
 
 
+class BatteryIcon(QtWidgets.QWidget):
+    """A battery symbol filled to the charge, red below the low voltage, and '16.4 V  92%' next to it."""
+
+    def __init__(self, cfg):
+        super().__init__()
+        self.cfg = cfg
+        self.voltage = None
+        self.setFixedSize(150, 30)
+
+    def show_voltage(self, voltage):
+        self.voltage = voltage
+        self.update()
+
+    def paintEvent(self, _event):
+        cfg = self.cfg
+        p = QtGui.QPainter(self)
+        p.setRenderHint(QtGui.QPainter.Antialiasing)
+        body = QtCore.QRectF(1, 8, 30, 15)
+        p.setPen(QtGui.QPen(QtGui.QColor(style.INK), 2))
+        p.drawRoundedRect(body, 2, 2)
+        p.fillRect(QtCore.QRectF(31, 12, 3, 7), QtGui.QColor(style.INK))
+        if self.voltage is not None:
+            ratio = charge_ratio(self.voltage, cfg['empty_voltage'], cfg['full_voltage'])
+            colour = style.RED if self.voltage < cfg['low_voltage'] else style.TEAL
+            p.fillRect(QtCore.QRectF(3, 10, 26 * ratio, 11), QtGui.QColor(colour))
+        p.drawText(QtCore.QRectF(40, 0, 110, 30), QtCore.Qt.AlignVCenter | QtCore.Qt.AlignLeft,
+                   battery.battery_text(self.voltage, cfg['empty_voltage'], cfg['full_voltage']))
+
+
 class MapsScreen(QtWidgets.QWidget):
     """Choose a map made by app 2."""
 
@@ -110,6 +142,7 @@ class MapsScreen(QtWidgets.QWidget):
         title.addWidget(button('Drive (app 1)', lambda: panel.start_app('app1')))
         title.addWidget(button('Make a map (app 2)', lambda: panel.start_app('app2')))
         title.addWidget(button('Refresh', self.refresh))
+        title.addWidget(panel.battery_icon())
         layout.addLayout(title)
         self.list = QtWidgets.QListWidget()
         self.list.setViewMode(QtWidgets.QListView.IconMode)
@@ -159,6 +192,7 @@ class MapScreen(QtWidgets.QWidget):
         top.addWidget(button('< Maps', panel.show_maps))
         self.title = label(wrap=False)
         top.addWidget(self.title, 1)
+        top.addWidget(panel.battery_icon())
         left.addLayout(top)
         self.view = MapWidget()
         self.view.heat_width_m = panel.params['heatmap_width_m']
@@ -464,6 +498,7 @@ class PlanningScreen(QtWidgets.QWidget):
         self.pages.addWidget(self.image)
         outer.addWidget(self.pages, 3)
         right = QtWidgets.QVBoxLayout()
+        right.addWidget(panel.battery_icon(), 0, QtCore.Qt.AlignRight)
         self.title = label()
         right.addWidget(self.title)
         self.checks = label()
@@ -570,6 +605,7 @@ class ScanScreen(QtWidgets.QWidget):
         head = QtWidgets.QHBoxLayout()
         self.title = label('<b>NALA</b>', wrap=False)
         head.addWidget(self.title, 1)
+        head.addWidget(panel.battery_icon())
         self.big_button = button('Big view', lambda: self._toggle_map(False))   # back to the progress view
         head.addWidget(self.big_button)
         self.back_button = button('Back', self.finish)
@@ -653,7 +689,10 @@ class ScanScreen(QtWidgets.QWidget):
         lay.addWidget(self.d_alert)
         lay.addStretch()
         self.d_pct = label('0', name='bigpct', wrap=False)
-        lay.addWidget(self.d_pct)
+        pct_row = QtWidgets.QHBoxLayout()
+        pct_row.addWidget(self.d_pct, 1)
+        pct_row.addWidget(self.panel.battery_icon(), 0, QtCore.Qt.AlignTop)
+        lay.addLayout(pct_row)
         self.d_status = label(name='bigstatus')
         lay.addWidget(self.d_status)
         self.d_bar = QtWidgets.QProgressBar()
@@ -1002,6 +1041,7 @@ class AppScreen(QtWidgets.QWidget):
         head = QtWidgets.QHBoxLayout()
         self.title = label(wrap=False)
         head.addWidget(self.title, 1)
+        head.addWidget(panel.battery_icon())
         head.addWidget(button('Back', self.back))
         sl.addLayout(head)
         self.status = label(name='status')
@@ -1114,6 +1154,11 @@ class Panel(QtWidgets.QMainWindow):
         self.apps = apps.AppSession(repo, params['launch_stop_timeout'])
         executor.add_node(self.apps)
         self.setWindowTitle('NALA')
+        # The panel reads the battery itself (config/battery.yaml, the same settings as battery_node).
+        self.battery_cfg = yaml.safe_load((repo / 'config' / 'battery.yaml').read_text())['battery_node']['ros__parameters']
+        self.battery = battery.BatteryMeter(self.battery_cfg['i2c_bus'], self.battery_cfg['i2c_address'],
+                                            params['battery_samples'])
+        self.battery_icons = []
         self.stack = QtWidgets.QStackedWidget()
         self.setCentralWidget(self.stack)
         self.maps = MapsScreen(self)
@@ -1126,7 +1171,22 @@ class Panel(QtWidgets.QMainWindow):
         self.timer = QtCore.QTimer(self)
         self.timer.timeout.connect(self.tick)
         self.timer.start(int(params['update_period'] * 1000))
+        self.battery_timer = QtCore.QTimer(self)
+        self.battery_timer.timeout.connect(self.read_battery)
+        self.battery_timer.start(int(params['battery_period'] * 1000))
+        self.read_battery()
         self.show_maps()
+
+    def battery_icon(self):
+        icon = BatteryIcon(self.battery_cfg)
+        self.battery_icons.append(icon)
+        return icon
+
+    def read_battery(self):
+        self.battery.read()
+        voltage = self.battery.voltage()
+        for icon in self.battery_icons:
+            icon.show_voltage(voltage)
 
     def show_maps(self):
         self.maps.refresh()

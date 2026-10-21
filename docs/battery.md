@@ -51,4 +51,7 @@ If the chip does not answer, the node logs "Cannot read the INA219" (at most eve
 - The app 3 supervisor reads `/battery_state.percentage` only when `battery.enabled` is `true`. Then it needs a message younger than
   `health.battery_age_s` (15 s) and a finite percentage in 0..1 (`BATTERY_STALE`, `BATTERY_INVALID`, `BATTERY_CRITICAL`).
   It does not read `current`, so `NaN` is fine.
-- Not done yet: showing the battery on the robot screen; enabling the battery check.
+- The robot screen (`nala_panel`) shows a battery icon with `16.4 V  92%` in the title row of every screen. The panel reads
+  the INA219 itself (not `/battery_state`: battery_node runs only with app 1 or 3), every `battery_period` (2 s), and shows
+  the mean of the last `battery_samples` (10) readings (`config/panel.yaml`). Red below `low_voltage`. No answer: `-- V  --%`.
+- Not done yet: enabling the battery check.

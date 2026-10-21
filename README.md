@@ -340,11 +340,13 @@ NALA/
         │   ├── drive.py                   [3] Start/stop app 3, follow its state and the radiation data; Start/Pause/Resume/
         │   │                                  Go home/STOP, mark checked, hand control (no Qt)
         │   ├── mapwidget.py               [3] Map drawing (QPainter): coverage, heatmap, keepout, actual trail, hotspots, robot; touch
+        │   ├── battery.py                 [3] Battery voltage for the screen: reads the INA219, moving average, text (no Qt)
         │   ├── style.py                   [3] Colours and stylesheet after the scan screen design
         │   └── ui.py                      [3] The screens: Maps, Map (plans, new plan, results), Planning, Scan; App (apps 1
         │                                      and 2) with an on-screen keyboard for the map name
         └── test/
             ├── conftest.py                [3] Test map library (the example room map)
+            ├── test_battery.py            [3] Unit tests for battery.py
             ├── test_library.py            [3] Unit tests for library.py
             ├── test_planning.py           [3] Planning tests (one real plan on a small map, about 1 minute)
             ├── test_drive.py              [3] Loopback ROS tests of the drive session with fake app 3 services
