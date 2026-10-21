@@ -166,7 +166,8 @@ def pieces_from_targets(targets):
 
 
 class RouteOptimizer:
-    def __init__(self, grid, pieces, start, reach, den, coverable, settings, neighbours=8, drive_ins=([], [])):
+    def __init__(self, grid, pieces, start, reach, den, coverable, settings, neighbours=8, drive_ins=([], []),
+                 home_area=None):
         self.g, self.reach, self.den = grid, reach, den
         self.start = list(map(float, start))
         self.s = settings
@@ -190,6 +191,10 @@ class RouteOptimizer:
         self.r = float(settings['geometry']['coverage_disk_radius_m'])
         self.collision = settings.collision
         self.K = neighbours
+        # The area with turning room the start lies in: a route ending outside it (in an island behind a passage)
+        # also drives the way out (passages.way_out), counted in total().
+        self.home_area = home_area
+        self._way_out = {}
         # Drive-in candidates (spurs.candidates): (P, Q, cells, pocket), the pockets, and per cell the candidates.
         self.drive_ins, self.pockets = list(drive_ins[0]), list(drive_ins[1])
         self._drive_in_of = {}
@@ -365,11 +370,23 @@ class RouteOptimizer:
         for st in self.seq:
             time_s += self.T(prev, tuple(st))
             prev = tuple(st)
+        if prev is not None and self.home_area is not None:
+            time_s += self.way_out_time(self.pieces[prev[0]].state(prev[1])[2])
         covered = self.count > 0
         swept = sum(len(self.pieces[i].cells(rv)) for i, rv in self.seq) * self.cell
         overlap = max(0.0, swept - covered.sum() * self.cell)
         open_ = self.cov_ok & ~covered
         return time_s + self.k_over * overlap + float(self.wmiss[open_].sum()), int(open_.sum())
+
+    def way_out_time(self, xy):
+        """Seconds from the route's end to the home area when it ends inside an island (0 otherwise)."""
+        key = (round(xy[0], 4), round(xy[1], 4))
+        if key not in self._way_out:
+            from .passages import way_out
+            path = way_out(self.g, xy, self.start, self.reach, self.home_area, self.collision)
+            terms = costmod.route_terms(path, self.s) if path and len(path) > 1 else None
+            self._way_out[key] = (terms['drive_s'] + terms['turn_s'] + terms['reverse_s']) if terms else 0.0
+        return self._way_out[key]
 
     # -------------------------------------------------------------- moves
     def _drop_delta(self, k):

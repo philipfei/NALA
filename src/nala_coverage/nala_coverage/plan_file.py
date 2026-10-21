@@ -19,11 +19,15 @@ def _heading(a,b):return math.atan2(b[1]-a[1],b[0]-a[0])
 # straight back out backwards along the same line. Driving in is a normal piece (Nav2 follows it like any other;
 # user 2026-10-20); only backing out is driven by the supervisor (state SPUR).
 SPUR_KINDS=('spur','reverse')
+# A passage (coverage_tool coverage/passages.py): straight through an entrance narrower than the turning circle into
+# an area with turning room, driven forwards by Nav2 like any piece. Checked with the outline, as drive-ins.
+OUTLINE_KINDS=SPUR_KINDS+('passage',)
 
 
 def spur_yaw(a,b,kind):
-    """The robot's heading on a spur stretch from a to b: facing into the pocket both ways."""
-    return _heading(a,b) if kind=='spur' else _heading(b,a)
+    """The robot's heading on a stretch from a to b checked with the outline: driving forwards (drive-in, passage),
+    or facing into the pocket while backing out ('reverse')."""
+    return _heading(b,a) if kind=='reverse' else _heading(a,b)
 
 
 def stop_corners(points,min_deg=20.):
@@ -50,6 +54,8 @@ def pieces(points,stops,kinds=None):
         t.kinds=k
         # Where its drive-in starts (P): the stretch from there is checked with the outline (supervisor.follow).
         t.drive_in=list(points[a+k.index('spur')]) if into else None
+        # The passages driven in this piece (checked with the outline by supervisor.follow).
+        t.passages=[(list(points[a+j]),list(points[a+j+1])) for j,kind in enumerate(k or []) if kind=='passage']
         out.append(t)
     return out
 
@@ -107,6 +113,7 @@ def _joined(a,b):
     t.end_yaw=b.end_yaw
     t.kinds=(getattr(a,'kinds',None) or [])+(getattr(b,'kinds',None) or []) or None
     t.drive_in=getattr(b,'drive_in',None)
+    t.passages=(getattr(a,'passages',None) or [])+(getattr(b,'passages',None) or [])
     return t
 
 
@@ -168,7 +175,7 @@ def load_plan(path,grid,map_yaml,map_frame,collision,sensor=None,turn_merge_m=No
         index[i]=len(points)-1
     if len(points)<2:raise ValueError('PLAN_FILE_INVALID: fewer than two distinct poses')
     unsafe=[i for i,(a,b) in enumerate(zip(points,points[1:]))
-            if (spur_unsafe(grid,a,b,kinds[i+1],outline,margin) if kinds and kinds[i+1] in SPUR_KINDS
+            if (spur_unsafe(grid,a,b,kinds[i+1],outline,margin) if kinds and kinds[i+1] in OUTLINE_KINDS
                 else not grid.segment_safe(a,b,collision))]
     if unsafe:
         x,y=points[unsafe[0]]
@@ -195,6 +202,8 @@ def load_plan(path,grid,map_yaml,map_frame,collision,sensor=None,turn_merge_m=No
     targets=pieces(points,stops,kinds or None)
     if turn_merge_m is not None:targets=merge_turns(targets,turn_merge_m)
     spurs=[(points[i-1],points[i]) for i in range(1,len(points)) if kinds and kinds[i]=='spur']
+    passages=[(points[i-1],points[i]) for i in range(1,len(points)) if kinds and kinds[i]=='passage']
     return {'points':points,'stops':stops,'targets':targets,'drivable':isinstance(drive,dict),'spurs':spurs,
+            'passages':passages,
             'robot_radius':robot_radius,'base_station':station,'area':area,
             'plan_sha256':hashlib.sha256(text.encode()).hexdigest()}

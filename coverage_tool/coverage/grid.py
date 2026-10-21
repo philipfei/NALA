@@ -113,6 +113,74 @@ class Grid:
 
     # -------------------------------------------------------------------- A*
     def astar(self, a, b, reachable, radius):
+        """Path from a to b over reachable cells with enough clearance, [] if there is none. Between areas that only a
+        passage joins (self.passages, coverage/passages.py) it goes straight through the passage(s): every
+        connection the planner makes can use them."""
+        passages = getattr(self, 'passages', None)
+        if not passages:
+            return self._astar_cells(a, b, reachable, radius)
+        lab = self._areas(reachable, radius)
+        la, lb = self._area_of(lab, a), self._area_of(lab, b)
+        if not la or not lb or la == lb:
+            return self._astar_cells(a, b, reachable, radius)
+        # Shortest chain a -> passage -> ... -> b (straight distance inside an area, the passage length through one).
+        nodes = [list(map(float, a)), list(map(float, b))] + [list(map(float, p)) for ab in passages for p in ab]
+        area = [la, lb] + [self._area_of(lab, p) for p in nodes[2:]]
+        through = {}
+        for i in range(len(passages)):
+            through[2 + 2 * i] = 3 + 2 * i
+            through[3 + 2 * i] = 2 + 2 * i
+        best, prev, todo = {0: 0.0}, {}, [(0.0, 0)]
+        while todo:
+            cost, i = heapq.heappop(todo)
+            if i == 1:
+                break
+            if cost > best.get(i, math.inf):
+                continue
+            nxt = [(j, math.dist(nodes[i], nodes[j])) for j in range(len(nodes)) if j != i and area[j] and area[j] == area[i]]
+            if i in through:
+                nxt.append((through[i], math.dist(nodes[i], nodes[through[i]])))
+            for j, step in nxt:
+                if cost + step < best.get(j, math.inf):
+                    best[j] = cost + step
+                    prev[j] = i
+                    heapq.heappush(todo, (cost + step, j))
+        if 1 not in prev:
+            return []
+        chain = [1]
+        while chain[-1] != 0:
+            chain.append(prev[chain[-1]])
+        chain.reverse()
+        path = [nodes[0]]
+        for i, j in zip(chain, chain[1:]):
+            if through.get(i) == j:
+                path.append(nodes[j])                           # straight through the passage
+                continue
+            leg = self._astar_cells(nodes[i], nodes[j], reachable, radius)
+            if not leg:
+                return []
+            path.extend(leg[1:])
+        return path
+
+    def _areas(self, reachable, radius):
+        """4-connected areas of the cells A* may use (cached like A*)."""
+        key = ('areas', id(reachable), round(radius, 6))
+        if key not in self._astar_cache:
+            self._astar_cache[key] = label(reachable & self.passable(radius))[0]
+        return self._astar_cache[key]
+
+    def _area_of(self, lab, xy):
+        """The area a point lies in (or, a hair outside, the nearest area within two cells); 0 if none."""
+        r, c = self.cell(xy)
+        h, w = self.shape
+        for d in range(3):
+            vals = lab[max(0, r - d):min(h, r + d + 1), max(0, c - d):min(w, c + d + 1)]
+            vals = vals[vals > 0]
+            if len(vals):
+                return int(np.bincount(vals).argmax())
+        return 0
+
+    def _astar_cells(self, a, b, reachable, radius):
         """8-connected A* over reachable cells with enough clearance.
 
         Returns a list of [x, y] points from a to b, or [] if there is no path.

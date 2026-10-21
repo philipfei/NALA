@@ -150,3 +150,18 @@ def test_a_drive_in_stretch_is_checked_with_the_outline_and_stays_its_own_target
         plan([2.,.2],outline=outline,margin=.02)          # in and out both reach the wall
     with pytest.raises(ValueError,match='PLAN_TOO_CLOSE_TO_OBSTACLES'):
         plan([2.,.3])                                      # no outline given: never accepted
+
+
+def test_a_passage_is_checked_with_the_outline_and_listed_in_its_piece(tmp_path,room_map):
+    # coverage_tool passages.py (user 2026-10-21): straight through an entrance narrower than the turning circle.
+    # Here: along the south wall, closer than the turning circle allows, but the outline fits.
+    grid=Grid.load(room_map);outline=[[.2,.18],[.2,-.18],[-.2,-.18],[-.2,.18]]
+    points=[[1.,1.],[1.,.3],[3.,.3],[3.,1.]]
+    def plan(kinds):
+        path=write_plan(tmp_path,[[1.,1.],[3.,1.]],drive_path={'format':1,'points':points,'stops':[1,2],'kinds':kinds})
+        return load_plan(path,grid,room_map,'map',.3,outline=outline,margin=.02)
+    p=plan(['wall','passage','passage','passage'])
+    assert p['passages']==[([1.,1.],[1.,.3]),([1.,.3],[3.,.3]),([3.,.3],[3.,1.])]
+    assert [t.passages for t in p['targets']]==[[([1.,1.],[1.,.3])],[([1.,.3],[3.,.3])],[([3.,.3],[3.,1.])]]
+    with pytest.raises(ValueError,match='PLAN_TOO_CLOSE_TO_OBSTACLES'):
+        plan(['wall','wall','wall','wall'])                 # the same line as normal route: refused

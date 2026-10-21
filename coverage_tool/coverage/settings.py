@@ -77,6 +77,12 @@ DEFAULTS = {
         # config/coverage.yaml; set by robot_config().
         'start_offset_m': 0.05,
     },
+    'passage': {                         # narrow entrances into areas with turning room, see coverage/passages.py
+        'max_length_m': 2.0,             # longest straight passage (from turning room to turning room)
+        'min_island_m2': 0.05,           # areas with turning room smaller than this are not worth a passage
+        'ends_per_island': 60,           # island points tried as the inner end (spread over the island)
+        'starts_per_end': 120,           # reachable points within max_length_m tried per inner end (spread, closest first)
+    },
     'optimizer': {
         'search_time_s': 4.0,            # route optimisation per candidate pattern
         'polish_time_s': 15.0,           # extra optimisation of the cheapest candidate

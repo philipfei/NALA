@@ -868,3 +868,17 @@ def test_a_pause_inside_a_pocket_can_be_resumed_by_backing_out(ros):
     sup.current=back;sup.targets=[];sup.check_start_component()            # paused while backing out: fine
     lane=poly_target([[1.,1.],[2.,1.]],'plan');sup.current=None;sup.targets=[lane]
     with pytest.raises(ValueError):sup.check_start_component()             # anywhere else: checked as before
+
+
+def test_a_passage_in_the_current_piece_is_checked_with_the_outline(ros):
+    from nala_coverage.planning import densify, poly_target
+    add,pump,_,_=ros
+    sup=add(Supervisor());sent=[];sup.slot.send=lambda typ,name,goal,*_:sent.append(goal)
+    path=[[1.,1.],[1.,.3],[3.,.3]]                        # closer to the south wall than the turning circle
+    assert not sup.grid.segment_safe([1.,.3],[3.,.3],sup.collision)
+    piece=poly_target(path,'plan');piece.passages=[([1.,1.],[1.,.3]),([1.,.3],[3.,.3])];sup.current=piece
+    sup.pose=[1.,1.,-math.pi/2]
+    sup.follow(densify(path,.05),'SWEEP')
+    assert sent                                            # accepted: the passage is outline-checked
+    piece.passages=[];sent.clear()
+    with pytest.raises(ValueError):sup.follow(densify(path,.05),'SWEEP')   # not a passage: the turning circle

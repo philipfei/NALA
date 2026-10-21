@@ -168,13 +168,15 @@ NALA/
 │   ├── plan_cli.py                        Plan from the command line: map + base station (+ start, area) -> plan .yaml/.png
 │   ├── send_to_nav2.py                    Only for a plain Nav2 stack, not used by NALA (see coverage_tool/README.md)
 │   ├── coverage/                          The planner: grid, sensor model, patterns, cost, optimiser, drivable path,
-│   │                                      drive-in candidates for narrow pockets (spurs.py), export
+│   │                                      drive-in candidates for narrow pockets (spurs.py), passages through
+│   │                                      narrow entrances (passages.py), export
 │   │   └── *.py                           (one module per step; list in coverage_tool/README.md)
 │   ├── examples/                          Example maps (*.yaml + *.pgm), map generators (make_*.py), NALA example plans
 │   │                                      (*_nala.yaml) and their base stations (*_base_station.yaml)
 │   └── tests/
 │       ├── test_sensor.py                 Unit tests: sensor ahead of the robot, outline check, geometry from config/
 │       ├── test_spurs.py                  Unit tests: drive-ins into a narrow pocket, planned with the route
+│       ├── test_passages.py               Unit tests: a room behind a door narrower than the turning circle
 │       └── regression.py                  Acceptance test on the example maps (about 15 minutes; --quick for 2 cases)
 │
 ├── maps/                                  Saved maps and base station files. The map files are not in git.

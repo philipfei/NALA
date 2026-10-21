@@ -361,7 +361,8 @@ SLAM must not jump to a wrong but similar-looking place.
   the outline + planning_padding_m instead of the turning circle). A stop inside the pocket (Nav2 failure, timeout,
   pause, new contamination ahead) ends the drive-in there (SPUR_SHORTENED) and the robot backs out; contamination on
   a drive-in before it starts drops it (SPUR_SKIPPED_CONTAMINATION). Backing out ('reverse', state SPUR) is the
-  supervisor's: on odometry along the line put into odom when it starts (steering on AMCL zigzagged), 0.06 m/s,
+  supervisor's: on odometry along the line put into odom when it starts (steering on AMCL zigzagged), at
+  spur.speed_m_s (0.12 m/s = normal speed since 2026-10-21, user; LiDAR stop distance behind spur.clear_m 0.10 m),
   via /cmd_vel_reverse (the gate passes it only while NAV owns the robot, only <= 0, <= spur.speed_m_s, only from
   coverage_supervisor). Before it every cell under the bare outline must be measured (or under the robot at P) and
   not contaminated, else a pause (SPUR_REVERSE_NOT_MEASURED / _CONTAMINATION); LiDAR behind: SPUR_REVERSE_BLOCKED.
@@ -369,6 +370,12 @@ SLAM must not jump to a wrong but similar-looking place.
   needed a turn-drive-turn onto P after Nav2's 5 cm point goal: many random turns; rejected.
   A piece Nav2 finished up to rejoin_max_m off its end (base: locator.base_tolerance_m) counts as done
   (ENDPOINT_MISSED_ACCEPTED). The meter's denominator includes the floor the drive-ins reach.
+- Passages (user, 2026-10-21: a room on the RDG map has turning room inside but a 0.70 m entrance, narrower than the
+  1.06 m turning circle): coverage_tool/coverage/passages.py joins such areas with straight passages that the outline
+  can drive forwards both ways (margin as drive-ins); the planner routes through them like any connection and plans
+  the way out when a route would end inside (user choices). Drive path kind 'passage': plan_file and supervisor.follow
+  check it with the outline + planning_padding_m; the plan check counts the areas behind passages as reachable
+  (resume inside works). If a Nav2-planned detour would have to go through a passage, the robot pauses (user choice).
 - CPU (robot 2026-10-20: load 15 on the Pi 4, SCAN_STALE / AMCL_STALE because the supervisor handled messages too
   late; the supervisor logs its timing every health.timing_log_period_s). 75-80 % of the supervisor's and the gate's
   CPU was rclpy's default executor (wait set rebuilt per message). All NALA Python nodes now use rclpy's EventsExecutor

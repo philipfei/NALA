@@ -7,7 +7,7 @@ import numpy as np
 from scipy.ndimage import binary_dilation, label
 
 from . import cost as costmod
-from . import drivable, footprint, localsearch, optimizer, planning, spiral, spurs
+from . import drivable, footprint, localsearch, optimizer, passages, planning, spiral, spurs
 from .settings import set_settings
 
 
@@ -146,7 +146,8 @@ def _prune_redundant(grid, den, coverable, targets, radius):
     return [t for i, t in enumerate(targets) if i not in removed]
 
 
-def _finish(grid, targets, start, den, reach, coverable, settings, progress, budget_s, fill=True, drive_ins=([], [])):
+def _finish(grid, targets, start, den, reach, coverable, settings, progress, budget_s, fill=True, drive_ins=([], []),
+            home_area=None):
     """Centre-line fill, cost-driven route optimisation, connectors, coverage and exact cost."""
     radius = float(settings['geometry']['coverage_disk_radius_m'])
     collision = settings.collision
@@ -159,7 +160,8 @@ def _finish(grid, targets, start, den, reach, coverable, settings, progress, bud
 
     # optimise the whole route on the cost function (drop / flip / move / 2-opt / detours)
     opt = localsearch.RouteOptimizer(grid, localsearch.pieces_from_targets(targets), start, reach, den,
-                                     coverable, settings, int(settings['optimizer']['neighbours']), drive_ins)
+                                     coverable, settings, int(settings['optimizer']['neighbours']), drive_ins,
+                                     home_area)
     opt.run(budget_s)
     targets = _sanitize(grid, opt.targets(settings['planning']['max_segment_length_m']), collision)
     coverable = coverable & opt.cov_ok.reshape(coverable.shape)   # minus cells no safe pose can see
@@ -176,6 +178,12 @@ def _finish(grid, targets, start, den, reach, coverable, settings, progress, bud
         final.append(t)
         links.append(link)
         xy = t.end
+    # A route that ends inside an island includes its way out through the passage (Nav2's return home cannot plan
+    # through a narrow entrance); the optimiser counted it (RouteOptimizer.total).
+    out = passages.way_out(grid, xy, start, reach, home_area, collision) if home_area is not None and final else None
+    if out and len(out) > 1:
+        final.append(planning.poly_target(out, 'exit'))
+        links.append([])
     covered = driven_coverage(grid, den, final, links, radius)
     route, drive_in_s = [], 0.0
     for t, c in zip(final, links):
@@ -222,6 +230,15 @@ def plan(grid, start_xy, polygon, settings, progress=None):
 
     _log(progress, 'Finding reachable space...')
     reach, start = grid.reachable_from(start_xy, collision)
+    # Areas with turning room behind an entrance narrower than the turning circle, joined by straight passages the
+    # outline can drive (passages.py; user, 2026-10-21). Grid.astar routes through them; the rest of the planner
+    # works on the joined area.
+    if settings['geometry'].get('footprint_m') and start is not None:
+        _log(progress, 'Finding passages into areas behind narrow entrances...')
+        grid.passages, reach_all = passages.find(grid, reach, settings, progress)
+    else:
+        grid.passages, reach_all = [], reach
+    home_area, reach = reach, reach_all
     if start is None:
         raise ValueError('No collision-free space for this robot radius.')
     den = coverage_region(grid, reach, polygon)
@@ -289,7 +306,7 @@ def plan(grid, start_xy, polygon, settings, progress=None):
             continue
         _log(progress, f'Candidate: {name}: centre lines, connections and cost...')
         res = _finish(grid, targets, start, den, reach, coverable, settings, progress,
-                      float(settings['optimizer']['search_time_s']), drive_ins=drive_ins)
+                      float(settings['optimizer']['search_time_s']), drive_ins=drive_ins, home_area=home_area)
         res['info'], res['name'] = info, name
         c = res['cost']
         cov_c = res['coverable']
@@ -304,7 +321,7 @@ def plan(grid, start_xy, polygon, settings, progress=None):
         _log(progress, f'Optimising {best["name"]} further on the cost function...')
         before = best['cost']['total_s']
         res = _finish(grid, best['targets'], start, den, reach, coverable, settings, progress, polish, fill=False,
-                      drive_ins=drive_ins)
+                      drive_ins=drive_ins, home_area=home_area)
         if res['cost']['total_s'] <= before:
             res['info'], res['name'] = best['info'], best['name']
             best = res
@@ -352,6 +369,7 @@ def plan(grid, start_xy, polygon, settings, progress=None):
         'centre_line_segments': kinds.count('fill'),
         'gap_goals': kinds.count('gap') + kinds.count('aim'),   # 'aim': gap goal faced at missed floor
         'drive_ins': kinds.count('spur'),
+        'passages': len(grid.passages),
         'drive_in_s': c.get('drive_in_s', 0.0),
         'skipped_unreachable': best['skipped'],
         'uncovered_reachable_cells': best['uncovered_reachable'],
@@ -361,6 +379,7 @@ def plan(grid, start_xy, polygon, settings, progress=None):
     result = {
         'start': start, 'polygon': polygon, 'targets': final, 'connections': links,
         'covered': covered, 'region': den, 'coverable': coverable, 'reachable': reach, 'stats': stats,
+        'passages': [[list(a), list(b)] for a, b in grid.passages],
         'candidates': sorted(candidates, key=lambda x: x['total_s']),
         'region_patterns': info.get('region_patterns', []),
         'cells': _display_cells(grid, reach, polygon, settings, info),

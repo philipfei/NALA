@@ -39,6 +39,13 @@ robot's Pi: the touchscreen panel (`src/nala_panel`) runs `plan_cli.py` as a chi
   (`planning.coverage_points`). The drivable path makes driving in part of the route stretch before it (P carries
   kind 'spur'; the corner at P like every corner), then Q is a stop and P (kind 'reverse') a stop. NOT a post-processing step: the user rejected changing a
   finished path (2026-10-20: leftover hairpins and a route end back to a pocket mouth) - planner logic only.
+- Passages (`passages.py`, user 2026-10-21): an "island" = area with turning room only connected through an
+  entrance narrower than the turning circle (RDG: a room behind a 0.70 m entrance). `passages.find` joins islands by
+  straight lines A -> B (turning room at both ends) that the outline + padding + drive-in margin (`spurs.body`) can
+  drive forwards both ways; the joined area is the planner's `reach`. `Grid.astar` routes through passages between
+  areas (so builders, optimiser and connectors all use them); the drivable path marks them 'passage' (never rounded or
+  cut); a route ending inside an island gets its way out (`passages.way_out`, counted in `RouteOptimizer.total`; user:
+  Nav2's return home cannot plan through a narrow entrance). Robot: outline check for 'passage' (plan_file, follow).
 - `drivable.py` counts the corner swing (`pivot`) as coverage: rounding a corner loses that swing.
 - `sensor_path` always emits both shifted end points at a corner (no shortcut at gentle bends), so the
   path checked in parts (drivable) and as a whole gives exactly the same cells.

@@ -243,6 +243,19 @@ def _section(grid, v, kinds, region, keep_mask, settings, progress=None):
     return out, out_kinds, stops, arcs, radii, reasons, vertices_planned, len(v)
 
 
+def _mark_passages(v, kinds, passages):
+    """Kind 'passage' for the stretches that go straight through a passage (passages.py), either way. They have no
+    turning-circle clearance, so no arc or shortcut ever uses them (_safe fails there) and the robot checks them with
+    its outline."""
+    kinds = list(kinds)
+    for i in range(len(v) - 1):
+        for a, b in passages:
+            if (math.dist(v[i], a) < 1e-6 and math.dist(v[i + 1], b) < 1e-6) or \
+                    (math.dist(v[i], b) < 1e-6 and math.dist(v[i + 1], a) < 1e-6):
+                kinds[i] = 'passage'
+    return kinds
+
+
 def make_drivable(grid, result, settings, progress=None):
     """Drivable path for a planning result.
 
@@ -298,6 +311,7 @@ def make_drivable(grid, result, settings, progress=None):
         _, pv, pk = part
         if len(pv) < 2:
             continue
+        pk = _mark_passages(pv, pk, result.get('passages') or [])
         o, ok, st, a, rr, why, pl, kp = _section(grid, pv, pk, region, keep_mask, settings, progress)
         base = len(out)
         if out and math.dist(out[-1], o[0]) < 1e-6:     # the section starts where the path is (a drive-in's P)
@@ -329,7 +343,7 @@ def make_drivable(grid, result, settings, progress=None):
         final |= stroke_union(grid, region, [poly_target(run, 'drive')], radius)
     lost = int((result['covered'] & ~final).sum())
     unsafe = sum(not grid.segment_safe(p, q, collision)
-                 for p, q, k in zip(out, out[1:], out_kinds[1:]) if k not in ('spur', 'reverse'))
+                 for p, q, k in zip(out, out[1:], out_kinds[1:]) if k not in ('spur', 'reverse', 'passage'))
     length = float(sum(math.dist(p, q) for p, q in zip(out, out[1:])))
     stats = {'drive_stops': len(stops), 'drive_arcs': arcs, 'drive_length_m': length, 'drive_lost_cells': lost,
              'drive_unsafe_segments': unsafe, 'drive_spurs': n_spurs,

@@ -60,9 +60,13 @@ def run(case):
     r = pipeline.plan(g, start_in(g, rr), None, s)
     S = r['stats']
     # Drive-ins (kind 'spur', spurs.py) are checked with the real outline, not the turning circle (outline hits).
+    # Passages (passages.py) go straight through entrances narrower than the turning circle (outline-checked).
+    through = {tuple(map(tuple, ab)) for ab in r.get('passages', [])}
+    through |= {(b, a) for a, b in through}
     bad = sum(not g.segment_safe(a, b, rr) for t in r['targets'] if getattr(t, 'kind', '') != 'spur'
-              for a, b in zip(planning.points_of(t), planning.points_of(t)[1:]))
-    bad += sum(not g.segment_safe(a, b, rr) for c in r['connections'] for a, b in zip(c, c[1:]))
+              for a, b in zip(planning.points_of(t), planning.points_of(t)[1:]) if (tuple(a), tuple(b)) not in through)
+    bad += sum(not g.segment_safe(a, b, rr) for c in r['connections'] for a, b in zip(c, c[1:])
+               if (tuple(a), tuple(b)) not in through)
     edge = g.clearance < s['cost']['edge_band_m']
     miss = np.argwhere(r['region'] & ~r['covered'] & ~edge)
     # Every place the sensor can be: within the sensor offset of a safe robot position.
@@ -80,7 +84,8 @@ def run(case):
     # Drive-in stretches into narrow pockets and their way back out (spurs.py) do not keep the turning circle;
     # they are checked with the real outline (outline hits below).
     dk = r['drive'].get('kinds') or [''] * len(dp)
-    bad_drive = sum(not g.segment_safe(a, b, rr) for a, b, k in zip(dp, dp[1:], dk[1:]) if k not in ('spur', 'reverse'))
+    bad_drive = sum(not g.segment_safe(a, b, rr) for a, b, k in zip(dp, dp[1:], dk[1:])
+                    if k not in ('spur', 'reverse', 'passage'))
     lost = S['drive_lost_cells']
     hits = S.get('footprint_hits', 0)
     ok = open_missed == 0 and bad == 0 and lost == 0 and bad_drive == 0 and hits == 0

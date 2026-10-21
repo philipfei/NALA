@@ -357,10 +357,23 @@ class Supervisor(Node):
         # A plan for an area only counts the floor inside that area.
         if plan['area']:polygon=plan['area']
         basis=reachable if plan_radius<=self.collision else grid.reachable(plan['points'][0],plan_radius,self.settings['recovery']['planner_start_tolerance_m'])
+        if plan['passages']:
+            # Areas with turning room the plan enters through a passage: reachable too (resume inside them, count
+            # their floor).
+            reachable=self.with_islands(grid,reachable,plan['points'],self.collision)
+            basis=self.with_islands(grid,basis,plan['points'],plan_radius)
         return {'reachable':reachable,'denominator':self.coverable_cached(grid,basis,polygon,plan),
                 'targets':plan['targets'],'connections':[[] for _ in plan['targets']],'start':start,
                 'config_hash':self.settings.hash,'plan_file':str(self.plan_file),'plan_sha256':plan['plan_sha256'],
                 'plan_robot_radius_m':plan_radius}
+
+    def with_islands(self,grid,reachable,points,radius):
+        """reachable plus every area with turning room (radius) that a plan point lies in."""
+        out=reachable.copy();safe=grid.safe_centres(radius)
+        for p in points:
+            rc=grid.cell(p)
+            if grid.valid(rc) and safe[rc] and not out[rc]:out|=grid.reachable(p,radius)
+        return out
 
     def coverable_cached(self,grid,basis,polygon,plan):
         """The floor to cover (the slow part of the plan check: 18 s on the Pi 4 for a 68 m2 map), kept next to the
@@ -607,11 +620,28 @@ class Supervisor(Node):
                 swept=self.grid.outline_swept(a,b,math.atan2(b[1]-a[1],b[0]-a[0]),self.outline,self.settings['geometry']['planning_padding_m'])
                 if swept is None or (swept&~self.grid.free).any():raise ValueError('Unsafe drive-in path segment')
                 continue
+            if self.on_passage(a,b):
+                swept=self.grid.outline_swept(a,b,math.atan2(b[1]-a[1],b[0]-a[0]),self.outline,self.settings['geometry']['planning_padding_m'])
+                if swept is None or (swept&~self.grid.free).any():raise ValueError('Unsafe passage path segment')
+                continue
             if not self.grid.segment_safe(a,b,self.collision):raise ValueError('Unsafe continuous path segment')
         self.path=points;goal=FollowPath.Goal();goal.path=path_msg(self,points,end_yaw)
         goal.controller_id='FollowPath';goal.goal_checker_id='goal_checker';goal.progress_checker_id='progress_checker'
         self.mission.state=state;self.phase_since=time.monotonic();self.motion_pose=list(self.pose);self.last_motion=time.monotonic()
         self.slot.send(FollowPath,'/follow_path',goal,feedback)
+
+    def on_passage(self,a,b):
+        """Segment a-b lies on one of the current piece's passages (plan_file: straight through an entrance narrower
+        than the turning circle, checked with the outline), in its driving direction."""
+        for p,q in getattr(self.current,'passages',None) or []:
+            d=math.dist(p,q)
+            if d<1e-9:continue
+            u=((q[0]-p[0])/d,(q[1]-p[1])/d)
+            def at(x):
+                return (abs(-(x[0]-p[0])*u[1]+(x[1]-p[1])*u[0])<1e-6 and
+                        -1e-6<=(x[0]-p[0])*u[0]+(x[1]-p[1])*u[1]<=d+1e-6)
+            if at(a) and at(b) and (b[0]-a[0])*u[0]+(b[1]-a[1])*u[1]>=0:return True
+        return False
 
     def drive_in_from(self,points):
         """Index in points where the current piece's drive-in starts (its P), or None. A path that starts inside the
