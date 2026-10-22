@@ -779,9 +779,87 @@ class RouteOptimizer:
                 applied += 1
         return applied
 
+    def _away_from_walls(self):
+        """Unit vectors (x, y per cell) pointing away from the nearest wall: the gradient of the smoothed clearance."""
+        if getattr(self, '_away', None) is None:
+            from scipy.ndimage import gaussian_filter
+            gy, gx = np.gradient(gaussian_filter(self.g.clearance.astype(float), 1.0))
+            c, s = math.cos(self.g.origin[2]), math.sin(self.g.origin[2])
+            wx, wy = c * gx - s * gy, s * gx + c * gy          # grid axes -> world axes
+            n = np.hypot(wx, wy)
+            n[n < 1e-9] = np.inf
+            self._away = (wx / n, wy / n)
+        return self._away
+
+    def shift(self, deadline):
+        """Stretches of a piece that run at the safety limit along a wall, moved further from the wall (as far as
+        the sensor still reaches the wall floor), each stretch on its own, when that lowers the total cost (user
+        2026-10-22: the cost decides per stretch how close to a wall the route drives). A line at the limit follows the
+        map's staircase along diagonal walls; a few cm further in, the straighten move can make it straight."""
+        R = self.collision
+        room = max(0.0, self.r - R)
+        levels = int(self.s['optimizer'].get('shift_levels', 0))
+        if room <= 0 or levels <= 0:
+            return 0
+        steps = [room * (j + 1) / levels for j in range(levels)]
+        window = float(self.s['optimizer'].get('shift_window_m', 2.0))
+        ax, ay = self._away_from_walls()
+        applied = 0
+        for k in range(len(self.seq)):
+            if time.monotonic() > deadline:
+                break
+            i, rv = self.seq[k]
+            p = self.pieces[i]
+            if p.point or p.spur is not None or p.aim is not None or len(p.pts) < 3:
+                continue
+            pts = np.asarray(p.pts, float)
+            rc = [self.g.cell(q) for q in pts]
+            near = np.array([self.g.valid(c) and self.g.clearance[c] < R + 0.5 * room for c in rc])
+            # Stretches of consecutive points at the limit, cut into windows of up to `window` metres.
+            best, start, spans = None, None, []
+            for j in range(len(pts) + 1):
+                if j < len(pts) and near[j]:
+                    start = j if start is None else start
+                    continue
+                if start is not None and j - start >= 2:
+                    a = start
+                    while a < j - 1:
+                        b, length = a, 0.0
+                        while b + 1 < j and length + np.linalg.norm(pts[b + 1] - pts[b]) <= window:
+                            length += np.linalg.norm(pts[b + 1] - pts[b])
+                            b += 1
+                        if b > a:
+                            spans.append((a, b))
+                        a = max(b, a + 1)
+                start = None
+            safe = [self.g.segment_safe(pts[m], pts[m + 1], R) for m in range(len(pts) - 1)]
+            for a, b in spans:
+                for d in steps:
+                    q = pts.copy()
+                    for j in range(a, b + 1):
+                        r, c = rc[j]
+                        q[j] = pts[j] + d * np.array([ax[r, c], ay[r, c]])
+                    ql = q.tolist()
+                    lo, hi = max(0, a - 1), min(len(ql) - 1, b + 1)
+                    # Never less safe than before (the optimiser's pieces are made safe later, in sanitize).
+                    if not all(self.g.segment_safe(ql[m], ql[m + 1], R) or not safe[m] for m in range(lo, hi)):
+                        continue
+                    # The shifted stretch as it is, and straightened (where the gain usually is).
+                    for v in [ql] + [self._safe_dp(ql, tol) for tol in (self.g.resolution, 2 * self.g.resolution)]:
+                        cand = self._measure(Piece(v, p.kind))
+                        delta, qi = self._replace_delta(k, cand)
+                        self.pieces.pop()
+                        if delta < -1e-6 and (best is None or delta < best[0]):
+                            best = (delta, cand)
+            if best:
+                self.pieces.append(best[1])
+                self._commit(k, len(self.pieces) - 1)
+                applied += 1
+        return applied
+
     def local_optimum(self, deadline, step):
         while time.monotonic() < deadline:
-            n = (self.orient(deadline) + self.straighten(deadline) + self.improve_once(deadline)
+            n = (self.orient(deadline) + self.shift(deadline) + self.straighten(deadline) + self.improve_once(deadline)
                  + self.block_moves(deadline) + self.rotate(deadline) + self.orient(deadline)
                  + self.trim(deadline, step) + self.trim(deadline, self.g.resolution)   # also by single cells
                  + self.rechoose(deadline))

@@ -36,12 +36,17 @@ DEFAULTS = {
     },
     'strategy': {
         'mode': 'auto',                  # 'auto' = cheapest of all, 'regions' = mixed lanes/spiral per region, 'spiral'
-        'wall_loop_first': True,         # start by following the outer walls
+        # True: patterns start by following the outer walls. User 2026-10-22: no fixed order; the optimiser puts the
+        # wall loops where the route is cheapest.
+        'wall_loop_first': False,
     },
     'cost': {                            # all terms in seconds, see coverage/cost.py
         'smooth_turn_deg': 20.0,         # bends below this are driven without stopping
         'bend_s_per_rad': 1.5,           # ...but still cost this much per radian (straight = cheapest)
-        'stop_penalty_s': 1.0,           # extra time per sharp corner (brake, rotate, accelerate)
+        # Extra time per stop-and-turn on top of the rotation: ~1 s to brake and accelerate + 3 s penalty (user
+        # 2026-10-22: turns count more than their time, so the route prefers fewer stops; up to ~36 cm of extra
+        # driving at 0.12 m/s per stop avoided).
+        'stop_penalty_s': 4.0,
         'reverse_angle_deg': 150.0,      # direction change counted as a reversal (hairpin)
         'reverse_penalty_s': 10.0,       # extra cost per reversal
         'overlap_weight': 1.0,           # x time to sweep the double-covered area
@@ -87,6 +92,12 @@ DEFAULTS = {
         'search_time_s': 4.0,            # route optimisation per candidate pattern
         'polish_time_s': 15.0,           # extra optimisation of the cheapest candidate
         'neighbours': 8,                 # nearby pieces tried per move
+        # Wall-following stretches may be moved away from the wall (localsearch.shift; user 2026-10-22: the cost
+        # decides per stretch how close to a wall the route drives): stretches up to this long ...
+        'shift_window_m': 2.0,
+        # ... tried at this many distances, evenly up to as far as the sensor still reaches the wall floor
+        # (coverage_disk_radius_m - robot_radius_m beyond the safety limit).
+        'shift_levels': 3,
     },
 }
 
@@ -123,6 +134,10 @@ def robot_config(settings, config_dir=CONFIG_DIR):
         if 'spur' in params:
             settings['spur']['speed_factor'] = float(params['spur']['speed_m_s']) / float(params['motion']['linear_m_s'])
             settings['spur']['start_offset_m'] = float(params['spur']['max_offset_m'])
+        # The robot's own driving speeds (user 2026-10-22; before: SIMBA's 0.3 m/s / 0.8 rad/s), so times and the
+        # trade-off between driving and turning are the robot's.
+        for key in ('linear_m_s', 'angular_rad_s'):
+            settings['motion'][key] = float(params['motion'][key])
         padding = g['footprint_padding_m'] = float(cov['planning_padding_m'])
         g['coverage_disk_radius_m'] = float(cov['coverage_disk_radius_m'])
         g['sensor_offset_m'] = float(cov['sensor_offset_m'])

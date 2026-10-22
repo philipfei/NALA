@@ -376,6 +376,12 @@ SLAM must not jump to a wrong but similar-looking place.
   the way out when a route would end inside (user choices). Drive path kind 'passage': plan_file and supervisor.follow
   check it with the outline + planning_padding_m; the plan check counts the areas behind passages as reachable
   (resume inside works). If a Nav2-planned detour would have to go through a passage, the robot pauses (user choice).
+- Wall distance (user, 2026-10-22: the RDG route was wobbly, with many stops along diagonal walls at the safety
+  limit): no fixed inset and no "walls first" rule; the optimiser's shift move (coverage_tool/coverage/localsearch.py)
+  tries each wall stretch further from the wall (up to where the sensor still reaches the wall floor) and the cost
+  decides. Every reachable cell up to the wall stays covered. Stops cost 3 s extra (stop_penalty_s 4 s) and the
+  planner uses the robot's speeds (motion in config/coverage.yaml). RDG plan 2026-10-22_104734: 140 stops (was 180),
+  100 % of the reachable floor, 42.5 min estimated (real speeds).
 - CPU (robot 2026-10-20: load 15 on the Pi 4, SCAN_STALE / AMCL_STALE because the supervisor handled messages too
   late; the supervisor logs its timing every health.timing_log_period_s). 75-80 % of the supervisor's and the gate's
   CPU was rclpy's default executor (wait set rebuilt per message). All NALA Python nodes now use rclpy's EventsExecutor

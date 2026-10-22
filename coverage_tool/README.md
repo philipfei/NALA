@@ -98,6 +98,7 @@ Candidate patterns (spirals, straight lanes, mixed regions) only give a starting
 | Detour | Cover still-missed cells where the penalty removed is larger than the extra driving and turning. A detour is a single goal at the position that covers the most missed cells, an aimed goal (see *NALA* above), or a line along the centre of a missed strip (one line instead of a row of stop-and-go points); the cheapest is used. |
 | Rotate | Enter a closed loop (wall loop, loop around an obstacle, ring) at the point that is cheapest to reach and to leave. |
 | Straighten | Replace a wiggly piece (a loop along a bumpy wall or around a cluttered obstacle, a centre line) by fewer, longer straight lines. It tries several tolerances, from "almost the same line" to "one straight line", and only uses straight chords the robot can drive safely. It keeps the version with the lowest total cost, so it only happens where the saved stops and bends outweigh any floor the straighter line no longer reaches. |
+| Shift | Move a stretch (up to `shift_window_m`) of a line that runs at the safety limit along a wall further from the wall, at `shift_levels` distances up to as far as the sensor still reaches the wall floor, as it is and straightened. A line at the limit follows the map's pixel staircase along diagonal walls; a few cm further in it can be straight. The cost decides per stretch how close to the wall the route drives. |
 
 Every move is scored with exact cost differences: connector time (straight, or A* around obstacles), stop-and-turn costs at every junction, hairpins, double coverage and missed cells. When no single move helps any more, the optimiser shakes the route up a little (a random reversal and relocation), optimises again, and keeps the result only if it is cheaper. It does this until the time budget runs out.
 
@@ -238,7 +239,7 @@ python plan_cli.py examples/office.yaml --start 2 2 --mode auto --overlap 20 \
 | `app.py` | The GUI |
 | `plan_cli.py` | Command-line version |
 | `coverage/cost.py` | The cost function |
-| `coverage/localsearch.py` | Cost-driven route optimiser (drop, trim, straighten, flip, move, 2-opt, detours) |
+| `coverage/localsearch.py` | Cost-driven route optimiser (drop, trim, straighten, shift, flip, move, 2-opt, detours) |
 | `coverage/optimizer.py` | Wall loops, region decomposition, lanes vs spiral (or rings) per region, region ordering |
 | `coverage/spiral.py` | Distance field, rings, spiral ordering, centre lines, obstacle loops |
 | `coverage/pipeline.py` | Builds all candidates, scores them and returns the cheapest |
