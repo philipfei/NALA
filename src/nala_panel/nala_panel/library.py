@@ -68,18 +68,27 @@ class PlanEntry:
     def stats(self):
         return self.data.get('stats') or {}
 
-    def summary(self):
+    def summary(self, settings=None, station=None):
+        """One line for the plan list; with settings (config/) also the time the robot needs to drive it."""
         s = self.stats
         parts = [self.name]
         if 'coverage_pct' in s:
             parts.append(f"{s['coverage_pct']:.0f} % of the floor")
         if 'drive_length_m' in s:
             parts.append(f"{s['drive_length_m']:.0f} m")
-        if 'estimated_time_s' in s:
-            parts.append(f"~{s['estimated_time_s'] / 60:.0f} min")
+        t = plan_drive_time(self.data, settings, station) if settings is not None else None
+        if t is not None:
+            parts.append(f'~{t / 60:.0f} min')
         if self.data.get('area_polygon'):
             parts.append('area')
         return ', '.join(parts)
+
+
+def plan_drive_time(data, settings, station):
+    """Seconds the robot needs to drive a plan and get back to the base station, with today's speeds and acceleration
+    limits (user 2026-10-22: the screen shows the real driving time, never the planner's cost), or None."""
+    from nala_coverage.plan_file import drive_time_s
+    return drive_time_s(data, settings['motion'], float(settings['spur']['speed_m_s']), station)
 
 
 def list_maps(maps_dir):

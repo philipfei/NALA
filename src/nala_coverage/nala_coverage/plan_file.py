@@ -121,6 +121,44 @@ def _length(pts):
     return sum(math.dist(a,b) for a,b in zip(pts,pts[1:]))
 
 
+def drive_time_s(data,motion,spur_speed,station=None):
+    """The time the robot needs to drive a plan (user 2026-10-22: the screen shows this, not the planner's cost):
+    every stretch between stops at motion.linear_m_s with the gate's acceleration limit (speeding up and slowing down),
+    backing out of pockets at spur_speed, every turn on the spot at angular_rad_s with its acceleration limit, and the
+    drive back to the base station after the plan (drive_path 'home', or straight to it for older plans). Arcs count
+    at full speed. station: (x, y, yaw) of the base station, or None. Seconds, or None without a drivable path."""
+    dp=data.get('drive_path') or {};pts=dp.get('points') or [[p['x'],p['y']] for p in data.get('poses') or []]
+    if len(pts)<2:return None
+    kinds=dp.get('kinds') or ['plan']*len(pts);stops=set(dp.get('stops') or stop_corners(pts))
+    v,w=float(motion['linear_m_s']),float(motion['angular_rad_s'])
+    a,al=float(motion['linear_accel_m_s2']),float(motion['angular_accel_rad_s2'])
+    def straight(length,speed):
+        if length<=1e-9:return 0.
+        return length/speed+speed/a if length>=speed*speed/a else 2.*math.sqrt(length/a)
+    def turn(angle):
+        angle=abs(angle)
+        if angle<1e-6:return 0.
+        return angle/w+w/al if angle>=w*w/al else 2.*math.sqrt(angle/al)
+    def wrap(x):return math.atan2(math.sin(x),math.cos(x))
+    total,run,heading,speed=0.,0.,(station[2] if station else None),v
+    for i in range(len(pts)-1):
+        seg=math.dist(pts[i],pts[i+1])
+        if seg<1e-6:continue
+        back=kinds[i+1]=='reverse';h=_heading(pts[i],pts[i+1])+(math.pi if back else 0.)
+        new_speed=spur_speed if back else v
+        # A new stretch at a stop corner, or where driving forwards and backing out change.
+        if i in stops or new_speed!=speed or heading is None:
+            total+=straight(run,speed);run=0.
+            if heading is not None:total+=turn(wrap(h-heading))
+        run+=seg;heading=h;speed=new_speed
+    total+=straight(run,speed)
+    home=dp.get('home') or ([pts[-1],list(station[:2])] if station else [])
+    if len(home)>1 and math.dist(home[0],home[-1])>1e-6:
+        total+=turn(wrap(_heading(home[0],home[1])-heading))+straight(_length(home),v)
+        if station:total+=turn(wrap(station[2]-_heading(home[-2],home[-1])))
+    return total
+
+
 def check_base_station(plan,station,tolerance):
     """Refuse a plan made for another base station (PLAN_BASE_MISMATCH). Plans without one are accepted."""
     if plan['base_station'] is not None and math.dist(plan['base_station'][:2],station[:2])>tolerance:

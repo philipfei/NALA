@@ -17,13 +17,18 @@ def test_only_folders_with_a_map_are_listed(maps_dir):
     assert room(maps_dir).image.name == 'map.pgm'
 
 
-def test_plans_are_listed_newest_first_with_a_summary(maps_dir):
+def test_plans_are_listed_newest_first_with_a_summary(maps_dir, config_dir):
     entry = room(maps_dir)
     older = entry.folder / 'plans' / '2026-10-01_090000.yaml'
     older.write_text((entry.folder / 'plans' / '2026-10-08_120000.yaml').read_text())
     plans = library.list_plans(entry)
     assert [p.name for p in plans] == ['2026-10-08_120000', '2026-10-01_090000']
     assert '% of the floor' in plans[0].summary() and ' m' in plans[0].summary()
+    # The time is the robot's driving time (config speeds), not the planner's cost (user 2026-10-22).
+    from nala_coverage.params import load_settings
+    settings = load_settings(config_dir)
+    t = library.plan_drive_time(plans[0].data, settings, None)
+    assert t and f'~{t / 60:.0f} min' in plans[0].summary(settings)
 
 
 def test_example_plan_is_drivable(maps_dir, settings):

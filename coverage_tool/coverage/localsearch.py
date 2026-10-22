@@ -1013,7 +1013,7 @@ class RouteOptimizer:
         self.seq, self.count, self.cov_ok = [list(x) for x in saved[0]], saved[1].copy(), saved[3].copy()
         del self.pieces[saved[2]:]
 
-    def extend(self, deadline, positions=None):
+    def extend(self, deadline, positions=None, min_gain=1e-6):
         """Lengthen pieces at their ends (straight on or along the wall) and in the same move drop or shorten the
         pieces that are then not needed; kept only when that lowers the total cost (user 2026-10-22: e.g. one line
         up a corridor end instead of three short crossing pieces)."""
@@ -1043,7 +1043,7 @@ class RouteOptimizer:
             for _, _, pts in sorted(scored)[:3]:
                 saved = self._save()
                 d = apply(pts, True)
-                if d < -1e-6 and (best is None or d < best[0]):
+                if d < -min_gain and (best is None or d < best[0]):
                     best = (d, pts)
                 self._restore(saved)
             if best:
@@ -1136,8 +1136,9 @@ class RouteOptimizer:
                                for xy in (self.pieces[i].pts[0], self.pieces[i].pts[-1]))]
                 self.extend(deadline, near)
                 self.detours(deadline)
-                self.local_optimum(deadline, step, float(self.s['optimizer'].get('rebuild_min_gain_s', 0.0)))
-                if self.total()[0] < before - 1e-6:
+                gain = float(self.s['optimizer'].get('rebuild_min_gain_s', 0.0))
+                self.local_optimum(deadline, step, gain)
+                if self.total()[0] < before - max(gain, 1e-6):   # tiny gains: never ending rounds (small room)
                     improved += 1
                     found = True
                     break                                # the stops moved: look for clusters again
@@ -1393,12 +1394,13 @@ class RouteOptimizer:
     def _rebuild_phase(self, step):
         """Extend and remove-and-repair on their own time (optimizer.rebuild_time_s), until neither improves."""
         end = time.monotonic() + float(self.s['optimizer'].get('rebuild_time_s', 0.0))
-        gain = float(self.s['optimizer'].get('rebuild_min_gain_s', 0.0))
+        gain = max(float(self.s['optimizer'].get('rebuild_min_gain_s', 0.0)), 1e-6)
         while time.monotonic() < end:
-            n = self.extend(end)
-            if n:
+            before = self.total()[0]
+            if self.extend(end, min_gain=gain):
                 self.local_optimum(end, step, gain)
-            if not self.rebuild(end, step) and not n:
+            self.rebuild(end, step)
+            if before - self.total()[0] < gain:      # a whole round saved less than rebuild_min_gain_s: done
                 break
         return self
 

@@ -205,14 +205,15 @@ def _finish(grid, targets, start, den, reach, coverable, settings, progress, bud
         ev[key] += drive_in_s
     ev['drive_in_s'] = drive_in_s
     # The drive back to the base station after the route (user 2026-10-22), as the optimiser counted it.
-    home_s = 0.0
+    home_s, home_path = 0.0, []
     if home is not None and final:
         end = planning.points_of(final[-1])[-1]          # the route's real end (after a way out of an island)
         c = opt._connector(list(end), list(home)) if math.dist(end, home) > 1e-6 else None
-        home_s = c[0] if c is not None else 0.0
+        home_s, home_path = (c[0], [list(map(float, q)) for q in c[3]]) if c is not None else (0.0, [])
     ev['total_s'] += home_s
     ev['home_s'] = home_s
     return {'targets': final, 'connections': links, 'skipped': skipped, 'covered': covered, 'route': route,
+            'home_path': home_path,
             'cost': ev, 'coverable': coverable, 'uncovered_reachable': int(open_.sum()),
             'uncovered_interior': int((open_ & ~costmod.edge_mask(grid, settings)).sum())}
 
@@ -240,7 +241,6 @@ def plan(grid, start_xy, polygon, settings, progress=None, home_xy=None):
 
     _log(progress, 'Finding reachable space...')
     reach, start = grid.reachable_from(start_xy, collision)
-    home = list(map(float, home_xy[:2])) if home_xy is not None else (list(start) if start is not None else None)
     # Areas with turning room behind an entrance narrower than the turning circle, joined by straight passages the
     # outline can drive (passages.py; user, 2026-10-21). Grid.astar routes through them; the rest of the planner
     # works on the joined area.
@@ -252,6 +252,15 @@ def plan(grid, start_xy, polygon, settings, progress=None, home_xy=None):
     home_area, reach = reach, reach_all
     if start is None:
         raise ValueError('No collision-free space for this robot radius.')
+    # Where the drive home ends: the reachable cell nearest the base station, like the start. The base station itself
+    # can lie a few mm inside the safety distance on the 5 cm grid (small test room: 0.525 m < 0.53 m); then no
+    # connection reached it, every route cost "unreachable" and the optimiser never finished (2026-10-22).
+    home = None
+    if home_xy is not None:
+        cells = np.argwhere(reach)
+        home = grid.world(cells[np.argmin(np.linalg.norm(grid.world(cells) - np.asarray(home_xy[:2], float), axis=1))]).tolist()
+    elif start is not None:
+        home = list(start)
     den = coverage_region(grid, reach, polygon)
     if not den.any():
         raise ValueError('Selected area contains no free space reachable from the start.')
@@ -396,7 +405,7 @@ def plan(grid, start_xy, polygon, settings, progress=None, home_xy=None):
         'region_patterns': info.get('region_patterns', []),
         'cells': _display_cells(grid, reach, polygon, settings, info),
         'plan_cells': _plan_cells(info),
-        'coverage_radius': radius, 'robot_radius': collision,
+        'coverage_radius': radius, 'robot_radius': collision, 'home_path': best.get('home_path') or [],
     }
     # The path the robot drives: corners rounded where that keeps every covered cell, stops elsewhere.
     _log(progress, 'Making the path drivable...')

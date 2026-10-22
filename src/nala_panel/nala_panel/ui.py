@@ -317,7 +317,8 @@ class MapScreen(QtWidgets.QWidget):
         self.plan_list.clear()
         for plan in self.plans:
             reason = library.plan_status(self.entry, plan, self.grid, self.panel.settings, self.station)
-            item = QtWidgets.QListWidgetItem(plan.summary() + (f'\nCannot scan: {reason}' if reason else ''))
+            item = QtWidgets.QListWidgetItem(plan.summary(self.panel.settings, self.station)
+                                             + (f'\nCannot scan: {reason}' if reason else ''))
             item.setData(QtCore.Qt.UserRole, reason)
             if reason:
                 item.setForeground(QtGui.QColor(style.MUTE))
@@ -563,9 +564,14 @@ class PlanningScreen(QtWidgets.QWidget):
         stats = self.run.stats()
         results = planning.check_results(stats)
         good = all(ok for ok, _ in results)
+        try:
+            minutes = library.plan_drive_time(yaml.safe_load(self.run.outputs[0].read_text()), self.panel.settings,
+                                              self.panel.map.station)
+        except (OSError, yaml.YAMLError, KeyError, TypeError):
+            minutes = None
         self.title.setText(f"<b>{'Plan ready' if good else 'Plan has problems'}</b><br>"
-                           f"{stats.get('coverage_pct', 0):.0f} % of the floor, "
-                           f"{stats.get('drive_length_m', 0):.0f} m, ~{stats.get('estimated_time_s', 0) / 60:.0f} min")
+                           f"{stats.get('coverage_pct', 0):.0f} % of the floor, {stats.get('drive_length_m', 0):.0f} m"
+                           + (f', ~{minutes / 60:.0f} min' if minutes is not None else ''))
         self.checks.setText('<br>'.join(f"{'&#10004;' if ok else '&#10008;'} {text}" for ok, text in results))
         pixmap = QtGui.QPixmap(str(self.run.outputs[1]))
         self.image.setPixmap(pixmap.scaled(self.image.size(), QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation))

@@ -100,6 +100,10 @@ every path vertex (<= 0.5 m apart), sent with NavigateThroughPoses.
   route could end far from home for free, and moves at the route's end ignored the way out of an island (deltas did
   not match total(): improve_once/block_moves looped for ever once run without a time budget; both now also cap
   their moves per pass, and a moved single goal keeps the heading its cost assumed: `slot_heading`).
+- The drive home ends at the reachable cell nearest the base station (pipeline.plan, like the start): a base station a
+  few mm inside the safety distance made every route "unreachable" (1e7) and the rebuild phase never ended. The
+  drive home is exported as `drive_path.home` (the screen's time estimate). Rebuild/extend need gains of at least
+  `rebuild_min_gain_s`.
 - Known limit: a group of more than 3 pieces (e.g. a room behind a passage, ~12 pieces on RDG) is never moved as a
   whole, so such a room can end up last although mid-route is cheaper (user declined bigger block moves, 2026-10-22).
 - Obstacle handling (loop around vs outer walls only) is a user option.

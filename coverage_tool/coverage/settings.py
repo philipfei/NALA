@@ -111,7 +111,8 @@ DEFAULTS = {
         'rebuild_window_m': 2.0,
         'rebuild_min_stops': 3,
         'rebuild_time_s': 1800.0,
-        # ... and in that phase the local moves stop after a round that saved less than this (s).
+        # ... and in that phase a change (extend, rebuild, a round of local moves, the whole phase round) must save
+        # at least this (s); smaller gains made it go on for ever (small room, 2026-10-22).
         'rebuild_min_gain_s': 1.0,
     },
 }

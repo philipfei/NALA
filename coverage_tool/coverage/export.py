@@ -91,7 +91,9 @@ def _drive_path(result, settings):
             'points': [[round(float(x), 4), round(float(y), 4)] for x, y in d['points']],
             # kind of the stretch that arrives at each point ('aim' = a corner sweep, 'wall', 'lane', 'transit', ...):
             # the robot turns only for 'aim' at a short stop, not for a few-cm step between two lanes (2026-10-20).
-            'kinds': [str(k) for k in d['kinds']]}
+            'kinds': [str(k) for k in d['kinds']],
+            # the drive back to the base station after the route (Nav2 drives it; for the screen's time estimate)
+            'home': [[round(float(x), 4), round(float(y), 4)] for x, y in result.get('home_path') or []]}
 
 
 def build(result, map_path, settings, base_station=None):

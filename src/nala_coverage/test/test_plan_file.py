@@ -165,3 +165,23 @@ def test_a_passage_is_checked_with_the_outline_and_listed_in_its_piece(tmp_path,
     assert [t.passages for t in p['targets']]==[[([1.,1.],[1.,.3])],[([1.,.3],[3.,.3])],[([3.,.3],[3.,1.])]]
     with pytest.raises(ValueError,match='PLAN_TOO_CLOSE_TO_OBSTACLES'):
         plan(['wall','wall','wall','wall'])                 # the same line as normal route: refused
+
+
+def test_drive_time_is_driving_and_turning_with_the_acceleration_limits():
+    # User 2026-10-22: the screen shows the time the robot needs, from speeds and acceleration limits.
+    from nala_coverage.plan_file import drive_time_s
+    m = {'linear_m_s': 0.1, 'angular_rad_s': 0.5, 'linear_accel_m_s2': 0.1, 'angular_accel_rad_s2': 0.5}
+    straight = lambda L, v: L / v + v / 0.1
+    turn90 = (math.pi / 2) / 0.5 + 0.5 / 0.5
+    one = {'drive_path': {'points': [[0., 0.], [2., 0.]], 'stops': [], 'kinds': ['wall', 'wall']}}
+    assert drive_time_s(one, m, 0.05) == pytest.approx(straight(2., .1))
+    # Two stretches with a stop and a 90 deg turn between them; then the drive home (straight to the base station)
+    # with the turns onto it and onto the base station's heading.
+    two = {'drive_path': {'points': [[0., 0.], [2., 0.], [2., 2.]], 'stops': [1], 'kinds': ['wall'] * 3}}
+    assert drive_time_s(two, m, 0.05) == pytest.approx(2 * straight(2., .1) + turn90)
+    home = drive_time_s(two, m, 0.05, station=(0., 2., math.pi))
+    assert home == pytest.approx(2 * straight(2., .1) + turn90 + (math.pi / 2) / .5 + 1. + straight(2., .1))
+    # A pocket: in forwards, back out at the slower spur speed without turning.
+    spur = {'drive_path': {'points': [[0., 0.], [1., 0.], [0.5, 0.]], 'stops': [1, 2], 'kinds': ['wall', 'spur', 'reverse']}}
+    assert drive_time_s(spur, m, 0.05) == pytest.approx(straight(1., .1) + straight(.5, .05))
+    assert drive_time_s({'drive_path': {'points': [[0., 0.]]}}, m, 0.05) is None

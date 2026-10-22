@@ -400,6 +400,15 @@ SLAM must not jump to a wrong but similar-looking place.
   the drive back to the base station counts (user). RDG plan 2026-10-22_152140: 99.9 m, 102 stops (old 161800: 109 m,
   180 stops), ~23 min real incl. the drive home; planning 36 min on the laptop (Pi 4: not measured, likely 40+ min).
   The separate room is still visited last (needs moving ~12 pieces at once; user declined that fix).
+  Fixed the same day: a base station a few mm inside the safety distance on the 5 cm grid made the drive home
+  "unreachable" and planning never ended (small room in the panel tests); the drive home now ends at the nearest
+  reachable cell, and extend/rebuild only accept gains of at least optimizer.rebuild_min_gain_s.
+- Plan time on the robot screen (user, 2026-10-22: always the real driving time, never the planner's cost):
+  plan_file.drive_time_s from the plan's drive_path with motion speeds and the gate's acceleration limits (each
+  stretch speeds up and slows down, each stop turns with the angular limit), backing out at spur.speed_m_s, plus
+  the drive home (drive_path 'home', written by the planner; straight to the base station for older plans; user).
+  No background measurement (user). Robot runs on Test/test_basement2: the real time was 15-25 % longer (Nav2
+  planning between pieces, settling, pauses).
 - CPU (robot 2026-10-20: load 15 on the Pi 4, SCAN_STALE / AMCL_STALE because the supervisor handled messages too
   late; the supervisor logs its timing every health.timing_log_period_s). 75-80 % of the supervisor's and the gate's
   CPU was rclpy's default executor (wait set rebuilt per message). All NALA Python nodes now use rclpy's EventsExecutor
