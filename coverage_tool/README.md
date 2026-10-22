@@ -99,8 +99,10 @@ Candidate patterns (spirals, straight lanes, mixed regions) only give a starting
 | Rotate | Enter a closed loop (wall loop, loop around an obstacle, ring) at the point that is cheapest to reach and to leave. |
 | Straighten | Replace a wiggly piece (a loop along a bumpy wall or around a cluttered obstacle, a centre line) by fewer, longer straight lines. It tries several tolerances, from "almost the same line" to "one straight line", and only uses straight chords the robot can drive safely. It keeps the version with the lowest total cost, so it only happens where the saved stops and bends outweigh any floor the straighter line no longer reaches. |
 | Shift | Move a stretch (up to `shift_window_m`) of a line that runs at the safety limit along a wall further from the wall, at `shift_levels` distances up to as far as the sensor still reaches the wall floor, as it is and straightened. A line at the limit follows the map's pixel staircase along diagonal walls; a few cm further in it can be straight. The cost decides per stretch how close to the wall the route drives. |
+| Extend | Lengthen a piece at either end, straight on or along the wall at the same distance (up to `extend_max_m`), and in the same move drop or shorten the pieces it makes unnecessary. For example one line up to a corridor end instead of three short crossing pieces. |
+| Rebuild | Remove and repair: in a square (`rebuild_window_m`) around at least `rebuild_min_stops` stops, take out every piece, cover the floor again with the repair moves (extend, detours) and re-optimise; kept only when the whole route gets cheaper. Runs on the cheapest candidate after the polish, until no square improves (`rebuild_time_s` is only a safety limit; RDG: ~30 min on the laptop). |
 
-Every move is scored with exact cost differences: connector time (straight, or A* around obstacles), stop-and-turn costs at every junction, hairpins, double coverage and missed cells. When no single move helps any more, the optimiser shakes the route up a little (a random reversal and relocation), optimises again, and keeps the result only if it is cheaper. It does this until the time budget runs out.
+Every move is scored with exact cost differences: connector time (straight, or A* around obstacles), stop-and-turn costs at every junction, hairpins, double coverage (also the floor a connecting drive sweeps, `overlap_weight` 2), missed cells, and the drive from the route's end back to the base station. When no single move helps any more, the optimiser shakes the route up a little (a random reversal and relocation), optimises again, and keeps the result only if it is cheaper. It does this until the time budget runs out.
 
 Each candidate gets *Time per candidate* seconds. The cheapest one then gets *Extra time for best* seconds more.
 
@@ -239,7 +241,7 @@ python plan_cli.py examples/office.yaml --start 2 2 --mode auto --overlap 20 \
 | `app.py` | The GUI |
 | `plan_cli.py` | Command-line version |
 | `coverage/cost.py` | The cost function |
-| `coverage/localsearch.py` | Cost-driven route optimiser (drop, trim, straighten, shift, flip, move, 2-opt, detours) |
+| `coverage/localsearch.py` | Cost-driven route optimiser (drop, trim, straighten, shift, extend, rebuild, flip, move, 2-opt, detours) |
 | `coverage/optimizer.py` | Wall loops, region decomposition, lanes vs spiral (or rings) per region, region ordering |
 | `coverage/spiral.py` | Distance field, rings, spiral ordering, centre lines, obstacle loops |
 | `coverage/pipeline.py` | Builds all candidates, scores them and returns the cheapest |

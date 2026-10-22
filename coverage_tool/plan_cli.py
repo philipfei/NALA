@@ -65,7 +65,9 @@ def main():
         if len(a.area) % 2 or len(a.area) < 6:
             ap.error('--area needs at least 3 x/y pairs')
         polygon = [list(a.area[i:i + 2]) for i in range(0, len(a.area), 2)]
-    result = pipeline.plan(grid, start, polygon, settings, progress=print)
+    # The robot drives back to the base station after the route: that drive counts in the cost.
+    result = pipeline.plan(grid, start, polygon, settings, progress=print,
+                           home_xy=station[:2] if station is not None else None)
     n = export.save(result, a.output, a.map, settings, station)
     for k, v in result['stats'].items():
         print(f'  {k}: {v:.2f}' if isinstance(v, float) else f'  {k}: {v}')

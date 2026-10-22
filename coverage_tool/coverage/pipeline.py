@@ -147,7 +147,7 @@ def _prune_redundant(grid, den, coverable, targets, radius):
 
 
 def _finish(grid, targets, start, den, reach, coverable, settings, progress, budget_s, fill=True, drive_ins=([], []),
-            home_area=None):
+            home_area=None, rebuild=False, home=None):
     """Centre-line fill, cost-driven route optimisation, connectors, coverage and exact cost."""
     radius = float(settings['geometry']['coverage_disk_radius_m'])
     collision = settings.collision
@@ -161,8 +161,8 @@ def _finish(grid, targets, start, den, reach, coverable, settings, progress, bud
     # optimise the whole route on the cost function (drop / flip / move / 2-opt / detours)
     opt = localsearch.RouteOptimizer(grid, localsearch.pieces_from_targets(targets), start, reach, den,
                                      coverable, settings, int(settings['optimizer']['neighbours']), drive_ins,
-                                     home_area)
-    opt.run(budget_s)
+                                     home_area, home)
+    opt.run(budget_s, rebuild=rebuild)
     targets = _sanitize(grid, opt.targets(settings['planning']['max_segment_length_m']), collision)
     coverable = coverable & opt.cov_ok.reshape(coverable.shape)   # minus cells no safe pose can see
     targets = _prune_redundant(grid, den, coverable, targets, radius)
@@ -198,11 +198,20 @@ def _finish(grid, targets, start, den, reach, coverable, settings, progress, bud
     cell = grid.resolution ** 2
     open_ = coverable & ~covered
     ev = costmod.evaluate(route, final, covered.sum() * cell, open_.sum() * cell, settings,
-                          costmod.swept_floor(grid, den, final, radius),
+                          costmod.swept_floor(grid, den, final, radius)    # + connections (user 2026-10-22)
+                          + sum(len(costmod.piece_cells(grid, den, c, radius)) for c in links if len(c) > 1) * cell,
                           (open_ & costmod.edge_mask(grid, settings)).sum() * cell)
     for key in ('drive_s', 'drive_turn_s', 'total_s'):
         ev[key] += drive_in_s
     ev['drive_in_s'] = drive_in_s
+    # The drive back to the base station after the route (user 2026-10-22), as the optimiser counted it.
+    home_s = 0.0
+    if home is not None and final:
+        end = planning.points_of(final[-1])[-1]          # the route's real end (after a way out of an island)
+        c = opt._connector(list(end), list(home)) if math.dist(end, home) > 1e-6 else None
+        home_s = c[0] if c is not None else 0.0
+    ev['total_s'] += home_s
+    ev['home_s'] = home_s
     return {'targets': final, 'connections': links, 'skipped': skipped, 'covered': covered, 'route': route,
             'cost': ev, 'coverable': coverable, 'uncovered_reachable': int(open_.sum()),
             'uncovered_interior': int((open_ & ~costmod.edge_mask(grid, settings)).sum())}
@@ -221,7 +230,8 @@ def _drive_in_turns(link, p, q, final, t, settings):
     return float(costmod.vertex_cost(dh, [0.0, 0.0], settings)[0].sum())
 
 
-def plan(grid, start_xy, polygon, settings, progress=None):
+def plan(grid, start_xy, polygon, settings, progress=None, home_xy=None):
+    """home_xy: where the robot drives after the route (the base station; default: the start)."""
     t0 = time.monotonic()
     set_settings(settings)
     radius = float(settings['geometry']['coverage_disk_radius_m'])
@@ -230,6 +240,7 @@ def plan(grid, start_xy, polygon, settings, progress=None):
 
     _log(progress, 'Finding reachable space...')
     reach, start = grid.reachable_from(start_xy, collision)
+    home = list(map(float, home_xy[:2])) if home_xy is not None else (list(start) if start is not None else None)
     # Areas with turning room behind an entrance narrower than the turning circle, joined by straight passages the
     # outline can drive (passages.py; user, 2026-10-21). Grid.astar routes through them; the rest of the planner
     # works on the joined area.
@@ -306,7 +317,8 @@ def plan(grid, start_xy, polygon, settings, progress=None):
             continue
         _log(progress, f'Candidate: {name}: centre lines, connections and cost...')
         res = _finish(grid, targets, start, den, reach, coverable, settings, progress,
-                      float(settings['optimizer']['search_time_s']), drive_ins=drive_ins, home_area=home_area)
+                      float(settings['optimizer']['search_time_s']), drive_ins=drive_ins, home_area=home_area,
+                      home=home)
         res['info'], res['name'] = info, name
         c = res['cost']
         cov_c = res['coverable']
@@ -321,7 +333,7 @@ def plan(grid, start_xy, polygon, settings, progress=None):
         _log(progress, f'Optimising {best["name"]} further on the cost function...')
         before = best['cost']['total_s']
         res = _finish(grid, best['targets'], start, den, reach, coverable, settings, progress, polish, fill=False,
-                      drive_ins=drive_ins, home_area=home_area)
+                      drive_ins=drive_ins, home_area=home_area, rebuild=True, home=home)
         if res['cost']['total_s'] <= before:
             res['info'], res['name'] = best['info'], best['name']
             best = res

@@ -67,7 +67,7 @@ python3 tests/regression.py [--quick]              # acceptance test, run after 
 |---|---|
 | `pipeline.py` | `plan()`: reachability → build candidates → `_finish` (centre-line fill, local search, sanitize, connect, exact cost) → cheapest wins → extra polish. `brush_reachable()` = exact reachable-cell definition. |
 | `cost.py` | The cost function (seconds): drive, bends (`bend_s_per_rad`), stop+rotate above `smooth_turn_deg`, hairpins, overlap (FLOOR swept twice only; brush over obstacles is free), missed (heavy), missed edge cells (light). |
-| `localsearch.py` | `RouteOptimizer`: exact-Δcost local search over pieces — drop, trim, straighten, shift (stretches along a wall moved up to r_cov - R away from it; runs before straighten in `local_optimum`, else the time budget is gone before it is tried), flip, move, block-move, 2-opt, detour; then perturb-and-reoptimise until the time budget ends. |
+| `localsearch.py` | `RouteOptimizer`: exact-Δcost local search over pieces — drop, trim, straighten, shift (stretches along a wall moved up to r_cov - R away from it; runs before straighten in `local_optimum`, else the time budget is gone before it is tried), flip, move, block-move, 2-opt, detour; then perturb-and-reoptimise until the time budget ends. Polish only: `_rebuild_phase` = extend (pieces grow, redundant ones dropped/trimmed) + rebuild (remove and repair stop clusters) until no gain (`rebuild_time_s` cap). |
 | `optimizer.py` | Wall loops, boustrophedon region decomposition, per-region lanes vs spiral vs clipped rings (`plan_region`), `plan_regions` (rims on/off, ring_targets), `plan_hybrid`, lane generation with inward shift along bumpy edges. |
 | `spiral.py` | Distance-field rings (contourpy), spiral tree/ordering, centre-line fill (hand-written Zhang–Suen skeleton), obstacle rims. `WALL_LEVEL=0.49`, `SIMPLIFY=0.2` (x cell). |
 | `grid.py` | Map loader (map_server conventions), clearance map, `segment_safe`, `reachable_from` (4-connected on purpose), A* (8-dir, no corner cutting). |
@@ -94,6 +94,14 @@ every path vertex (<= 0.5 m apart), sent with NavigateThroughPoses.
 - How close to a wall the route drives is decided per stretch by the cost (`localsearch.shift`, user 2026-10-22), not a
   fixed inset (a fixed 5 cm inset was tried and rejected). Stops cost `stop_penalty_s` 4 s (1 s + 3 s penalty, user) and
   the planner uses the robot's speeds from config/coverage.yaml `motion` (`settings.robot_config`).
+- Double coverage (user 2026-10-22): `overlap_weight` 2 and a connecting drive's swept floor counts as double coverage
+  (`RouteOptimizer._connector`: fast estimate `_swept_estimate`; pipeline: exact). The drive from the route's end back
+  to the base station counts (`RouteOptimizer.home`, `T(last, None)`; plan_cli passes the base station). Before, the
+  route could end far from home for free, and moves at the route's end ignored the way out of an island (deltas did
+  not match total(): improve_once/block_moves looped for ever once run without a time budget; both now also cap
+  their moves per pass, and a moved single goal keeps the heading its cost assumed: `slot_heading`).
+- Known limit: a group of more than 3 pieces (e.g. a room behind a passage, ~12 pieces on RDG) is never moved as a
+  whole, so such a room can end up last although mid-route is cheaper (user declined bigger block moves, 2026-10-22).
 - Obstacle handling (loop around vs outer walls only) is a user option.
 
 ## Gotchas

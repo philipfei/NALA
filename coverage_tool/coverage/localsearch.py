@@ -167,9 +167,12 @@ def pieces_from_targets(targets):
 
 class RouteOptimizer:
     def __init__(self, grid, pieces, start, reach, den, coverable, settings, neighbours=8, drive_ins=([], []),
-                 home_area=None):
+                 home_area=None, home=None):
         self.g, self.reach, self.den = grid, reach, den
         self.start = list(map(float, start))
+        # Where the robot drives after the route (the base station; user 2026-10-22: that drive counts, so the
+        # route does not end far away for free). None: the route's end is free (as before).
+        self.home = None if home is None else list(map(float, home))
         self.s = settings
         c = settings['cost']
         self.v = float(settings['motion']['linear_m_s'])
@@ -311,15 +314,46 @@ class RouteOptimizer:
             res = None
         else:
             terms = costmod.route_terms(path, self.s)
-            res = (terms['drive_s'] + terms['turn_s'] + terms['reverse_s'],
+            # A connection drives over floor the route covers anyway: everything it sweeps is double coverage
+            # (user 2026-10-22).
+            swept = self._swept_estimate(path) * self.cell if len(path) > 1 else 0.0
+            res = (terms['drive_s'] + terms['turn_s'] + terms['reverse_s'] + self.k_over * swept,
                    _first_heading(path), _last_heading(path), path)
         self._conn[key] = res
         return res
 
+    def _swept_estimate(self, path):
+        """Floor cells within the brush radius of a polyline (no line of sight, no sensor offset): a fast estimate
+        of what a connection sweeps (the exact stroke_union per connection made planning ~2x slower)."""
+        g = self.g
+        if getattr(self, '_disk', None) is None:
+            n = int(math.ceil(self.r / g.resolution))
+            yy, xx = np.mgrid[-n:n + 1, -n:n + 1]
+            keep = np.hypot(xx, yy) * g.resolution <= self.r
+            self._disk = np.stack([yy[keep], xx[keep]], axis=1)
+            self._den_flat = self.den.ravel()
+        centres = []
+        for a, b in zip(path, path[1:]):
+            m = max(1, int(math.ceil(math.dist(a, b) / g.resolution)))
+            for t in np.linspace(0.0, 1.0, m + 1):
+                centres.append(g.cell([a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1])]))
+        rc = (np.unique(np.asarray(centres), axis=0)[:, None, :] + self._disk[None]).reshape(-1, 2)
+        H, W = g.shape
+        rc = rc[(rc[:, 0] >= 0) & (rc[:, 0] < H) & (rc[:, 1] >= 0) & (rc[:, 1] < W)]
+        idx = np.unique(rc[:, 0] * W + rc[:, 1])
+        return int(self._den_flat[idx].sum())
+
     def T(self, frm, to):
-        """Seconds from the end of state `frm` (None = robot start) to the start of state `to`."""
+        """Seconds from the end of state `frm` (None = robot start) to the start of state `to` (None = after the
+        route: the drive home, when there is a home)."""
         if to is None:
-            return 0.0
+            if frm is None or self.home is None:
+                return 0.0
+            _, _, xy, h = self.pieces[frm[0]].state(frm[1])
+            if math.dist(xy, self.home) < EPS:
+                return 0.0
+            c = self._connector(xy, self.home)
+            return 1e7 if c is None else c[0] + self._turn(h, c[1])
         if frm is None:
             xy, h = self.start, None
         else:
@@ -338,6 +372,7 @@ class RouteOptimizer:
         (the way in or the way out), so its turn is charged correctly."""
         p = self.pieces[st[0]]
         if not p.point or p.aim is not None:
+            self.slot_heading = p.h
             return self.T(a, st) + self.T(st, b)
         xy = p.pts[0]
         cands = []
@@ -358,6 +393,7 @@ class RouteOptimizer:
             if best is None or c < best[0]:
                 best = (c, h)
         p.h = old
+        self.slot_heading = best[1]          # the heading this cost assumes: a move into the slot must keep it
         return best[0]
 
     def _at(self, k):
@@ -370,7 +406,9 @@ class RouteOptimizer:
         for st in self.seq:
             time_s += self.T(prev, tuple(st))
             prev = tuple(st)
-        if prev is not None and self.home_area is not None:
+        if prev is not None and self.home is not None:
+            time_s += self.T(prev, None)         # the drive home (also out of an island, through its passage)
+        elif prev is not None and self.home_area is not None:
             time_s += self.way_out_time(self.pieces[prev[0]].state(prev[1])[2])
         covered = self.count > 0
         swept = sum(len(self.pieces[i].cells(rv)) for i, rv in self.seq) * self.cell
@@ -439,6 +477,8 @@ class RouteOptimizer:
                     applied += 1
                     continue
             best = None
+            if applied > 10 * len(self.seq):     # safety: never loop for ever on one pass
+                break
             # move elsewhere
             removal = self.T(prev, nxt) - self.T(prev, cur) - self.T(cur, nxt)
             for j in self._neighbour_positions(k):
@@ -448,10 +488,11 @@ class RouteOptimizer:
                 for o in ((False, True) if not self.pieces[i].point else (False,)):
                     st = (i, o)
                     d = removal + self._slot_cost(a, st, b) - self.T(a, b)
+                    h = self.slot_heading
                     if o != rv:
                         d += self._cov_delta(self._flips([(i, rv)]))
                     if d < -1e-6 and (best is None or d < best[0]):
-                        best = (d, 'move', j, o)
+                        best = (d, 'move', j, o, h)
             # 2-opt: reverse the stretch between k and j
             for j in self._neighbour_positions(k):
                 lo, hi = min(k, j), max(k, j)
@@ -467,7 +508,9 @@ class RouteOptimizer:
                     best = (d, '2opt', lo, hi)
             if best:
                 if best[1] == 'move':
-                    _, _, j, o = best
+                    _, _, j, o, h = best
+                    if self.pieces[i].point and self.pieces[i].aim is None:
+                        self.pieces[i].h = h         # the heading the move's cost was computed with
                     item = self.seq.pop(k)
                     if o != item[1]:
                         self._swap_counts(self._flips([item]))
@@ -708,7 +751,7 @@ class RouteOptimizer:
         for L in (2, 3):
             k = 0
             while k + L <= len(self.seq):
-                if time.monotonic() > deadline:
+                if time.monotonic() > deadline or applied > 10 * len(self.seq):   # (never loop for ever)
                     return applied
                 first, last = tuple(self.seq[k]), tuple(self.seq[k + L - 1])
                 prev, nxt = self._at(k - 1), self._at(k + L)
@@ -783,7 +826,8 @@ class RouteOptimizer:
         """Unit vectors (x, y per cell) pointing away from the nearest wall: the gradient of the smoothed clearance."""
         if getattr(self, '_away', None) is None:
             from scipy.ndimage import gaussian_filter
-            gy, gx = np.gradient(gaussian_filter(self.g.clearance.astype(float), 1.0))
+            self._clear_s = gaussian_filter(self.g.clearance.astype(float), 1.0)
+            gy, gx = np.gradient(self._clear_s)
             c, s = math.cos(self.g.origin[2]), math.sin(self.g.origin[2])
             wx, wy = c * gx - s * gy, s * gx + c * gy          # grid axes -> world axes
             n = np.hypot(wx, wy)
@@ -857,13 +901,261 @@ class RouteOptimizer:
                 applied += 1
         return applied
 
-    def local_optimum(self, deadline, step):
+    # ------------------------------------------------------------- extend
+    def _wall_trace(self, e, u, length):
+        """From end point e, heading on along u: a line that follows the wall at e's distance from it (the
+        smoothed clearance), up to `length` m; stops where it would come closer than the robot radius."""
+        ax, ay = self._away_from_walls()
+        R, step = self.collision, self.g.resolution
+        level = max(R, float(self._clear_s[self.g.cell(e)]))
+        p, d, out, run = np.asarray(e, float), np.asarray(u, float), [list(map(float, e))], 0.0
+        while run < length - 1e-9:
+            rc = self.g.cell(p)
+            if not self.g.valid(rc):
+                break
+            n = np.array([ax[rc], ay[rc]])
+            if not np.isfinite(n).all():
+                break
+            t = np.array([-n[1], n[0]])
+            t = t if t @ d >= 0 else -t
+            if t @ d < 0.2:                          # the wall turns away more than ~80 deg: not "on along it"
+                break
+            corr = max(-step, min(step, level - float(self._clear_s[rc])))
+            q = p + step * t + corr * n
+            if not self.g.segment_safe(p.tolist(), q.tolist(), R):
+                break
+            run += float(np.linalg.norm(q - p))
+            d, p = (q - p) / max(np.linalg.norm(q - p), 1e-9), q
+            out.append(p.tolist())
+        return out
+
+    def _extensions(self, pts):
+        """Longer versions of a polyline: each end continued straight on and along the wall, at several lengths
+        up to extend_max_m (user 2026-10-22: a line may grow where that saves pieces and stops)."""
+        opt = self.s['optimizer']
+        longest = float(opt.get('extend_max_m', 0.0))
+        if longest <= 0:
+            return []
+        lengths = [x for x in (0.1, 0.2, 0.35, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0) if x <= longest + 1e-9]
+        out = []
+        for at_end in (True, False):
+            line = pts if at_end else pts[::-1]
+            e, b = np.asarray(line[-1], float), np.asarray(line[-2], float)
+            if np.linalg.norm(e - b) < EPS:
+                continue
+            u = (e - b) / np.linalg.norm(e - b)
+            for L in lengths:                        # straight on
+                q = (e + L * u).tolist()
+                if not self.g.segment_safe(e.tolist(), q, self.collision):
+                    break
+                new = list(line) + [q]
+                out.append(new if at_end else new[::-1])
+            trace = self._wall_trace(e, u, lengths[-1])   # along the wall
+            if len(trace) < 3:
+                continue
+            run = np.r_[0.0, np.cumsum(np.linalg.norm(np.diff(np.asarray(trace), axis=0), axis=1))]
+            for L in lengths:
+                n = int(np.searchsorted(run, L - 1e-9)) + 1
+                if n > len(trace):
+                    break
+                part = self._safe_dp(trace[:n], self.g.resolution)
+                new = list(line) + part[1:]
+                out.append(new if at_end else new[::-1])
+        return out
+
+    def _cleanup(self, grown, deadline, trims=True):
+        """After piece `grown` got longer: drop (and with `trims` shorten) other pieces that cover the same floor,
+        while that lowers the cost. Returns the exact cost change of what it did."""
+        delta, step = 0.0, 0.5 * self.r
+        cells = np.asarray(grown.cells(False))
+        reach = self.r + sensor.offset(self.s) + self.g.resolution
+        lo, hi = np.min(grown.pts, axis=0) - reach, np.max(grown.pts, axis=0) + reach
+        own = next(n for n in range(len(self.pieces) - 1, -1, -1) if self.pieces[n] is grown)
+        changed = True
+        while changed and time.monotonic() < deadline:
+            changed = False
+            for k in range(len(self.seq)):
+                i, rv = self.seq[k]
+                if i == own:
+                    continue
+                pts = np.asarray(self.pieces[i].pts)
+                if (pts.max(axis=0) + reach < lo).any() or (pts.min(axis=0) - reach > hi).any() \
+                        or not len(np.intersect1d(self.pieces[i].cells(rv), cells)):
+                    continue
+                d = self._drop_delta(k)
+                if d < -1e-6:
+                    self._drop(k)
+                    delta += d
+                    changed = True
+                    break
+                p = self.pieces[i]
+                if not trims or p.point or p.spur is not None or p.aim is not None:
+                    continue
+                for from_end in (False, True):
+                    for _ in range(20):
+                        cut = self._cut(self.pieces[self.seq[k][0]].pts, step, from_end)
+                        if cut is None:
+                            break
+                        d, qi = self._replace_delta(k, self._measure(Piece(cut, p.kind)))
+                        if d < -1e-6:
+                            self._commit(k, qi)
+                            delta += d
+                            changed = True
+                        else:
+                            self.pieces.pop()
+                            break
+        return delta
+
+    def _save(self):
+        return [list(x) for x in self.seq], self.count.copy(), len(self.pieces), self.cov_ok.copy()
+
+    def _restore(self, saved):
+        self.seq, self.count, self.cov_ok = [list(x) for x in saved[0]], saved[1].copy(), saved[3].copy()
+        del self.pieces[saved[2]:]
+
+    def extend(self, deadline, positions=None):
+        """Lengthen pieces at their ends (straight on or along the wall) and in the same move drop or shorten the
+        pieces that are then not needed; kept only when that lowers the total cost (user 2026-10-22: e.g. one line
+        up a corridor end instead of three short crossing pieces)."""
+        applied = 0
+        for k in (range(len(self.seq)) if positions is None else positions):
+            if time.monotonic() > deadline or k >= len(self.seq):
+                break
+            i, rv = self.seq[k]
+            p = self.pieces[i]
+            if p.point or p.spur is not None or p.aim is not None or len(p.pts) < 2 \
+                    or math.dist(p.pts[0], p.pts[-1]) < EPS:      # closed loops are entered by rotate()
+                continue
+            def apply(pts, trims):
+                q = self._measure(Piece(pts, p.kind))
+                d, qi = self._replace_delta(k, q)
+                self._commit(k, qi)
+                return d + self._cleanup(q, deadline, trims)
+            # Every candidate with drops only (fast), then the most promising with shortening too.
+            scored = []
+            for pts in self._extensions(p.pts):
+                if time.monotonic() > deadline:
+                    break
+                saved = self._save()
+                scored.append((apply(pts, False), len(scored), pts))
+                self._restore(saved)
+            best = None
+            for _, _, pts in sorted(scored)[:3]:
+                saved = self._save()
+                d = apply(pts, True)
+                if d < -1e-6 and (best is None or d < best[0]):
+                    best = (d, pts)
+                self._restore(saved)
+            if best:
+                apply(best[1], True)                     # the same steps again (they are deterministic)
+                applied += 1
+        return applied
+
+    # ------------------------------------------------------------- rebuild
+    def _stop_points(self):
+        """Where the route stops to turn: at junctions (and their connectors) and at sharp corners inside pieces."""
+        out, prev = [], None
+        for st in self.seq:
+            st = tuple(st)
+            p = self.pieces[st[0]]
+            sxy, sh, exy, eh = p.state(st[1])
+            if prev is not None:
+                _, _, pxy, ph = self.pieces[prev[0]].state(prev[1])
+                if math.dist(pxy, sxy) < EPS:
+                    if self._turn(ph, sh) > self.smooth * self.bend + 1e-9:
+                        out.append(sxy)
+                else:
+                    c = self._connector(pxy, sxy)
+                    if c is not None:
+                        if self._turn(ph, c[1]) > self.smooth * self.bend + 1e-9:
+                            out.append(pxy)
+                        if self._turn(c[2], sh) > self.smooth * self.bend + 1e-9:
+                            out.append(sxy)
+            if p.point or p.aim is not None or p.spur is not None:
+                out.append(p.pts[0])
+            elif len(p.pts) > 2:
+                a = np.asarray(p.pts, float)
+                dv = np.diff(a, axis=0)
+                seg = np.hypot(dv[:, 0], dv[:, 1])
+                keep = seg > 1e-6
+                a2 = np.vstack([a[:1], a[1:][keep]])
+                dv, seg = dv[keep], seg[keep]
+                if len(dv) > 1:
+                    h = np.arctan2(dv[:, 1], dv[:, 0])
+                    dh = np.abs(np.arctan2(np.sin(np.diff(h)), np.cos(np.diff(h))))
+                    _, stop = costmod.vertex_cost(dh, costmod.corner_radius(seg[:-1], seg[1:], dh), self.s)
+                    out.extend(a2[1:-1][stop].tolist())
+            prev = st
+        return np.asarray(out, float).reshape(-1, 2)
+
+    def _clusters(self):
+        """Square areas (rebuild_window_m) around the densest groups of stops, worst first, not overlapping."""
+        opt = self.s['optimizer']
+        half = 0.5 * float(opt.get('rebuild_window_m', 2.0))
+        need = int(opt.get('rebuild_min_stops', 3))
+        pts = self._stop_points()
+        left = np.ones(len(pts), bool)
+        out = []
+        while left.any():
+            inside = [(np.abs(pts - c) <= half).all(axis=1) & left for c in pts]
+            score = np.array([m.sum() if left[n] else 0 for n, m in enumerate(inside)])
+            n = int(np.argmax(score))
+            if score[n] < need:
+                break
+            members = pts[inside[n]]
+            out.append(((members.min(axis=0) + members.max(axis=0)) / 2, int(score[n])))
+            left &= ~(np.abs(pts - out[-1][0]) <= half).all(axis=1)
+        return out
+
+    def rebuild(self, deadline, step):
+        """Remove and repair (user 2026-10-22): in a square around a cluster of stops, take out every piece inside,
+        then cover the floor again with the planner's own repair moves (extend the pieces around it, detours: lines,
+        turns on the spot, drive-ins) and re-optimise. Kept only when the whole route gets cheaper. Repeats until no
+        area improves."""
+        half = 0.5 * float(self.s['optimizer'].get('rebuild_window_m', 2.0))
+        improved = 0
+        tried = self.__dict__.setdefault('_rebuild_tried', set())   # (area, route) already tried without gain
         while time.monotonic() < deadline:
+            found = False
+            route = hash(tuple(map(tuple, self.seq)))
+            for centre, _ in self._clusters():
+                key = (round(centre[0], 1), round(centre[1], 1), route)
+                if key in tried or time.monotonic() > deadline:
+                    continue
+                tried.add(key)
+                before = self.total()[0]
+                saved = self._save()
+                inside = [k for k, (i, _) in enumerate(self.seq)
+                          if (np.abs(np.asarray(self.pieces[i].pts) - centre) <= half).all()]
+                if not inside:
+                    continue
+                for k in reversed(inside):
+                    self._drop(k)
+                near = [k for k, (i, rv) in enumerate(self.seq)
+                        if any((np.abs(np.asarray(xy) - centre) <= half + self.r).all()
+                               for xy in (self.pieces[i].pts[0], self.pieces[i].pts[-1]))]
+                self.extend(deadline, near)
+                self.detours(deadline)
+                self.local_optimum(deadline, step, float(self.s['optimizer'].get('rebuild_min_gain_s', 0.0)))
+                if self.total()[0] < before - 1e-6:
+                    improved += 1
+                    found = True
+                    break                                # the stops moved: look for clusters again
+                self._restore(saved)
+            if not found:
+                break
+        return improved
+
+    def local_optimum(self, deadline, step, min_gain=0.0):
+        """Local moves until none helps. min_gain > 0: also stop after a round that saved less than that (s); on a
+        large map the rounds can go on for a long time with tiny gains (RDG 2026-10-22: 25 min)."""
+        while time.monotonic() < deadline:
+            before = self.total()[0] if min_gain > 0 else 0.0
             n = (self.orient(deadline) + self.shift(deadline) + self.straighten(deadline) + self.improve_once(deadline)
                  + self.block_moves(deadline) + self.rotate(deadline) + self.orient(deadline)
                  + self.trim(deadline, step) + self.trim(deadline, self.g.resolution)   # also by single cells
                  + self.rechoose(deadline))
-            if n == 0:
+            if n == 0 or (min_gain > 0 and before - self.total()[0] < min_gain):
                 break
 
     def reaim(self, deadline, step):
@@ -960,9 +1252,11 @@ class RouteOptimizer:
                         d = self._slot_cost(a, (idx, o), b) - self.T(a, b)
                         delta = piece.internal + d + over - gain
                         if choice is None or delta < choice[0]:
-                            choice = (delta, idx, pos, o, new)
+                            choice = (delta, idx, pos, o, new, self.slot_heading)
             if choice is not None and choice[0] < 0:
-                _, idx, pos, o, _ = choice
+                _, idx, pos, o, _, h = choice
+                if self.pieces[idx].point and self.pieces[idx].aim is None:
+                    self.pieces[idx].h = h           # the heading its cost was computed with
                 self.count[self.pieces[idx].cells(o)] += 1
                 self.seq.insert(int(pos), [idx, o])
                 added += 1
@@ -1065,7 +1359,9 @@ class RouteOptimizer:
         return out[:max_lines]
 
     # ---------------------------------------------------------------- run
-    def run(self, budget_s, seed=0):
+    def run(self, budget_s, seed=0, rebuild=False):
+        """rebuild: afterwards also remove and repair stop clusters (rebuild), on its own time
+        (optimizer.rebuild_time_s): used for the cheapest candidate only (pipeline polish)."""
         deadline = time.monotonic() + budget_s
         step = 0.5 * float(self.s['geometry']['coverage_disk_radius_m'])
         for _ in range(20):                      # detours + local moves until stable
@@ -1077,7 +1373,7 @@ class RouteOptimizer:
         self.reaim(deadline, step)
         # use the remaining time: perturb, re-optimise, keep only improvements
         if not self.local_optimum_done(deadline, step):
-            return self
+            return self._rebuild_phase(step) if rebuild else self
         rng = np.random.default_rng(seed)
         best_cost = self.total()[0]
         while time.monotonic() < deadline:
@@ -1092,6 +1388,18 @@ class RouteOptimizer:
             else:
                 self.seq, self.count, self.cov_ok = saved[0], saved[1], saved[3]
                 del self.pieces[saved[2]:]
+        return self._rebuild_phase(step) if rebuild else self
+
+    def _rebuild_phase(self, step):
+        """Extend and remove-and-repair on their own time (optimizer.rebuild_time_s), until neither improves."""
+        end = time.monotonic() + float(self.s['optimizer'].get('rebuild_time_s', 0.0))
+        gain = float(self.s['optimizer'].get('rebuild_min_gain_s', 0.0))
+        while time.monotonic() < end:
+            n = self.extend(end)
+            if n:
+                self.local_optimum(end, step, gain)
+            if not self.rebuild(end, step) and not n:
+                break
         return self
 
     def targets(self, max_seg):

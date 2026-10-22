@@ -24,7 +24,7 @@ def two_rooms():
 
 def quick_settings():
     s = default_settings()
-    s['optimizer'].update(search_time_s=1.0, polish_time_s=2.0)
+    s['optimizer'].update(search_time_s=1.0, polish_time_s=2.0, rebuild_time_s=20.0)
     set_settings(s)
     return s
 

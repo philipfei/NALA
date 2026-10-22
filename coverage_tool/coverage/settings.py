@@ -49,7 +49,10 @@ DEFAULTS = {
         'stop_penalty_s': 4.0,
         'reverse_angle_deg': 150.0,      # direction change counted as a reversal (hairpin)
         'reverse_penalty_s': 10.0,       # extra cost per reversal
-        'overlap_weight': 1.0,           # x time to sweep the double-covered area
+        # x time to sweep the double-covered area. User 2026-10-22: 2 (was 1) and connecting drives count too
+        # (RouteOptimizer._connector, pipeline: the floor a connection sweeps is double coverage), so the route does
+        # not trade long repeat drives over covered floor for a few stops.
+        'overlap_weight': 2.0,
         'missed_weight': 10000.0,        # x time to sweep the missed reachable area (very heavy: ~167 s per 5 cm cell)
         'edge_band_m': 0.10,             # floor this close to a wall/obstacle counts as an 'edge' cell...
         'edge_missed_weight': 10000.0,   # ...and costs this weight when missed (lower it for straighter lines)
@@ -98,6 +101,18 @@ DEFAULTS = {
         # ... tried at this many distances, evenly up to as far as the sensor still reaches the wall floor
         # (coverage_disk_radius_m - robot_radius_m beyond the safety limit).
         'shift_levels': 3,
+        # A piece may grow at its ends, straight on or along the wall, up to this long, while pieces it makes
+        # redundant are dropped or shortened (localsearch.extend; user 2026-10-22).
+        'extend_max_m': 2.0,
+        # Remove and repair (localsearch.rebuild; user 2026-10-22): squares this wide around at least this many
+        # stops are emptied and covered again by the repair moves, kept when the whole route gets cheaper. Runs on
+        # the cheapest candidate after the polish, until no square improves or this much time has passed (user:
+        # planning may take as long as it needs; this is only a safety limit).
+        'rebuild_window_m': 2.0,
+        'rebuild_min_stops': 3,
+        'rebuild_time_s': 1800.0,
+        # ... and in that phase the local moves stop after a round that saved less than this (s).
+        'rebuild_min_gain_s': 1.0,
     },
 }
 

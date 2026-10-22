@@ -393,6 +393,13 @@ SLAM must not jump to a wrong but similar-looking place.
   decides. Every reachable cell up to the wall stays covered. Stops cost 3 s extra (stop_penalty_s 4 s) and the
   planner uses the robot's speeds (motion in config/coverage.yaml). RDG plan 2026-10-22_104734: 140 stops (was 180),
   100 % of the reachable floor, 42.5 min estimated (real speeds).
+- Route efficiency (user, 2026-10-22: wobbly corners, long repeat drives, a room visited last): new optimiser moves
+  extend (a piece grows straight on or along the wall, pieces it makes redundant go) and rebuild (remove and repair
+  ~2x2 m stop clusters), run on the best candidate until no gain (user: planning may take as long as it needs; cap
+  optimizer.rebuild_time_s 30 min). Double coverage costs 2x and connecting drives count as double coverage (user);
+  the drive back to the base station counts (user). RDG plan 2026-10-22_152140: 99.9 m, 102 stops (old 161800: 109 m,
+  180 stops), ~23 min real incl. the drive home; planning 36 min on the laptop (Pi 4: not measured, likely 40+ min).
+  The separate room is still visited last (needs moving ~12 pieces at once; user declined that fix).
 - CPU (robot 2026-10-20: load 15 on the Pi 4, SCAN_STALE / AMCL_STALE because the supervisor handled messages too
   late; the supervisor logs its timing every health.timing_log_period_s). 75-80 % of the supervisor's and the gate's
   CPU was rclpy's default executor (wait set rebuilt per message). All NALA Python nodes now use rclpy's EventsExecutor
