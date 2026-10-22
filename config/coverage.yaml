@@ -178,11 +178,16 @@
       # Background: the mean of this many readings while the robot stands on the base station at the start.
       background_readings: 10
       background_timeout_s: 30.0      # s, pause the task (NO_SCINTILLATOR) if the background is not ready by then
-      threshold_factor: 2.0           # a cell is contaminated at this many times the background
+      # Contamination threshold (user, 2026-10-22): set by the operator on the robot screen (Settings), as a count
+      # rate or as a factor x the background; these are the defaults until it is set there. PLACEHOLDERS.
+      threshold_mode: background      # 'cps' (threshold_cps) or 'background' (threshold_factor x the background)
+      threshold_cps: 100.0            # counts/s
+      threshold_factor: 2.0           # x the background (above 1)
+      # Contamination found = alarm_readings of the last alarm_window readings at or above the threshold (user:
+      # any 2 in a short time). The robot stops like a pause and the task ends; it never drives around it.
+      alarm_readings: 2
+      alarm_window: 3
       hotspot_join_m: 0.6             # contaminated cells closer than this are one hotspot
-      keepout_margin_m: 0.2           # the robot keeps out of contaminated floor plus this margin
-      keepout_cost: 90                # 1..99: cost of keepout floor for the Nav2 planner (detours go around it;
-                                      # 100 would be a wall, and a robot standing in it could not plan out)
       max_gap_s: 0.3                  # a reading is drawn only if the trusted poses of its interval have no larger gap
       pose_history_s: 5.0             # s of measured poses kept to match the readings
       publish_period_s: 1.0           # s, how often the heatmap and the hotspots are published

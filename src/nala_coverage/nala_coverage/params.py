@@ -165,8 +165,13 @@ class Settings:
         for section in ('motion', 'spur', 'localization', 'health', 'measurement', 'deadlines',
                         'recovery', 'visualization', 'radiation', 'map_changes', 'locator'):
             _positive_tree(section, values[section])
-        if not 0 < values['radiation']['keepout_cost'] < 100:
-            raise ValueError('radiation.keepout_cost must be 1..99 (100 is a wall in the Nav2 costmap)')
+        rad = values['radiation']
+        from .radiation import default_setting, valid_setting
+        if not valid_setting(default_setting(rad)) or rad['threshold_factor'] <= 1:
+            raise ValueError("radiation.threshold_mode must be 'cps' or 'background', threshold_factor above 1")
+        if not isinstance(rad['alarm_readings'], int) or not isinstance(rad['alarm_window'], int) \
+                or not rad['alarm_readings'] <= rad['alarm_window']:
+            raise ValueError('radiation.alarm_readings and alarm_window must be whole numbers, readings <= window')
         if not isinstance(values['radiation'].get('enabled'), bool):
             raise ValueError('radiation.enabled must be true or false')
         battery = values['battery']

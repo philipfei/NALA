@@ -1,4 +1,5 @@
-"""radiation_node on loopback ROS (domain 93): background, painting at trusted measured poses, hotspots, keepout."""
+"""radiation_node on loopback ROS (domain 93): background, painting at trusted measured poses, hotspots, the
+operator's threshold from the robot screen."""
 import os
 os.environ['ROS_DOMAIN_ID'] = '93'
 os.environ['ROS_AUTOMATIC_DISCOVERY_RANGE'] = 'LOCALHOST'
@@ -16,7 +17,6 @@ from PIL import Image as PILImage
 rclpy = pytest.importorskip('rclpy')
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
-from nav_msgs.msg import OccupancyGrid
 from sensor_msgs.msg import Image
 from std_msgs.msg import String
 from std_srvs.srv import Trigger
@@ -69,12 +69,12 @@ class Feeder(Node):
         self.samples = self.create_publisher(String, '/coverage/sample', LATEST)
         self.readings = self.create_publisher(CountRate, '/scintillator/count_rate', 10)
         self.checked = self.create_publisher(String, '/radiation/mark_checked', 10)
+        self.threshold = self.create_publisher(String, '/radiation/threshold', LATCHED)
         self.background = self.create_client(Trigger, '/radiation/measure_background')
         self.out = {}
         self.create_subscription(Image, '/radiation/heatmap', lambda m: self.out.__setitem__('heatmap', m), LATCHED)
         self.create_subscription(String, '/radiation/hotspots', lambda m: self.out.__setitem__('hotspots', json.loads(m.data)), LATCHED)
         self.create_subscription(String, '/radiation/state', lambda m: self.out.__setitem__('state', json.loads(m.data)), LATEST)
-        self.create_subscription(OccupancyGrid, '/radiation/keepout', lambda m: self.out.__setitem__('keepout', m), LATCHED)
 
     def now(self):
         return self.get_clock().now().nanoseconds / 1e9
@@ -95,12 +95,11 @@ class Feeder(Node):
         pump(0.3)
 
 
-def test_radiation_node_background_heatmap_hotspot_and_keepout(ros):
+def test_radiation_node_background_heatmap_hotspot_and_threshold(ros):
     add, pump, tmp_path = ros
     node = add(RadiationNode())
     feed = add(Feeder())
     pump(1.0)
-    assert 'keepout' in feed.out and not any(feed.out['keepout'].data)   # empty keepout at once (for Nav2)
     future = feed.background.call_async(Trigger.Request())
     pump(0.5)
     assert future.result().success
@@ -116,11 +115,16 @@ def test_radiation_node_background_heatmap_hotspot_and_keepout(ros):
     assert np.isnan(value[40, 55])                                         # cell of (2.76, 2.0): untrusted
     [h] = feed.out['hotspots']
     assert h['id'] == 1 and h['peak'] == 50.0 and not h['checked']
-    keepout = np.asarray(feed.out['keepout'].data, np.int8).reshape(80, 80)
-    assert keepout[40, 45] == 90 and keepout[40, 40] == 0
     feed.checked.publish(json_msg({'id': 1}))
     pump(0.6)
     assert feed.out['hotspots'][0]['checked'] and feed.out['state']['to_check'] == 0
     log = (tmp_path / 'run' / 'readings.csv').read_text().splitlines()
     assert len(log) == 1 + 5 and log[4].endswith(',,0') and log[5].endswith(',1')
     assert json.loads((tmp_path / 'run' / 'hotspots.json').read_text())['hotspots'][0]['checked']
+    # The operator's threshold from the robot screen: 60 counts/s, so the 50 counts/s spot is no hotspot any more.
+    feed.threshold.publish(json_msg({'mode': 'cps', 'value': 60.0}))
+    pump(0.6)
+    assert feed.out['state']['threshold'] == 60.0 and feed.out['hotspots'] == []
+    feed.threshold.publish(json_msg({'mode': 'background', 'value': 0.5}))   # not usable: ignored
+    pump(0.6)
+    assert feed.out['state']['setting'] == {'mode': 'cps', 'value': 60.0}

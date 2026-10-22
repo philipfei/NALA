@@ -102,7 +102,7 @@ def _setup(context):
         _node('nala_coverage', 'coverage_supervisor', 'coverage_supervisor',
               parameters=[{**shared, 'plan_file': str(Path(plan).resolve())}]),
         _node('nala_coverage', 'coverage_meter', 'coverage_meter', parameters=[shared]),
-        # Scintillator readings + measured poses -> heatmap, hotspots, keepout (the scintillator driver is not
+        # Scintillator readings + measured poses -> heatmap, hotspots (the scintillator driver is not
         # here yet: its USB format is unknown, docs/scintillator.md).
         _node('nala_coverage', 'radiation_node', 'radiation_node', parameters=[shared]),
         # LiDAR scans at trusted poses -> cells that changed against the saved map (shown on the robot screen).

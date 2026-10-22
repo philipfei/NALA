@@ -3,14 +3,63 @@
 A reading (counts per second over [stamp - interval, stamp]) is painted only where the sensor actually was:
 at the sensor point of every trusted measured pose of that interval (the supervisor's /coverage/sample).
 If the interval has no trusted pose, or a gap, the reading is kept in the log but not drawn.
+
+Contamination (user, 2026-10-22): the operator sets the threshold on the robot screen, as a count rate or as a factor
+x the background. Enough readings at or above it (Alarm) end the task; the robot does not drive around contamination.
 """
+from collections import deque
 import math
 import numpy as np
+
+MODES = ('cps', 'background')   # threshold in counts/s, or a factor x the background
+
+
+def threshold(setting, background):
+    """Counts/s at which a reading counts as contaminated, or None (factor mode before the background is known).
+    setting: {'mode': 'cps' | 'background', 'value': float}."""
+    if setting['mode'] == 'cps':
+        return float(setting['value'])
+    return None if background is None else float(setting['value']) * float(background)
+
+
+def default_setting(cfg):
+    """The threshold from config/coverage.yaml (until the robot screen sends the operator's choice)."""
+    mode = cfg['threshold_mode']
+    return {'mode': mode, 'value': float(cfg['threshold_cps'] if mode == 'cps' else cfg['threshold_factor'])}
+
+
+def valid_setting(setting):
+    """A threshold the robot can use: a known mode; counts/s above 0, a factor above 1 (else the background itself
+    would count as contamination)."""
+    try:
+        value = float(setting['value'])
+        return setting['mode'] in MODES and np.isfinite(value) and value > (0. if setting['mode'] == 'cps' else 1.)
+    except (KeyError, TypeError, ValueError):
+        return False
+
+
+class Alarm:
+    """Contamination is found when `readings` of the last `window` readings are at or above the threshold (user,
+    2026-10-22: any 2 in a short time, so one noisy reading does not stop the robot and one low one does not hide a
+    spot). Every reading counts, also one without a trusted pose (user: the stop never depends on localization)."""
+
+    def __init__(self, readings, window):
+        self.readings, self.window = int(readings), int(window)
+        self.reset()
+
+    def reset(self):
+        self.last = deque(maxlen=self.window)      # (counts/s, at or above the threshold)
+
+    def add(self, cps, limit):
+        """One reading against the threshold. True once contamination is found."""
+        self.last.append((float(cps), float(cps) >= limit))
+        return sum(hot for _, hot in self.last) >= self.readings
 
 
 class RadiationMap:
     def __init__(self, grid, offset, cfg):
         self.grid, self.offset, self.cfg = grid, offset, cfg
+        self.setting = default_setting(cfg)
         self.reset()
 
     def reset(self):
@@ -42,7 +91,7 @@ class RadiationMap:
 
     @property
     def threshold(self):
-        return None if self.background is None else self.cfg['threshold_factor'] * self.background
+        return threshold(self.setting, self.background)
 
     # ---------------------------------------------------------------- readings
     def sensor_points(self, poses, start, end, max_gap):
@@ -67,7 +116,7 @@ class RadiationMap:
             self.count[rc] += 1
         return len(cells)
 
-    # ---------------------------------------------------------------- hotspots and keepout
+    # ---------------------------------------------------------------- hotspots
     def hot(self):
         if self.threshold is None:
             return np.zeros(self.value.shape, bool)
@@ -110,26 +159,8 @@ class RadiationMap:
             return True
         return False
 
-    def keepout(self):
-        """Hot cells plus keepout_margin_m around them: the robot avoids this floor."""
-        hot = self.hot()
-        r = int(math.ceil(self.cfg['keepout_margin_m'] / self.grid.resolution))
-        out = hot.copy()
-        if not hot.any() or r == 0:
-            return out
-        rows, cols = hot.shape
-        for dr in range(-r, r + 1):
-            for dc in range(-r, r + 1):
-                if dr * dr + dc * dc > r * r:
-                    continue
-                shifted = np.zeros_like(hot)
-                shifted[max(dr, 0):rows + min(dr, 0), max(dc, 0):cols + min(dc, 0)] = \
-                    hot[max(-dr, 0):rows + min(-dr, 0), max(-dc, 0):cols + min(-dc, 0)]
-                out |= shifted
-        return out
-
     def state(self):
         return {'measuring': self.measuring, 'background_ready': self.background is not None,
-                'background': self.background, 'threshold': self.threshold,
+                'background': self.background, 'threshold': self.threshold, 'setting': self.setting,
                 'background_readings': len(self.samples), 'painted_cells': int(np.count_nonzero(self.count)),
                 'hotspots': len(self.hotspots), 'to_check': sum(not h['checked'] for h in self.hotspots.values())}

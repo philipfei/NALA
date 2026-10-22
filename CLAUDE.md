@@ -359,13 +359,12 @@ SLAM must not jump to a wrong but similar-looking place.
   Robot (user 2026-10-20: the drive-in is a normal part of the path): driving in is a normal plan piece that Nav2
   follows (plan_file: piece kind 'plan' with drive_in = its start P; supervisor.follow checks the stretch from P with
   the outline + planning_padding_m instead of the turning circle). A stop inside the pocket (Nav2 failure, timeout,
-  pause, new contamination ahead) ends the drive-in there (SPUR_SHORTENED) and the robot backs out; contamination on
-  a drive-in before it starts drops it (SPUR_SKIPPED_CONTAMINATION). Backing out ('reverse', state SPUR) is the
+  pause) ends the drive-in there (SPUR_SHORTENED) and the robot backs out. Backing out ('reverse', state SPUR) is the
   supervisor's: on odometry along the line put into odom when it starts (steering on AMCL zigzagged), at
   spur.speed_m_s (0.12 m/s = normal speed since 2026-10-21, user; LiDAR stop distance behind spur.clear_m 0.10 m),
   via /cmd_vel_reverse (the gate passes it only while NAV owns the robot, only <= 0, <= spur.speed_m_s, only from
-  coverage_supervisor). Before it every cell under the bare outline must be measured (or under the robot at P) and
-  not contaminated, else a pause (SPUR_REVERSE_NOT_MEASURED / _CONTAMINATION); LiDAR behind: SPUR_REVERSE_BLOCKED.
+  coverage_supervisor). Before it every cell under the bare outline must be measured (or under the robot at P), else
+  a pause (SPUR_REVERSE_NOT_MEASURED); LiDAR behind: SPUR_REVERSE_BLOCKED. (Contamination ends the task, below.)
   It ends at or just past P (it turns there). Earlier versions (same day) drove in with the supervisor too and
   needed a turn-drive-turn onto P after Nav2's 5 cm point goal: many random turns; rejected.
   A piece Nav2 finished up to rejoin_max_m off its end (base: locator.base_tolerance_m) counts as done
@@ -376,6 +375,18 @@ SLAM must not jump to a wrong but similar-looking place.
   the way out when a route would end inside (user choices). Drive path kind 'passage': plan_file and supervisor.follow
   check it with the outline + planning_padding_m; the plan check counts the areas behind passages as reachable
   (resume inside works). If a Nav2-planned detour would have to go through a passage, the robot pauses (user choice).
+- Contamination (user, 2026-10-22: "I don't want it to drive around the contamination"): the robot stops and the task
+  ends when radiation.alarm_readings of the last alarm_window readings (2 of 3, user: "any 2 in a short time") reach
+  the operator's threshold, at any time in a task (driving, paused, background, way home; user). Threshold set on the
+  robot screen (Maps -> Settings, for every map, maps/contamination_threshold.yaml, latched /radiation/threshold):
+  counts/s or a factor x the background (user: the operator chooses); the background is always measured at the start
+  (user). Every reading counts, also without a trusted pose (user; the spot is then "approximate"). Stops like a pause
+  (user: zero at once, ~2 cm coasting; not a 0.1 m/s^2 ramp), then FAILED / CONTAMINATION_FOUND: no resume, no
+  driving home, the robot stays (user: end task only). Screen: full-screen red warning with readings, threshold,
+  time, sensor position until Acknowledge (user), then the spot on the map; the task report keeps it (Results tab).
+  The keepout zone, the Nav2 keepout layer and every "drive around / skip contaminated floor" rule were removed
+  (user). radiation.enabled is still false (no scintillator driver). Simulation (Test room, one source): stopped
+  0.3 m before the source, no contact.
 - Wall distance (user, 2026-10-22: the RDG route was wobbly, with many stops along diagonal walls at the safety
   limit): no fixed inset and no "walls first" rule; the optimiser's shift move (coverage_tool/coverage/localsearch.py)
   tries each wall stretch further from the wall (up to where the sensor still reaches the wall floor) and the cost

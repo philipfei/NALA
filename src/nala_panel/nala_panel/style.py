@@ -26,6 +26,10 @@ QFrame#sheet {{ background: {PANEL}; border: 3px solid {MAG}; border-radius: 14p
 QFrame#alert {{ background: {PANEL}; border: 2px solid {LINE}; border-radius: 12px; }}
 QFrame#alert[hot="true"] {{ background: {MAG}; border-color: {MAG}; }}
 QFrame#alert[hot="true"] QLabel {{ color: white; }}
+QFrame#alarm {{ background: {RED}; }}
+QFrame#alarm QLabel {{ color: white; }}
+QLabel#alarmtitle {{ font-size: {font_pt * 3}pt; font-weight: bold; }}
+QLabel#alarmtext {{ font-size: {font_pt + 4}pt; }}
 QFrame#banner {{ background: {INK}; border-bottom: 4px solid {AMBER}; }}
 QFrame#banner QLabel {{ color: white; font-weight: bold; }}
 QPushButton {{ min-height: {big}px; border-radius: 12px; border: 2px solid {INK}; background: {PANEL};

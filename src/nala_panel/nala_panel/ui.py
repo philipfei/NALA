@@ -1,7 +1,8 @@
 """Touchscreen panel for the robot (PyQt5), styled after the scan screen design (Scan_screen_visualiser.html).
 
 Screens: Maps -> Map (plans, new plan, last results) -> Planning -> Scan (app 3); Maps -> App (app 1: drive with
-the Xbox controller, app 2: make a map and save it, with an on-screen keyboard for its name).
+the Xbox controller, app 2: make a map and save it, with an on-screen keyboard for its name); Maps -> Settings (the
+contamination threshold). Contamination found ends the scan with a full-screen red warning (user, 2026-10-22).
 The Scan screen shows where the robot actually was (trusted measured poses), what the sensor covered and what
 the scintillator measured (heatmap, numbered hotspots), with Start / Pause / Stop and go home / STOP.
 Sizes come from config/panel.yaml.
@@ -19,6 +20,7 @@ from rclpy.parameter import Parameter
 from PyQt5 import QtCore, QtGui, QtWidgets
 from nala_coverage.geometry import Grid
 from nala_coverage.params import load_settings
+from nala_coverage.radiation import default_setting, valid_setting
 import yaml
 from nala_base.ina260 import charge_ratio
 from . import apps, battery, library, planning, style
@@ -68,6 +70,23 @@ def label(text='', name='', wrap=True):
     if name:
         lab.setObjectName(name)
     return lab
+
+
+def threshold_text(setting, cps=None):
+    """'100 counts/s' or '2 x background (= 60 counts/s)'."""
+    if setting['mode'] == 'cps':
+        return f"{setting['value']:g} counts/s"
+    return f"{setting['value']:g} x background" + (f' (= {cps:.0f} counts/s)' if cps is not None else '')
+
+
+def contamination_text(c):
+    """The details of a contamination stop (the supervisor's 'contamination'), as lines for the screen."""
+    when = datetime.datetime.fromtimestamp(c['time']).strftime('%H:%M:%S')
+    x, y = c['xy']
+    where = f'x {x:.2f} m, y {y:.2f} m' + (' (approximate: position not trusted then)' if c.get('approximate') else '')
+    return (f"Readings: {', '.join(f'{r:.0f}' for r in c['readings'])} counts/s<br>"
+            f"Threshold: {threshold_text(c['setting'], c.get('threshold_cps'))}<br>"
+            f"Time: {when}<br>Sensor at: {where}")
 
 
 def hotspot_message(hotspots):
@@ -146,6 +165,7 @@ class MapsScreen(QtWidgets.QWidget):
         title.addStretch()
         title.addWidget(button('Drive (app 1)', lambda: panel.start_app('app1')))
         title.addWidget(button('Make a map (app 2)', lambda: panel.start_app('app2')))
+        title.addWidget(button('Settings', panel.show_settings))
         title.addWidget(button('Refresh', self.refresh))
         title.addWidget(panel.battery_icon())
         layout.addLayout(title)
@@ -334,6 +354,9 @@ class MapScreen(QtWidgets.QWidget):
         if r['value'] is None or not np.isfinite(r['value']).any():
             text = 'No scintillator readings in this scan.'
         cov = f"{100 * r['fraction']:.1f} % covered" if r['fraction'] is not None else 'No coverage data'
+        if r['contamination']:
+            text = (f"<span style='color:{style.RED}'><b>Contamination found: the scan stopped there.</b></span><br>"
+                    + contamination_text(r['contamination']) + '<br>' + text)
         self.result_text.setText(f"<b>{library.run_summary(self.runs[row]).replace(chr(10), ', ')}</b><br>{cov}. Background: {bg}<br>{text}<br>"
                                  f"<span style='color:{style.MUTE}'>Saved in {r['folder'].name}</span>")
         self.redraw()
@@ -424,7 +447,7 @@ class MapScreen(QtWidgets.QWidget):
             covered = covered.reshape(self.grid.cells.shape)
         v.set_mask('coverage', covered, style.TEAL, 120)
         v.set_heatmap(run['value'] if run else None, run['threshold'] if run else None)
-        v.set_mask('keepout', run['keepout'] if run else None, style.MAG, 90)
+        v.found = run['contamination'] if run else None
         v.set_changes(run['appeared'] if run else None, run['vanished'] if run else None)
         v.trail = run['trail'] if run else []
         v.hotspots = run['hotspots'] if run else []
@@ -667,8 +690,37 @@ class ScanScreen(QtWidgets.QWidget):
 
         self.manual_timer = QtCore.QTimer(self)
         self.manual_timer.timeout.connect(self.manual_tick)
+        self.alarm = self._alarm()
+        self.acknowledged = None            # the contamination stop the operator acknowledged
 
     # ---------------------------------------------------------------- building blocks
+    def _alarm(self):
+        """Contamination found: red over the whole screen until Acknowledge (user, 2026-10-22)."""
+        frame = QtWidgets.QFrame(self)
+        frame.setObjectName('alarm')
+        lay = QtWidgets.QVBoxLayout(frame)
+        lay.setContentsMargins(40, 30, 40, 30)
+        lay.addWidget(label('⚠  CONTAMINATION FOUND', name='alarmtitle', wrap=False), 0, QtCore.Qt.AlignHCenter)
+        lay.addWidget(label('The robot has stopped and the scan has ended. The robot stays where it is: do not drive '
+                            'it over the spot.', name='alarmtext'))
+        self.alarm_text = label(name='alarmtext')
+        lay.addWidget(self.alarm_text)
+        lay.addStretch()
+        lay.addWidget(button('Acknowledge', self.acknowledge, 'dark'))
+        frame.hide()
+        return frame
+
+    def resizeEvent(self, event):
+        self.alarm.setGeometry(self.rect())
+        super().resizeEvent(event)
+
+    def acknowledge(self):
+        self.acknowledged = self._alarm_key()
+        self.alarm.hide()
+
+    def _alarm_key(self):
+        c = self.session.state.get('contamination')
+        return (self.session.state.get('generation'), c['time']) if c else None
     def _sheet(self, parent):
         sheet = QtWidgets.QFrame(parent)
         sheet.setObjectName('sheet')
@@ -774,6 +826,9 @@ class ScanScreen(QtWidgets.QWidget):
         self.manual_on = False
         self.show_map_while_driving = False
         self.drawn = {}
+        self.acknowledged = None
+        self.alarm.hide()
+        self.view.found = None
         self.select(None)
         self.chip_mode.setText('Robot' if self.panel.params['hardware'] else 'Simulation')
         self.manual_timer.start(int(self.panel.params['manual_period'] * 1000))
@@ -860,6 +915,8 @@ class ScanScreen(QtWidgets.QWidget):
         text = plain_state(s.state) if running else 'App 3 stopped. Tap Back.'
         if state == 'FINISHED' and reason == 'RETURNED_TO_BASE':
             text = 'Scan stopped, back home' if s.state.get('root_cause') == 'OPERATOR_GO_HOME' else 'Scan complete'
+        if reason == 'CONTAMINATION_FOUND':
+            text = 'Contamination found: scan ended'
         self.pct.setText(f'{pct:.0f}<span style="font-size:20pt;color:{style.MUTE}"> %</span>')
         self.d_pct.setText(f'{pct:.0f}<span style="font-size:40pt;color:{style.MUTE}"> %</span>')
         self.status.setText(text)
@@ -869,10 +926,10 @@ class ScanScreen(QtWidgets.QWidget):
         lines = []
         if m.get('coverable_m2'):
             lines.append(f"{m.get('covered_m2', 0):.1f} of {m['coverable_m2']:.1f} m² scanned")
-        if s.radiation.get('avoided_m2'):
-            lines.append(f"{s.radiation['avoided_m2']:.1f} m² avoided (contaminated)")
         if s.radiation.get('background') is not None:
             lines.append(f"Background {s.radiation['background']:.0f} counts/s")
+        if s.state.get('threshold'):
+            lines.append('Stops at ' + threshold_text(s.state['threshold'], s.radiation.get('threshold')))
         if s.changes is not None and (s.changes > 0).any():
             cell = self.view.grid.resolution ** 2
             lines.append(f"Map changed: {(s.changes == 100).sum() * cell:.1f} m\u00b2 new, "
@@ -889,6 +946,12 @@ class ScanScreen(QtWidgets.QWidget):
             self.chip_loc.style().polish(self.chip_loc)
         self.alert.show_hotspots(s.hotspots)
         self.d_alert.show_hotspots(s.hotspots)
+        found = s.state.get('contamination')
+        if found and self._alarm_key() != self.acknowledged and not self.alarm.isVisible():
+            self.alarm_text.setText(contamination_text(found))
+            self.alarm.setGeometry(self.rect())
+            self.alarm.show()
+            self.alarm.raise_()
 
         self.start_button.setText('Resume' if paused else 'New scan' if state in ('FINISHED', 'CANCELED', 'FAILED')
                                   else 'Start')
@@ -914,11 +977,6 @@ class ScanScreen(QtWidgets.QWidget):
                 v.set_mask('coverage', s.covered, style.TEAL, 120)
                 d['covered_shown'] = s.covered
             d['covered'] = s.covered
-        if s.keepout is not None and s.keepout is not d.get('keepout'):
-            if not _same(s.keepout, d.get('keepout_shown')):
-                v.set_mask('keepout', s.keepout, style.MAG, 90)
-                d['keepout_shown'] = s.keepout
-            d['keepout'] = s.keepout
         heat = (s.heatmap, s.radiation.get('threshold'))
         if s.heatmap is not None and (heat[0] is not d.get('heat', (None, None))[0] or heat[1] != d['heat'][1]):
             v.set_heatmap(*heat)
@@ -928,7 +986,7 @@ class ScanScreen(QtWidgets.QWidget):
                 v.set_changes(s.changes == 100, s.changes == 50)
                 d['changes_shown'] = s.changes
             d['changes'] = s.changes
-        v.refresh(trail=s.trail, hotspots=s.hotspots, robot=s.display_pose())
+        v.refresh(trail=s.trail, hotspots=s.hotspots, robot=s.display_pose(), found=s.state.get('contamination'))
         if v.selected is not None:
             self.select(v.selected)
 
@@ -965,10 +1023,9 @@ class ScanScreen(QtWidgets.QWidget):
         report = s.report()
         if report:
             skipped = sum(b.get('reason') == 'PLAN_STRETCH_SKIPPED' for b in report.get('temporary_blockages', []))
-            avoided = sum(b.get('reason') == 'CONTAMINATION_AVOIDED' for b in report.get('temporary_blockages', []))
             QtWidgets.QMessageBox.information(
                 self, 'Scan report', f"{report.get('state')}: {report.get('reason')}\n"
-                f"Skipped stretches: {skipped}, avoided (contaminated): {avoided}\nSaved in: {s.output_dir}")
+                f"Skipped stretches: {skipped}\nSaved in: {s.output_dir}")
         self.panel.open_map(self.entry)
 
 
@@ -1155,6 +1212,98 @@ class AppScreen(QtWidgets.QWidget):
                                         and self.pages.currentIndex() == 0)
 
 
+class SettingsScreen(QtWidgets.QWidget):
+    """Settings for every map (user, 2026-10-22): the contamination threshold, as a count rate or as a factor x the
+    background measured on the base station at the start of each scan, typed on an on-screen keypad."""
+    KEYS = ('789', '456', '123', '.0')
+
+    def __init__(self, panel):
+        super().__init__()
+        self.panel = panel
+        rad = panel.settings['radiation']
+        self.defaults = {'cps': float(rad['threshold_cps']), 'background': float(rad['threshold_factor'])}
+        layout = QtWidgets.QHBoxLayout(self)
+        left = QtWidgets.QVBoxLayout()
+        top = QtWidgets.QHBoxLayout()
+        top.addWidget(label('<b>Settings</b>', wrap=False), 1)
+        top.addWidget(panel.battery_icon())
+        top.addWidget(button('Back', panel.show_maps))
+        left.addLayout(top)
+        left.addWidget(label('<b>Contamination threshold</b><br>The robot stops and the scan ends when '
+                             f"{rad['alarm_readings']} of the last {rad['alarm_window']} readings reach it.", name='mute'))
+        self.modes = {'cps': QtWidgets.QRadioButton('Counts per second'),
+                      'background': QtWidgets.QRadioButton('Times the background (measured at the start)')}
+        for mode, radio in self.modes.items():
+            radio.toggled.connect(lambda on, m=mode: on and self.set_mode(m))
+            left.addWidget(radio)
+        value_row = QtWidgets.QHBoxLayout()
+        self.value = label(name='pct', wrap=False)
+        self.unit = label(name='mute', wrap=False)
+        value_row.addWidget(self.value)
+        value_row.addWidget(self.unit, 1)
+        left.addLayout(value_row)
+        self.problem = label(name='mute')
+        left.addWidget(self.problem)
+        left.addStretch()
+        self.save_button = button('Save', self.save, 'primary')
+        left.addWidget(self.save_button)
+        layout.addLayout(left, 1)
+        pad = QtWidgets.QGridLayout()
+        keys = [(button(ch, lambda _, k=ch: self.type(k)), r, c) for r, row in enumerate(self.KEYS)
+                for c, ch in enumerate(row)] + [(button('Del', self.delete), 3, 2)]
+        for b, r, c in keys:
+            b.setFixedSize(96, int(panel.params['button_height'] * 1.3))
+            pad.addWidget(b, r, c)
+        layout.addLayout(pad)
+        self.mode, self.text = 'cps', ''
+
+    def open(self):
+        """Show the threshold in use."""
+        s = self.panel.threshold
+        self.mode, self.text = s['mode'], f"{s['value']:g}"
+        self.modes[self.mode].setChecked(True)
+        self.show_value('')
+
+    def set_mode(self, mode):
+        if mode != self.mode:
+            self.mode, self.text = mode, f'{self.defaults[mode]:g}'
+        self.show_value('')
+
+    def type(self, ch):
+        if ch == '.' and '.' in self.text or len(self.text) >= 8:
+            return
+        self.text += ch
+        self.show_value('')
+
+    def delete(self):
+        self.text = self.text[:-1]
+        self.show_value('')
+
+    def setting(self):
+        try:
+            return {'mode': self.mode, 'value': float(self.text)}
+        except ValueError:
+            return None
+
+    def show_value(self, message):
+        self.value.setText(self.text or ' ')
+        self.unit.setText('counts/s' if self.mode == 'cps' else '× background')
+        setting = self.setting()
+        ok = setting is not None and valid_setting(setting)
+        self.save_button.setEnabled(ok and setting != self.panel.threshold)
+        if not ok:
+            message = 'Type a number above 0.' if self.mode == 'cps' else \
+                'Type a number above 1 (at 1 the background itself would count as contamination).'
+        self.problem.setText(message or f"In use: {threshold_text(self.panel.threshold)}")
+
+    def save(self):
+        setting = self.setting()
+        if setting is None or not valid_setting(setting):
+            return
+        self.panel.set_threshold(setting)
+        self.show_value(f'Saved. In use: {threshold_text(setting)}')
+
+
 class Panel(QtWidgets.QMainWindow):
     def __init__(self, node, executor, params):
         super().__init__()
@@ -1168,6 +1317,9 @@ class Panel(QtWidgets.QMainWindow):
         executor.add_node(self.session)
         self.apps = apps.AppSession(repo, params['launch_stop_timeout'])
         executor.add_node(self.apps)
+        # The contamination threshold (Settings screen; config/coverage.yaml until one is saved), latched for app 3.
+        self.threshold = library.load_threshold(self.maps_dir, default_setting(self.settings['radiation']))
+        self.session.set_threshold(self.threshold)
         self.setWindowTitle('NALA')
         # The panel reads the battery itself (config/battery.yaml, the same settings as battery_node).
         self.battery_cfg = yaml.safe_load((repo / 'config' / 'battery.yaml').read_text())['battery_node']['ros__parameters']
@@ -1181,7 +1333,8 @@ class Panel(QtWidgets.QMainWindow):
         self.planning = PlanningScreen(self)
         self.scan = ScanScreen(self)
         self.app = AppScreen(self)
-        for screen in (self.maps, self.map, self.planning, self.scan, self.app):
+        self.settings_screen = SettingsScreen(self)
+        for screen in (self.maps, self.map, self.planning, self.scan, self.app, self.settings_screen):
             self.stack.addWidget(screen)
         self.timer = QtCore.QTimer(self)
         self.timer.timeout.connect(self.tick)
@@ -1206,6 +1359,15 @@ class Panel(QtWidgets.QMainWindow):
     def show_maps(self):
         self.maps.refresh()
         self.stack.setCurrentWidget(self.maps)
+
+    def show_settings(self):
+        self.settings_screen.open()
+        self.stack.setCurrentWidget(self.settings_screen)
+
+    def set_threshold(self, setting):
+        library.save_threshold(self.maps_dir, setting)
+        self.threshold = dict(setting)
+        self.session.set_threshold(self.threshold)
 
     def open_map(self, entry):
         self.stack.setCurrentWidget(self.map)

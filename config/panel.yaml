@@ -12,7 +12,7 @@ nala_panel:
     update_period: 0.3            # s, how often the screen shows new robot data while driving
     manual_period: 0.05           # s, how often a held arrow button sends its command (drive by hand)
     heatmap_width_m: 0.15         # m, readings are drawn this wide around the sensor track (display only; hotspots
-                                  # and the keepout zone use the exact cells)
+                                  # use the exact cells)
     launch_stop_timeout: 20.0     # s, wait this long for app 3 to stop before it is killed
     preview_retry: 10.0           # s, ask app 3 for the plan check again if it has not come by then
     battery_period: 2.0           # s, the panel reads the battery voltage (INA219, config/battery.yaml) this often

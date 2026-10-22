@@ -37,9 +37,6 @@ class CoverageMeter(Node):
         self.create_subscription(String,'/coverage/definition',self.definition,LATCHED)
         self.create_subscription(String,'/coverage/sample',self.sample,LATEST)
         self.create_subscription(String,'/coverage/save_report',self.save,LATEST)
-        # Contaminated floor the robot avoids (radiation_node): not counted as missing.
-        self.keepout=None
-        self.create_subscription(OccupancyGrid,'/radiation/keepout',self.keepout_received,LATCHED)
         self.create_timer(self.settings['measurement']['publish_period_s'],self.publish)
 
     def definition(self,msg):
@@ -54,10 +51,6 @@ class CoverageMeter(Node):
             self.meter=Meter(grid,mask.reshape(cells.shape),self.radius,max_gap=self.settings['measurement']['max_sample_gap_s'],linear=self.linear,angular=self.angular,translation_slack=self.settings['measurement']['translation_slack_m'],rotation_slack=self.settings['measurement']['rotation_slack_deg'],offset=self.settings['geometry']['sensor_offset_m'])
             self.generation=d['generation'];self.fault='';self.sample_seq=0;self.last_active_sample_seq=0;self.last_sample=0.
         except (ValueError,KeyError,IndexError,TypeError) as e:self.fault=str(e)
-
-    def keepout_received(self,msg):
-        if (msg.info.height,msg.info.width)==self.base.cells.shape:
-            self.keepout=np.asarray(msg.data,np.int8).reshape(msg.info.height,msg.info.width)>0
 
     def sample(self,msg):
         if self.meter is None:return
@@ -75,7 +68,7 @@ class CoverageMeter(Node):
     def publish(self):
         if self.meter is None:return
         if time.monotonic()-self.last_sample>self.settings['measurement']['max_sample_gap_s']:self.meter.previous=None
-        data={**self.meter.report(self.keepout),'config_hash':self.settings.hash,'sample_seq':self.sample_seq,'last_active_sample_seq':self.last_active_sample_seq,'generation':self.generation,'map_id':self.base.identity,
+        data={**self.meter.report(),'config_hash':self.settings.hash,'sample_seq':self.sample_seq,'last_active_sample_seq':self.last_active_sample_seq,'generation':self.generation,'map_id':self.base.identity,
               'known_free_m2':float(self.base.free.sum()*self.base.resolution**2),
               'fault':self.fault}
         # (The covered cells are /coverage/covered; this message used to carry them as a list too, which every
@@ -128,7 +121,7 @@ class CoverageMeter(Node):
             if d['generation']!=self.generation:return
             self.output.mkdir(parents=True,exist_ok=True)
             dest=self.output/('coverage_'+self.generation+'.json')
-            data={**d,**self.meter.report(self.keepout),'map_id':self.base.identity,'coverage_disk_radius_m':self.radius,
+            data={**d,**self.meter.report(),'map_id':self.base.identity,'coverage_disk_radius_m':self.radius,
                   'sensor_offset_m':self.meter.offset,
                   'denominator_indices':np.flatnonzero(self.meter.denominator).tolist(),
                   'covered_indices':np.flatnonzero(self.meter.covered).tolist(),'actual_trajectory':self.meter.trajectory,'effective_config':self.settings.values,'config_hash':self.settings.hash,

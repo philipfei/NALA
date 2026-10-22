@@ -55,10 +55,9 @@ class DriveSession(Node):
         self.covered = None          # bool mask (rows, cols) in the map grid: floor the sensor actually covered
         self.route = []
         self.trail = []              # actual trail: trusted measured poses only (the coverage meter)
-        self.measurement = {}        # coverage meter: covered / coverable / avoided m2
+        self.measurement = {}        # coverage meter: covered / coverable m2
         self.gate = {}               # velocity gate state (fault = STOP latched)
         self.heatmap = None          # float32 (rows, cols): highest counts/s per cell, NaN = no reading
-        self.keepout = None          # bool (rows, cols): contaminated floor plus margin, avoided
         self.hotspots = []
         self.radiation = {}          # background, threshold, ...
         self.changes = None          # int8 (rows, cols): 100 new object, 50 removed object, 0 unchanged (mapchange_node)
@@ -73,12 +72,13 @@ class DriveSession(Node):
         self.create_subscription(String, '/coverage/measurement', self._measurement, LATEST)
         self.create_subscription(String, '/safety/state', self._gate, LATEST)
         self.create_subscription(Image, '/radiation/heatmap', self._heatmap, LATCHED)
-        self.create_subscription(OccupancyGrid, '/radiation/keepout', self._keepout, LATCHED)
         self.create_subscription(String, '/radiation/hotspots', self._hotspots, LATCHED)
         self.create_subscription(String, '/radiation/state', self._radiation, LATEST)
         self.create_subscription(OccupancyGrid, '/map_changes', self._changes, LATCHED)
         self.create_subscription(String, '/coverage/located', self._located, LATEST)
         self.checked_pub = self.create_publisher(String, '/radiation/mark_checked', 10)
+        # The operator's contamination threshold (Settings screen), latched: app 3's nodes get it when they start.
+        self.threshold_pub = self.create_publisher(String, '/radiation/threshold', LATCHED)
         self.clients_ = {name: self.create_client(Trigger, name) for name in TRIGGERS}
         self.teleop = None           # created when the launch starts (it reads the config)
 
@@ -112,9 +112,6 @@ class DriveSession(Node):
     def _heatmap(self, msg):
         self.heatmap = np.frombuffer(bytes(msg.data), '<f4').reshape(msg.height, msg.width).copy()
 
-    def _keepout(self, msg):
-        self.keepout = np.asarray(msg.data, np.int8).reshape(msg.info.height, msg.info.width) > 0
-
     def _hotspots(self, msg):
         self.hotspots = json.loads(msg.data)
 
@@ -139,7 +136,7 @@ class DriveSession(Node):
     def start_launch(self, map_yaml, plan_yaml, output_dir):
         self.output_dir = Path(output_dir)
         self.state, self.pose, self.covered, self.route, self.message = {}, None, None, [], ''
-        self.trail, self.measurement, self.gate, self.heatmap, self.keepout = [], {}, {}, None, None
+        self.trail, self.measurement, self.gate, self.heatmap = [], {}, {}, None
         self.hotspots, self.radiation, self.changes, self.located = [], {}, None, {}
         self.preview_asked = -math.inf
         log = open(self.output_dir / 'launch.log', 'w')
@@ -216,6 +213,10 @@ class DriveSession(Node):
 
     def stop_active(self):
         return self.gate.get('fault') == STOP_FAULT
+
+    def set_threshold(self, setting):
+        """{'mode': 'cps' | 'background', 'value': float} to the supervisor and the radiation node."""
+        self.threshold_pub.publish(json_msg(setting))
 
     def mark_checked(self, hotspot_id):
         self.checked_pub.publish(json_msg({'id': int(hotspot_id)}))

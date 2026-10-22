@@ -133,15 +133,13 @@ def scan_screen(window, app, monkeypatch):
     grid = screen.grid
     heat = np.full(grid.cells.shape, np.nan, np.float32)
     covered = np.zeros(grid.cells.shape, bool)
-    keepout = np.zeros(grid.cells.shape, bool)
     for x in np.arange(0.2, 2.2, 0.05):                       # a scanned stripe at y = -3.0
         rc = grid.cell((x, -3.0))
         heat[rc] = 30.0
         covered[max(rc[0] - 10, 0):rc[0] + 10, rc[1]] = True
     rc = grid.cell((1.9, -3.0))
     heat[rc] = 400.0
-    keepout[rc[0] - 4:rc[0] + 5, rc[1] - 4:rc[1] + 5] = True
-    session.heatmap, session.covered, session.keepout = heat, covered, keepout
+    session.heatmap, session.covered = heat, covered
     session.radiation = {'background': 30.0, 'threshold': 60.0}
     changes = np.zeros(grid.cells.shape, np.int8)              # a cabinet moved: new at one place, removed at another
     r, c = grid.cell((0.6, -2.2))
@@ -151,7 +149,7 @@ def scan_screen(window, app, monkeypatch):
     session.changes = changes
     session.hotspots = [{'id': 1, 'peak': 400.0, 'x': 1.9, 'y': -3.0, 'first_seen': 1.8e9, 'checked': False}]
     session.trail = [[[0.2, -3.0], [1.0, -3.0], [1.7, -3.0]]]
-    session.measurement = {'covered_m2': 4.2, 'coverable_m2': 9.7, 'avoided_m2': 0.2}
+    session.measurement = {'covered_m2': 4.2, 'coverable_m2': 9.7}
     session.pose = (1.7, -3.0, 0.0)
     return window.scan, session
 
@@ -232,6 +230,63 @@ def test_scan_screen_shows_progress_heatmap_hotspots_and_controls(panel, monkeyp
     monkeypatch.setattr(scan, 'ask_home', lambda: True)         # Stop and go home
     scan.home_button.click()
     assert calls[-1] == ('go_home',)
+
+
+def test_contamination_found_shows_a_red_warning_until_acknowledged_and_the_spot(panel, monkeypatch):
+    # User 2026-10-22: full-screen red warning with the values, until Acknowledge; then the spot on the map.
+    window, app = panel
+    scan, session = scan_screen(window, app, monkeypatch)
+    found = {'time': 1.8e9, 'readings': [20.0, 480.0, 510.0], 'threshold_cps': 100.0,
+             'setting': {'mode': 'cps', 'value': 100.0}, 'background': 9.0, 'xy': [1.9, -3.0], 'approximate': False,
+             'state': 'SWEEP'}
+    session.state = {'state': 'FAILED', 'reason': 'CONTAMINATION_FOUND', 'generation': 'g1', 'fraction': .4,
+                     'trusted': True, 'contamination': found, 'threshold': {'mode': 'cps', 'value': 100.0}}
+    scan.refresh()
+    app.processEvents()
+    assert scan.alarm.isVisible() and scan.alarm.geometry() == scan.rect()
+    text = scan.alarm_text.text()
+    assert '20, 480, 510 counts/s' in text and '100 counts/s' in text and 'x 1.90 m, y -3.00 m' in text
+    assert scan.view.found == found and 'Contamination found' in scan.status.text()
+    assert 'Stops at 100 counts/s' in scan.area.text()
+    shot(window, '9_contamination_found')
+    scan.acknowledge()
+    scan.refresh()
+    app.processEvents()
+    assert not scan.alarm.isVisible() and scan.view.found == found        # the spot stays on the map
+    shot(window, '9_contamination_spot')
+    # A new stop (another task) shows the warning again.
+    session.state = {**session.state, 'generation': 'g2'}
+    scan.refresh()
+    assert scan.alarm.isVisible()
+
+
+def test_settings_screen_sets_the_contamination_threshold_for_every_map(panel, maps_dir, monkeypatch):
+    window, app = panel
+    sent = []
+    monkeypatch.setattr(window.session, 'set_threshold', lambda s: sent.append(dict(s)))
+    QTest.mouseClick(next(b for b in window.maps.findChildren(ui.QtWidgets.QPushButton) if b.text() == 'Settings'),
+                     ui.QtCore.Qt.LeftButton)
+    screen = window.settings_screen
+    assert window.stack.currentWidget() is screen
+    rad = window.settings['radiation']
+    assert window.threshold == {'mode': rad['threshold_mode'], 'value': float(rad['threshold_factor'] if
+                                rad['threshold_mode'] == 'background' else rad['threshold_cps'])}
+    screen.modes['cps'].setChecked(True)
+    for _ in range(8):
+        screen.delete()
+    for k in '25.5':
+        screen.type(k)
+    assert screen.save_button.isEnabled() and screen.value.text() == '25.5'
+    app.processEvents()
+    shot(window, '10_settings')
+    screen.save()
+    assert window.threshold == {'mode': 'cps', 'value': 25.5} and sent[-1] == window.threshold
+    assert library.load_threshold(maps_dir, None) == {'mode': 'cps', 'value': 25.5}
+    screen.modes['background'].setChecked(True)
+    for _ in range(8):
+        screen.delete()
+    screen.type('1')                                     # 1 x background: the background itself would count
+    assert not screen.save_button.isEnabled() and 'above 1' in screen.problem.text()
 
 
 def test_map_widget_tap_drag_and_pinch(panel):

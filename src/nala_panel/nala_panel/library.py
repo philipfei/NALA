@@ -4,6 +4,7 @@ maps/<name>/map.yaml + map.pgm      from app 2 (scripts/save_map.sh)
 maps/<name>/base_station.yaml       set on the panel
 maps/<name>/plans/<time>.yaml/.png  coverage_tool plans
 maps/<name>/runs/<time>/            task reports of app 3
+maps/contamination_threshold.yaml   the operator's contamination threshold (Settings screen), for every map
 """
 from dataclasses import dataclass
 import datetime
@@ -15,6 +16,24 @@ from nala_coverage.plan_file import check_base_station, load_plan
 MAP_FILE = 'map.yaml'
 PLANS = 'plans'
 RUNS = 'runs'
+THRESHOLD_FILE = 'contamination_threshold.yaml'
+
+
+def load_threshold(maps_dir, default):
+    """The operator's contamination threshold {'mode', 'value'}, or `default` (config/coverage.yaml) if none is saved."""
+    from nala_coverage.radiation import valid_setting
+    path = Path(maps_dir) / THRESHOLD_FILE
+    try:
+        setting = yaml.safe_load(path.read_text())
+    except (OSError, yaml.YAMLError):
+        return dict(default)
+    return {'mode': setting['mode'], 'value': float(setting['value'])} if valid_setting(setting) else dict(default)
+
+
+def save_threshold(maps_dir, setting):
+    Path(maps_dir).mkdir(parents=True, exist_ok=True)
+    (Path(maps_dir) / THRESHOLD_FILE).write_text(yaml.safe_dump({'mode': setting['mode'],
+                                                                'value': float(setting['value'])}))
 
 
 @dataclass
@@ -172,25 +191,28 @@ def run_summary(info):
     when = info['when'].strftime('%d-%m-%Y %H:%M') if info['when'] else info['name']
     cov = f"{100 * info['fraction']:.0f} % covered" if info['fraction'] is not None else 'no coverage data'
     ended = {'FINISHED': 'finished', 'CANCELED': 'cancelled', 'FAILED': 'failed', 'PAUSED': 'stopped while paused'}
+    if info.get('reason') == 'CONTAMINATION_FOUND':
+        return f"{when}\n{cov}, CONTAMINATION FOUND"
     return f"{when}\n{cov}, {ended.get(info['state'], info['state'].lower() or 'unknown')}"
 
 
 def last_run(entry):
-    """The newest run of a map with radiation data: heatmap, keepout, hotspots and the actual trail, or None."""
+    """The newest run of a map with radiation data: heatmap, hotspots and the actual trail, or None."""
     runs = [r for r in list_runs(entry) if (r['folder'] / 'heatmap.npz').is_file()]
     return load_run(runs[0]['folder']) if runs else None
 
 
 def load_run(folder):
-    """One run's results: heatmap, keepout, hotspots, the actual trail, the covered floor and map changes."""
+    """One run's results: heatmap, hotspots, the actual trail, the covered floor, map changes and where contamination
+    ended the scan (or None)."""
     import json
     import numpy as np
     folder = Path(folder)
-    value = keepout = None
+    value = None
     threshold, background = float('nan'), float('nan')
     if (folder / 'heatmap.npz').is_file():
         data = np.load(folder / 'heatmap.npz')
-        value, keepout = data['value'], data['keepout']
+        value = data['value']
         threshold, background = float(data['threshold']), float(data['background'])
     hotspots = json.loads((folder / 'hotspots.json').read_text()) if (folder / 'hotspots.json').is_file() else {}
     trail = []                     # segments of trusted measured poses; no line across a gap in time
@@ -207,11 +229,18 @@ def load_run(folder):
             last = stamp
         covered = report.get('covered_indices')
         fraction = report.get('fraction')
+    contamination = None                         # the supervisor's task report: contamination found
+    tasks = sorted(folder.glob('task_*.json'))
+    if tasks:
+        try:
+            contamination = json.loads(tasks[-1].read_text()).get('contamination')
+        except (OSError, ValueError):
+            pass
     appeared = vanished = None                   # map changes seen during the run (mapchange_node)
     if (folder / 'changes.npz').is_file():
         changes = np.load(folder / 'changes.npz')
         appeared, vanished = changes['appeared'], changes['vanished']
-    return {'name': folder.name, 'folder': folder, 'value': value, 'keepout': keepout,
+    return {'name': folder.name, 'folder': folder, 'value': value, 'contamination': contamination,
             'threshold': threshold if np.isfinite(threshold) else None,
             'background': background, 'hotspots': hotspots.get('hotspots', []), 'trail': trail,
             'covered': covered, 'fraction': fraction, 'appeared': appeared, 'vanished': vanished}

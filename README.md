@@ -121,7 +121,7 @@ NALA/
 │   ├── mcu_protocol.md                    Pi-side summary of the Pi <-> MCU UART protocol, first hardware test
 │   ├── imu_ekf.md                         [2] IMU wiring and setup, EKF design: why only the gyro turn rate
 │   ├── battery.md                         [1] INA219 battery voltage monitor: wiring, code, /battery_state data format
-│   └── scintillator.md                    [3] Scintillator input (/scintillator/count_rate), heatmap, hotspots, avoidance
+│   └── scintillator.md                    [3] Scintillator input (/scintillator/count_rate), heatmap, hotspots, contamination stop
 │
 ├── firmware/                              MCU motor driver (ATmega328PB), Microchip Studio project.
 │   │                                      Owned by a teammate, who builds and flashes it. v2.3.0 (by Claude).
@@ -284,10 +284,11 @@ NALA/
     │   ├── nala_coverage/
     │   │   ├── __init__.py                [3] Python package marker
     │   │   ├── supervisor.py              [3] Mission: preview/start/pause/resume/cancel/go home, background measurement,
-    │   │   │                                  Nav2 actions, detours, avoiding contaminated floor, return to base,
+    │   │   │                                  Nav2 actions, detours, contamination stop (ends the task), return to base,
     │   │   │                                  drive-ins into pockets (SPUR: in forwards, out backwards over measured floor)
-    │   │   ├── radiation.py               [3] Radiation map: background, readings at trusted poses, hotspots, keepout (no ROS)
-    │   │   ├── radiation_node.py          [3] Scintillator readings -> heatmap, hotspots, keepout zone, run folder files
+    │   │   ├── radiation.py               [3] Radiation map: background, readings at trusted poses, hotspots; contamination
+    │   │   │                                  threshold (counts/s or x background) and alarm (2 of the last 3 readings) (no ROS)
+    │   │   ├── radiation_node.py          [3] Scintillator readings -> heatmap, hotspots, run folder files
     │   │   ├── mapchange.py               [3] Map changes: new objects and removed objects from LiDAR scans (no ROS)
     │   │   ├── mapchange_node.py          [3] LiDAR scans at trusted poses -> /map_changes, changes.npz in the run folder
     │   │   ├── locate.py                  [3] Find the robot on the map from one scan; on the base station / backwards (no ROS)
@@ -319,7 +320,7 @@ NALA/
     │       ├── test_buttons.py            [3] Unit tests for buttons.py
     │       ├── test_xbox_pause.py         [3] Loopback ROS tests of xbox_pause with a fake /coverage/pause service
     │       └── test_ros.py                [3] Loopback ROS tests: gate, supervisor, meter, plan driving, return to base,
-    │                                      background, avoiding contaminated floor, go home
+    │                                      background, contamination stop, go home
     │
     ├── nala_interfaces/                   [3] Message types (ament_cmake, rosidl)
     │   ├── CMakeLists.txt                 [3] Build the messages
@@ -337,15 +338,18 @@ NALA/
         │   ├── __init__.py                (empty) [3] Python package marker. Stays empty
         │   ├── apps.py                    [1][2] Start/stop app 1 / app 2 from the screen, app 2's live map, save_map.sh,
         │   │                                  map name check (no Qt)
-        │   ├── library.py                 [3] Map library: maps, base station, plans, can a plan be driven, last run (no ROS, no Qt)
+        │   ├── library.py                 [3] Map library: maps, base station, plans, can a plan be driven, runs, the saved
+        │   │                                  contamination threshold (no ROS, no Qt)
         │   ├── planning.py                [3] Run coverage_tool/plan_cli.py, check start and area, cancel (no Qt)
         │   ├── drive.py                   [3] Start/stop app 3, follow its state and the radiation data; Start/Pause/Resume/
-        │   │                                  Go home/STOP, mark checked, hand control (no Qt)
-        │   ├── mapwidget.py               [3] Map drawing (QPainter): coverage, heatmap, keepout, actual trail, hotspots, robot; touch
+        │   │                                  Go home/STOP, mark checked, hand control, send the threshold (no Qt)
+        │   ├── mapwidget.py               [3] Map drawing (QPainter): coverage, heatmap, actual trail, hotspots, contamination
+        │   │                                  spot, robot; touch
         │   ├── battery.py                 [3] Battery voltage for the screen: reads the INA219, moving average, text (no Qt)
         │   ├── style.py                   [3] Colours and stylesheet after the scan screen design
-        │   └── ui.py                      [3] The screens: Maps, Map (plans, new plan, results), Planning, Scan; App (apps 1
-        │                                      and 2) with an on-screen keyboard for the map name
+        │   └── ui.py                      [3] The screens: Maps, Map (plans, new plan, results), Planning, Scan (red
+        │                                      contamination warning); App (apps 1 and 2) with an on-screen keyboard for the
+        │                                      map name; Settings (contamination threshold, keypad)
         └── test/
             ├── conftest.py                [3] Test map library (the example room map)
             ├── test_battery.py            [3] Unit tests for battery.py
@@ -627,8 +631,12 @@ The panel starts by itself after the Pi boots (`scripts/setup_pi_screen.sh`). By
    - **Start** becomes active when the plan is checked. **The robot only moves after Start.** It first measures
      the radiation background on the base station (*Measuring the background*), then drives.
    - the map shows what really happened, from the measured poses only: the trail (blue), the floor the sensor
-     covered (teal), the scintillator readings (heatmap, contaminated floor magenta), the avoided floor, the
-     numbered hotspots, the robot and the sensor reach;
+     covered (teal), the scintillator readings (heatmap, contaminated floor magenta), the numbered hotspots, the
+     robot and the sensor reach;
+   - **contamination found** (2 of the last 3 readings at the threshold set under **Settings** on the map list:
+     counts per second or times the background): the robot stops, the scan ends, and the whole screen turns red
+     with the readings, the threshold, the time and the sensor position, until **Acknowledge**. Then the map shows
+     the spot (red rings). The robot stays where it is: no resume, no driving home; move it by hand;
    - while driving the screen shows the large progress view (%, state, bar, hotspot alert); **Show map** shows the
      map, **Big view** goes back;
    - tap a hotspot: highest reading, background, position, first seen, **Mark as checked**;
@@ -720,9 +728,10 @@ passage it uses is about 1.06 m. When the sensor position and size are known, ch
   10 deg). The radiation background is measured there first (`docs/scintillator.md`; without scintillator
   readings the task pauses with `NO_SCINTILLATOR`, or set `radiation.enabled: false`). Then Nav2's planner
   (`ComputePathToPose`) drives the robot to the plan start if it is not there.
-- **Contaminated floor:** readings at 2x background or more make a keepout zone (plus a margin). Plan stretches in
-  it are skipped (`CONTAMINATION_AVOIDED` in the report, counted as avoided, not as missing), and Nav2's planner
-  goes around it (high cost in the global costmap).
+- **Contamination:** 2 of the last 3 readings at the operator's threshold (robot screen Settings: counts/s or x
+  background; default in `config/coverage.yaml` `radiation`) stop the robot and end the task (`FAILED`,
+  `CONTAMINATION_FOUND`, details under `contamination` in the task report). The robot never drives around it
+  (`docs/scintillator.md`).
 - **Go home:** `/coverage/go_home` (the panel's Stop and go home) stops the plan and drives back to the base station.
 - **Following:** the plan's drivable path is split at its stop corners. Each piece is followed forwards with
   Nav2's controller (`FollowPath`, Regulated Pure Pursuit, no reversing); the robot turns on the spot between pieces.

@@ -120,21 +120,11 @@ global_costmap:
       always_send_full_costmap: true
       plugins:
       - static_layer
-      - keepout_layer
       - obstacle_layer
       - inflation_layer
       static_layer:
         plugin: nav2_costmap_2d::StaticLayer
         map_subscribe_transient_local: true
-      # Contaminated floor (radiation_node, /radiation/keepout, cells at radiation.keepout_cost in coverage.yaml):
-      # high cost, not a wall, so detours and the way back go around it, and a robot standing in it can still plan out.
-      keepout_layer:
-        plugin: nav2_costmap_2d::StaticLayer
-        map_topic: /radiation/keepout
-        map_subscribe_transient_local: true
-        subscribe_to_updates: false
-        use_maximum: true
-        trinary_costmap: false
       obstacle_layer:
         plugin: nav2_costmap_2d::ObstacleLayer
         observation_sources: scan

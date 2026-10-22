@@ -4,7 +4,9 @@ followed forwards and the robot turns on the spot between pieces. After the plan
 robot back to the base station (RETURN_PLAN, RETURN).
 
 Radiation (radiation_node): a task starts with the background measurement on the base station (BACKGROUND).
-Contaminated floor (/radiation/keepout) is avoided: plan stretches in it are skipped (CONTAMINATION_AVOIDED).
+Contamination (user, 2026-10-22): alarm_readings of the last alarm_window scintillator readings at or above the
+operator's threshold (robot screen: counts/s or x background, /radiation/threshold) during a task stop the robot
+(like a pause: the gate sends zero at once) and end the task: FAILED, CONTAMINATION_FOUND. The robot never drives around contamination.
 /coverage/go_home stops the plan and drives back to the base station.
 
 Drive-ins into pockets: driving in (plan kind 'spur') is a normal piece Nav2 follows; backing out ('reverse',
@@ -33,6 +35,7 @@ from nav2_msgs.action import ComputePathToPose, FollowPath
 from std_msgs.msg import String
 from std_srvs.srv import Trigger, SetBool, Empty
 from diagnostic_msgs.msg import DiagnosticArray
+from nala_interfaces.msg import CountRate
 from visualization_msgs.msg import Marker, MarkerArray
 from . import base_station
 from .geometry import Grid, wrap
@@ -40,6 +43,7 @@ from .state import Mission
 from .params import node_settings
 from .planning import densify, points_of, poly_target, length
 from .health import Trust
+from .radiation import Alarm, default_setting, threshold, valid_setting
 from .plan_file import check_base_station, load_plan, spur_yaw
 
 # Targets the supervisor drives itself in state SPUR: backing out of a pocket (driving in is a normal piece).
@@ -76,9 +80,10 @@ class Supervisor(Node):
         self.station=base_station.load(self.station_file,self.map_frame)
         base_station.check(self.base,self.station,cfg.collision)
         self.returning=False
-        # Radiation: background measured once per task; contaminated floor is avoided.
+        # Radiation: background measured once per task; contamination found ends the task.
         self.radiation={};self.radiation_time=0.;self.background_requested=None;self.background_done=False
-        self.keepout=None;self.keepout_changed=False
+        rad=cfg['radiation'];self.threshold_setting=default_setting(rad)
+        self.alarm=Alarm(rad['alarm_readings'],rad['alarm_window']);self.contamination=None
         h,w=self.base.cells.shape
         self.region=self.base.world([[-.5,-.5],[-.5,w-.5],[h-.5,w-.5],[h-.5,-.5]]).tolist()
         self.collision=cfg.collision;self.radius=cfg['geometry']['coverage_disk_radius_m']
@@ -125,7 +130,8 @@ class Supervisor(Node):
         self.create_subscription(OccupancyGrid,'/coverage/covered',self.covered_received,LATCHED)
         self.create_subscription(String,'/coverage/meter_config',self.meter_config_received,LATCHED)
         self.create_subscription(String,'/radiation/state',self.radiation_received,LATEST)
-        self.create_subscription(OccupancyGrid,'/radiation/keepout',self.keepout_received,LATCHED)
+        self.create_subscription(String,'/radiation/threshold',self.threshold_received,LATCHED)
+        self.create_subscription(CountRate,'/scintillator/count_rate',self.count_rate,10)
         self.background_client=self.create_client(Trigger,'/radiation/measure_background')
         self.create_subscription(PoseStamped,'/coverage/test_goal',self.goal_received,10)
         # Where the locator finds the robot from the scan (locator_node): Start needs it on the base station.
@@ -239,11 +245,36 @@ class Supervisor(Node):
         try:self.radiation=decode(msg);self.radiation_time=time.monotonic()
         except ValueError:pass
 
-    def keepout_received(self,msg):
-        if (msg.info.height,msg.info.width)!=self.base.cells.shape:return
-        keepout=np.asarray(msg.data,np.int8).reshape(msg.info.height,msg.info.width)>0
-        if self.keepout is None or not np.array_equal(keepout,self.keepout):
-            self.keepout=keepout;self.keepout_changed=True
+    def threshold_received(self,msg):
+        try:setting=decode(msg)
+        except ValueError:return
+        if valid_setting(setting):self.threshold_setting={'mode':setting['mode'],'value':float(setting['value'])}
+
+    def threshold(self):
+        """Counts/s of contamination now, or None (factor mode before this task's background is measured)."""
+        background=self.radiation.get('background') if self.background_done else None
+        return threshold(self.threshold_setting,background)
+
+    def count_rate(self,msg):
+        """Every reading during a task (also paused, and on the way home: user 2026-10-22) against the threshold."""
+        if not self.settings['radiation']['enabled'] or self.mission.state in IDLE_STATES:return
+        limit=self.threshold()
+        if limit is None:return
+        if self.alarm.add(msg.counts_per_second,limit):self.contamination_found(limit)
+
+    def contamination_found(self,limit):
+        """Stop as for a pause (the gate sends zero at once; ~2 cm coasting from 0.12 m/s) and end the task; the robot
+        stays where it stopped."""
+        x,y,h=self.pose if self.pose else (float('nan'),)*3
+        self.contamination={'time':time.time(),'readings':[round(c,2) for c,_ in self.alarm.last],
+                            'threshold_cps':round(limit,2),'setting':dict(self.threshold_setting),
+                            'background':self.radiation.get('background') if self.background_done else None,
+                            'xy':[round(x+self.offset*math.cos(h),3),round(y+self.offset*math.sin(h),3)],
+                            'approximate':not self.trusted,'state':self.mission.state}
+        self.turn_pub.publish(Twist());self.reverse_pub.publish(Twist())
+        self.slot.cancel();self.pending_phase=None;self.manual=False
+        self.mission.events.append({'time':time.monotonic(),'reason':'CONTAMINATION_FOUND',**self.contamination})
+        self.mission.change('FAILED','CONTAMINATION_FOUND',time.monotonic());self.save_report()
 
     def meter_config_received(self,msg):
         try:self.meter_config_hash=decode(msg)['config_hash']
@@ -417,6 +448,7 @@ class Supervisor(Node):
         self.covered_grid=None         # until the meter sends this task's measured floor
         self.targets=list(self.preview['targets']);self.current=None;self.pending_phase='NEXT';self.stuck=None;self.returning=False
         self.phase_since=time.monotonic();self.manual=False;self.background_done=False
+        self.alarm.reset();self.contamination=None
         if self.settings['radiation']['enabled']:self.begin_background()
         return 'Task accepted; preparation checks precede motion'
 
@@ -529,43 +561,6 @@ class Supervisor(Node):
         self.pending_phase='RETURN';self.phase_since=now
         return 'Stopping the plan; driving back to the base station'
 
-    def avoid_keepout(self,target):
-        """The parts of a target outside the contaminated floor, each a target of its own (driven to first)."""
-        pts=points_of(target)
-        if self.keepout is None or not self.keepout.any():return [target]
-        if getattr(target,'kind','') in SELF_DRIVEN:return [target]      # checked as a whole (begin_spur)
-        p=getattr(target,'drive_in',None)
-        if p is not None:
-            k=next(i for i,x in enumerate(pts) if math.dist(x,p)<1e-6)
-            into=densify(pts[k:],self.base.resolution)
-            if any(self.base.valid(rc) and self.keepout[rc] for rc in map(self.base.cell,into)):
-                # Contamination in the pocket: no drive-in (and no back-out); the route up to its start as usual.
-                self.mission.events.append({'time':time.monotonic(),'reason':'SPUR_SKIPPED_CONTAMINATION','xy':list(p)})
-                if self.targets and self.targets[0] is target and len(self.targets)>1 and getattr(self.targets[1],'kind','')=='reverse':
-                    del self.targets[1]
-                if k<1:return []
-                head=poly_target(pts[:k+1],'plan');head.end_yaw=None;head.drive_in=None
-                return self.avoid_keepout(head)
-        dense=densify(pts,self.base.resolution) if len(pts)>1 else pts
-        inside=[self.base.valid(rc) and bool(self.keepout[rc]) for rc in map(self.base.cell,dense)]
-        if not any(inside):return [target]
-        runs=[];run=[]
-        for p,bad in zip(dense,inside):
-            if bad:
-                if run:runs.append(run);run=[]
-            else:run.append(list(p))
-        if run:runs.append(run)
-        skipped=sum(math.dist(a,b) for (a,b),bad in zip(zip(dense,dense[1:]),inside[1:]) if bad)
-        self.mission.blocked.append({'xy':list(dense[inside.index(True)]),'length_m':round(skipped,3),'radius':0.,
-                                     'reason':'CONTAMINATION_AVOIDED','time':time.monotonic()})
-        out=[]
-        for i,r in enumerate(runs):
-            n=poly_target(r if len(r)>1 else r*2,'plan');n.connect=True
-            n.end_yaw=getattr(target,'end_yaw',None) if i==len(runs)-1 and not inside[-1] else None
-            n.drive_in=getattr(target,'drive_in',None) if i==len(runs)-1 and not inside[-1] else None
-            out.append(n)
-        return out
-
     def cancel_service(self):
         self.slot.cancel();self.manual=False;self.pending_phase=None
         self.mission.change('CANCELED','OPERATOR_CANCEL',time.monotonic());self.save_report()
@@ -671,10 +666,6 @@ class Supervisor(Node):
         self.mission.state='PREPARING';self.pending_phase='NEXT';self.phase_since=time.monotonic()
 
     def next_target(self):
-        while self.targets:
-            parts=self.avoid_keepout(self.targets[0])
-            self.targets[0:1]=parts
-            if parts:break
         self.current=self.targets.pop(0) if self.targets else None;self.sweep_points=None
         if self.current is None:self.finish_pass();return
         self.target_since=time.monotonic()
@@ -793,7 +784,7 @@ class Supervisor(Node):
         """Backing out of a pocket (plan kind 'reverse': from Q straight back to P, facing in), driven by spur_step.
         Driving in is a normal piece that Nav2 follows (user 2026-10-20); only backing out is the supervisor's.
         It starts only when every cell the outline will pass is floor the meter has measured (or where the robot
-        stood at P before driving in) and not contaminated."""
+        stood at P before driving in)."""
         t=self.current;q,p=points_of(t)[0],points_of(t)[-1];now=time.monotonic()
         cfg=self.settings['spur'];yaw_=spur_yaw(q,p,'reverse');u=(math.cos(yaw_),math.sin(yaw_))
         # The line is followed in the odometry frame (smooth; AMCL corrections jump a few cm and degrees: robot
@@ -818,8 +809,6 @@ class Supervisor(Node):
         past=[p[0]-u[0]*cfg['end_tolerance_m'],p[1]-u[1]*cfg['end_tolerance_m']]
         swept=self.grid.outline_swept([x,y],past,yaw_,self.outline,0.)
         if swept is None or (swept&~self.grid.free).any():self.pause('SPUR_REVERSE_BLOCKED: a wall behind the robot');return
-        if self.keepout is not None and (swept&self.keepout).any():
-            self.pause('SPUR_REVERSE_CONTAMINATION: contaminated floor behind the robot');return
         stood=np.zeros(swept.shape,bool);cells=self.grid.outline_cells((p[0],p[1],yaw_),self.outline,0.)
         if cells is not None:stood[cells]=True
         covered=self.covered_grid if self.covered_grid is not None else np.zeros(swept.shape,bool)
@@ -853,22 +842,17 @@ class Supervisor(Node):
         return bool((beside&zone).any())
 
     def spur_step(self,now):
-        """Back straight out along the line, steering onto it on odometry; obstacles and contamination in the map."""
+        """Back straight out along the line, steering onto it on odometry; obstacles behind it stop it."""
         sp=self.spur;cfg=self.settings['spur'];m=self.settings['motion']
         x,y,h=self.odom_pose if self.odom_pose is not None else self.pose;a=sp['a'];u=(math.cos(sp['yaw']),math.sin(sp['yaw']))
-        mx,my,_=self.pose;mu=(math.cos(sp['map_yaw']),math.sin(sp['map_yaw']))
         along=(x-a[0])*u[0]+(y-a[1])*u[1];side=-(x-a[0])*u[1]+(y-a[1])*u[0];err=wrap(h-sp['yaw'])
         # Aim end_tolerance_m past P: the robot turns there, and stopping short would leave it on the pocket side,
         # closer to walls than the plan allows for turning (simulation 2026-10-20: the rod hit a wall).
         left=sp['length']+cfg['end_tolerance_m']+along
         if left<=cfg['end_tolerance_m']:self.spur_done();return
-        cells=self.grid.outline_cells((mx-mu[0]*cfg['clear_m'],my-mu[1]*cfg['clear_m'],sp['map_yaw']),self.outline,
-                                      self.settings['geometry']['planning_padding_m'])
-        dirty=cells is not None and self.keepout is not None and bool(self.keepout[cells].any())
-        if self.spur_blocked(-1) or dirty:
+        if self.spur_blocked(-1):
             self.reverse_pub.publish(Twist())
-            self.pause('SPUR_REVERSE_CONTAMINATION: contaminated floor behind the robot' if dirty else
-                       'SPUR_REVERSE_BLOCKED: an obstacle behind the robot');return
+            self.pause('SPUR_REVERSE_BLOCKED: an obstacle behind the robot');return
         v=-min(cfg['speed_m_s'],math.sqrt(2*m['linear_accel_m_s2']*left))
         w=-cfg['heading_gain']*err+cfg['track_gain']*side
         msg=Twist();msg.linear.x=v;msg.angular.z=max(-m['angular_rad_s'],min(m['angular_rad_s'],w));self.reverse_pub.publish(msg)
@@ -920,7 +904,8 @@ class Supervisor(Node):
            'temporary_blockages':self.mission.blocked,'target_failures':self.mission.failures,
            'region':'whole_map','collision_radius_m':self.collision,'sensor_offset_m':self.offset,
            'elapsed_s':time.monotonic()-self.mission.started,
-           'config_hash':self.settings.hash,'effective_config':self.settings.values}
+           'config_hash':self.settings.hash,'effective_config':self.settings.values,
+           'contamination':self.contamination,'threshold':self.threshold_setting}
         if self.preview and self.preview.get('plan_file'):
             d['plan_file']=self.preview['plan_file'];d['plan_sha256']=self.preview['plan_sha256']
             d['coverable_robot_radius_m']=self.preview.get('plan_robot_radius_m')
@@ -1013,17 +998,6 @@ class Supervisor(Node):
                 elif now-self.phase_since>=self.settings['radiation']['background_timeout_s']:
                     self.pause('NO_SCINTILLATOR: no background readings within '
                                f"{self.settings['radiation']['background_timeout_s']:g} s")
-            if self.keepout_changed:
-                self.keepout_changed=False
-                # New contamination on the rest of the piece being driven: stop and drive around it.
-                if phase=='SWEEP' and self.sweep_points:
-                    rest=self.plan_remainder()
-                    if any(self.base.valid(rc) and self.keepout[rc] for rc in map(self.base.cell,rest)):
-                        if self.in_drive_in():self.end_drive_in('CONTAMINATION_AHEAD');return
-                        n=poly_target(rest,'plan');n.end_yaw=getattr(self.current,'end_yaw',None);n.connect=True
-                        n.drive_in=getattr(self.current,'drive_in',None)
-                        self.slot.cancel();self.targets.insert(0,n);self.current=None;self.sweep_points=None
-                        self.mission.state='PREPARING';self.pending_phase='NEXT';self.phase_since=now
             # BACKGROUND: the robot stands on the base station, like PREPARING (no motion, no fault pauses).
             if phase in ACTIVE and phase!='BACKGROUND':
                 fault=self.gate.get('fault') or self.inputs.reason()
@@ -1076,7 +1050,8 @@ class Supervisor(Node):
               'located':self.located.get('status','') if now-self.located_time<=self.settings['locator']['max_age_s'] else '',
               'turn_deg':self.located.get('turn_deg'),'auto_resume':self.auto_resumable(now),
               'fraction':self.measurement.get('fraction',0.),'owner':owner,'nav_active':self.nav_active,
-              'skipped_stretches':sum(b.get('reason')=='PLAN_STRETCH_SKIPPED' for b in self.mission.blocked)}
+              'skipped_stretches':sum(b.get('reason')=='PLAN_STRETCH_SKIPPED' for b in self.mission.blocked),
+              'contamination':self.contamination,'threshold':self.threshold_setting}
         self.state_pub.publish(json_msg(data));diagnostic(self,self.diag,'coverage_supervisor',phase,data,int(phase in ('PAUSED','FAILED')))
 
     def publish_visuals(self):

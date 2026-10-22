@@ -1,4 +1,5 @@
-"""Map widget (QPainter): the map with coverage, heatmap, keepout, the actual trail, hotspots and the robot.
+"""Map widget (QPainter): the map with coverage, heatmap, the actual trail, hotspots, the spot where contamination
+ended the scan, and the robot.
 
 Touch: one finger drags the map, two fingers pinch to zoom, a short touch is a tap (tapped(x, y) in map metres,
 or hotspot_tapped(id) on a hotspot). The mouse does the same (wheel = zoom).
@@ -92,6 +93,7 @@ class MapWidget(QtWidgets.QWidget):
         self.sensor_offset = 0.
         self.sensor_radius = 0.
         self.hotspots = []
+        self.found = None                      # contamination found: {'xy': [x, y], 'approximate': bool} (task report)
         self.selected = None
         self.marks = {'start': None, 'area': [], 'area_closed': False, 'pending': None}
         self.scale, self.tx, self.ty = 1., 0., 0.
@@ -111,7 +113,7 @@ class MapWidget(QtWidgets.QWidget):
         self.images = {}
         self.trail, self.plan, self.route, self.hotspots = [], [], [], []
         self._trail_mark = None
-        self.robot = self.station = self.selected = None
+        self.robot = self.station = self.selected = self.found = None
         self.marks = {'start': None, 'area': [], 'area_closed': False, 'pending': None}
         if fit:
             self.fit()
@@ -215,7 +217,7 @@ class MapWidget(QtWidgets.QWidget):
         p.setTransform(image_to_local * local_to_world * world_to_screen)
         p.drawImage(0, 0, self.base)
         for name, on in (('coverage', self.layers['coverage']), ('heat', self.layers['contamination']),
-                         ('keepout', self.layers['contamination']), ('changes', self.layers['changes'])):
+                         ('changes', self.layers['changes'])):
             if on and name in self.images:
                 p.drawImage(0, 0, self.images[name])
         p.restore()
@@ -239,6 +241,8 @@ class MapWidget(QtWidgets.QWidget):
         if self.layers['contamination']:
             for h in self.hotspots:
                 self._diamond(p, h)
+        if self.found and self.found.get('xy') and all(map(math.isfinite, self.found['xy'])):
+            self._found(p)
         if self.robot is not None:
             x, y, yaw = self.robot
             sensor = self.to_screen(x + self.sensor_offset * math.cos(yaw), y + self.sensor_offset * math.sin(yaw))
@@ -268,6 +272,24 @@ class MapWidget(QtWidgets.QWidget):
         p.drawPolygon(QtGui.QPolygonF([QtCore.QPointF(z * .7, 0), QtCore.QPointF(-z * .5, z * .5),
                                        QtCore.QPointF(-z * .25, 0), QtCore.QPointF(-z * .5, -z * .5)]))
         p.restore()
+
+    def _found(self, p):
+        """Where contamination stopped the scan (the sensor): red rings and '!', always shown (not a layer). Dashed
+        when the robot's position was not trusted at that moment (approximate)."""
+        pt = self.to_screen(*self.found['xy'])
+        style_ = QtCore.Qt.DashLine if self.found.get('approximate') else QtCore.Qt.SolidLine
+        p.setBrush(QtCore.Qt.NoBrush)
+        for r, w in ((34, 3), (24, 5)):
+            p.setPen(QtGui.QPen(QtGui.QColor(style.RED), w, style_))
+            p.drawEllipse(pt, r, r)
+        p.setBrush(QtGui.QColor(style.RED))
+        p.setPen(QtCore.Qt.NoPen)
+        p.drawEllipse(pt, 15, 15)
+        p.setPen(QtGui.QColor('white'))
+        font = p.font()
+        font.setBold(True)
+        p.setFont(font)
+        p.drawText(QtCore.QRectF(pt.x() - 15, pt.y() - 15, 30, 30), QtCore.Qt.AlignCenter, '!')
 
     def _diamond(self, p, h):
         pt = self.to_screen(h['x'], h['y'])

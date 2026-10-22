@@ -24,6 +24,7 @@ from nav2_msgs.action import FollowPath,ComputePathToPose
 from sensor_msgs.msg import LaserScan,BatteryState
 from std_msgs.msg import String
 from std_srvs.srv import Trigger
+from nala_interfaces.msg import CountRate
 from tf2_msgs.msg import TFMessage
 from nala_coverage.ros_common import LATEST,LATCHED,json_msg,ActionSlot,path_msg
 from nala_coverage.gate_node import SafetyGate
@@ -293,30 +294,39 @@ def test_new_meter_generation_discards_previous_phase_acknowledgement(ros):
 
 
 class FakeRadiation(Node):
-    """Stands in for radiation_node: the background service and its state (ready after `delay` s, or never)."""
+    """Stands in for radiation_node: the background service and its state (ready after `delay` s, or never; the
+    background is 10 counts/s)."""
     def __init__(self,delay=.5):
         super().__init__('fake_radiation');self.delay=delay;self.requested=None
         self.create_service(Trigger,'/radiation/measure_background',self.measure)
         self.state=self.create_publisher(String,'/radiation/state',LATEST)
-        self.keepout=self.create_publisher(OccupancyGrid,'/radiation/keepout',LATCHED)
         self.create_timer(.2,self.tick)
     def measure(self,req,res):self.requested=time.monotonic();res.success=True;return res
     def tick(self):
         ready=self.requested is not None and self.delay is not None and time.monotonic()-self.requested>=self.delay
-        self.state.publish(json_msg({'measuring':self.requested is not None and not ready,'background_ready':ready}))
-    def publish_keepout(self,grid,mask,cost=90):
-        m=OccupancyGrid();m.header.frame_id='map';m.info.resolution=grid.resolution
-        m.info.height,m.info.width=grid.cells.shape;m.info.origin.orientation.w=1.
-        m.data=np.where(mask,cost,0).astype(np.int8).ravel().tolist();self.keepout.publish(m)
+        self.state.publish(json_msg({'measuring':self.requested is not None and not ready,'background_ready':ready,
+                                     'background':10. if ready else None}))
 
 
-def run_plan(ros,poses,drive=None,block_at=None,base_station=None,radiation=None,keepout=None,during=None,turns=False,fake_hook=None,until_done=False):
+class FakeScintillator(Node):
+    """Readings (/scintillator/count_rate) and the operator's threshold (/radiation/threshold, as the robot screen)."""
+    def __init__(self,setting):
+        super().__init__('fake_scintillator')
+        self.readings=self.create_publisher(CountRate,'/scintillator/count_rate',10)
+        self.threshold=self.create_publisher(String,'/radiation/threshold',LATCHED)
+        self.threshold.publish(json_msg(setting))
+    def read(self,cps):
+        m=CountRate();m.header.stamp=self.get_clock().now().to_msg();m.counts_per_second=float(cps);m.interval_s=1.
+        self.readings.publish(m)
+
+
+def run_plan(ros,poses,drive=None,block_at=None,base_station=None,radiation=None,during=None,turns=False,fake_hook=None,until_done=False):
     """Drive an exported plan through fake planner and controller servers.
 
     FollowPath moves the fake robot along exactly the path it is given. With `block_at` the first goal that
     reaches that point stops there and aborts, like the controller's collision check in front of an obstacle.
-    radiation: a FakeRadiation (the supervisor then measures the background first); keepout: a bool mask of
-    contaminated floor published before the start; during(sup): called while the task runs."""
+    radiation: a FakeRadiation (the supervisor then measures the background first); during(sup): called while the
+    task runs."""
     import yaml
     add,pump,_,tmp_path=ros
     plan=tmp_path/'plan.yaml'
@@ -331,7 +341,6 @@ def run_plan(ros,poses,drive=None,block_at=None,base_station=None,radiation=None
     if fake_hook:fake_hook(fake)
     if radiation is not None:
         add(radiation);sup.settings['radiation']['enabled']=True
-        if keepout is not None:radiation.publish_keepout(sup.base,keepout)
     follows=[];plans=[];block=[block_at]
     def planner(handle):
         g=handle.request.goal.pose.position;plans.append([round(g.x,3),round(g.y,3)])
@@ -706,17 +715,41 @@ def test_no_scintillator_pauses_before_any_motion(ros):
     assert follows==[] and plans==[]
 
 
-def test_contaminated_floor_on_the_plan_is_skipped_and_driven_around(ros):
-    keepout=np.zeros((80,80),bool);keepout[35:45,48:56]=True     # x 2.4..2.8 m, y 1.75..2.25 m
-    sup,follows,plans,_=run_plan(ros,[[2.,2.],[3.4,2.]],radiation=FakeRadiation(delay=.2),keepout=keepout)
-    assert sup.mission.state=='FINISHED' and sup.mission.reason=='RETURNED_TO_BASE',(sup.mission.state,sup.mission.reason,sup.mission.events)
-    [b]=[b for b in sup.mission.blocked if b['reason']=='CONTAMINATION_AVOIDED']
-    assert abs(b['length_m']-.4)<.1
-    # No plan piece (dense, a point every cell) is followed through the contaminated floor; the planner drove
-    # to its far side (this fake planner goes straight; Nav2's keepout layer routes around it).
-    pieces=[pts for _,pts,_ in follows if len(pts)>5]
-    assert pieces and not any(keepout[sup.base.cell(p)] for pts in pieces for p in pts)
-    assert any(math.dist(p,[2.8,2.])<.1 for p in plans)
+def test_contamination_stops_the_robot_and_ends_the_task(ros):
+    # User 2026-10-22: 2 of the last 3 readings at the operator's threshold (robot screen) stop the robot and end the
+    # task; it never drives around contamination. Hot floor from x 2.6 m (sensor 0.26 m ahead of the robot).
+    add,_,_,_=ros;scint=add(FakeScintillator({'mode':'cps','value':100.}))
+    seen=[]
+    def read(sup):
+        if sup.mission.state in ('IDLE','FAILED') or sup.pose is None:return
+        hot=sup.pose[0]+.26>=2.6;scint.read(500. if hot else 20.);seen.append((sup.mission.state,hot))
+    sup,follows,plans,_=run_plan(ros,[[2.,2.],[3.4,2.]],radiation=FakeRadiation(delay=.2),during=read)
+    assert sup.mission.state=='FAILED' and sup.mission.reason=='CONTAMINATION_FOUND',(sup.mission.state,sup.mission.reason)
+    c=sup.contamination
+    assert sum(r>=100. for r in c['readings'])>=2 and c['threshold_cps']==100. and c['setting']['mode']=='cps'
+    assert 2.55<c['xy'][0]<3.0 and not c['approximate'] and c['state']=='SWEEP'
+    assert not sup.returning and [2.,2.] not in plans                     # it stays there: no way home planned
+    with pytest.raises(ValueError):sup.resume()
+    with pytest.raises(ValueError):sup.go_home()
+    assert any(e.get('reason')=='CONTAMINATION_FOUND' for e in sup.mission.events)
+
+
+def test_contamination_counts_while_paused_and_waits_for_the_background_in_factor_mode(ros):
+    add,pump,_,_=ros
+    sup=add(Supervisor());sup.settings['radiation']['enabled']=True;sup.pose=[2.,2.,0.]
+    sup.mission.start(time.monotonic(),sup.timeout);sup.alarm.reset()
+    def reading(cps):
+        m=CountRate();m.counts_per_second=float(cps);sup.count_rate(m)
+    sup.threshold_setting={'mode':'background','value':3.}
+    sup.mission.state='BACKGROUND';reading(1000.);reading(1000.)           # no background yet: no threshold
+    assert sup.mission.state=='BACKGROUND'
+    sup.background_done=True;sup.radiation={'background':10.}
+    sup.mission.state='PAUSED';reading(31.)
+    assert sup.mission.state=='PAUSED'                                     # one reading is not enough
+    reading(5.);reading(30.)                                               # 2 of the last 3 at 30 counts/s
+    assert sup.mission.state=='FAILED' and sup.contamination['threshold_cps']==30. and sup.contamination['state']=='PAUSED'
+    sup.mission.state='IDLE';sup.contamination=None;reading(1000.);reading(1000.)   # no task: ignored
+    assert sup.contamination is None
 
 
 def test_go_home_stops_the_plan_and_returns_to_the_base_station(ros):
@@ -758,14 +791,14 @@ def test_a_pocket_is_driven_in_like_any_piece_and_backed_out_by_the_supervisor(r
     assert not any(str(e.get('reason','')).startswith('SPUR_') for e in sup.mission.events),sup.mission.events
 
 
-def test_backing_out_needs_measured_clean_floor_behind_the_robot(ros):
+def test_backing_out_needs_measured_floor_behind_the_robot(ros):
     from nala_coverage.planning import poly_target
     add,pump,_,_=ros
     sup=add(Supervisor());sup.mission.start(time.monotonic(),sup.timeout)
-    def try_reverse(covered,keepout=None):
+    def try_reverse(covered):
         back=poly_target([[2.9,2.],[2.6,2.]],'reverse');back.end_yaw=None
         sup.mission.state='PREPARING';sup.mission.reason=''
-        sup.current=back;sup.targets=[];sup.pose=[2.9,2.,0.];sup.keepout=keepout
+        sup.current=back;sup.targets=[];sup.pose=[2.9,2.,0.]
         sup.covered_grid=covered.reshape(sup.base.cells.shape)
         sup.begin_spur();return sup.mission.state,sup.mission.reason
     everything=np.ones(sup.base.cells.shape,bool)
@@ -774,9 +807,6 @@ def test_backing_out_needs_measured_clean_floor_behind_the_robot(ros):
     # Measured, except where the robot stood before driving in: still fine (it was there already).
     stood=np.zeros_like(everything);stood[sup.base.outline_cells((2.6,2.,0.),sup.outline,sup.settings['geometry']['planning_padding_m'])]=True
     assert try_reverse(everything&~stood)[0]=='SPUR'
-    dirty=np.zeros_like(everything);dirty[sup.base.cell([2.45,2.])]=True
-    state,reason=try_reverse(everything,dirty)
-    assert state=='PAUSED' and reason.startswith('SPUR_REVERSE_CONTAMINATION')
 
 
 def test_the_way_into_a_pocket_is_checked_with_the_outline_and_a_stop_inside_backs_out(ros):

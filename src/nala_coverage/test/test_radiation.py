@@ -1,12 +1,13 @@
-"""Radiation map (no ROS): background, painting only at trusted measured poses, hotspots, keepout."""
+"""Radiation map (no ROS): background, painting only at trusted measured poses, hotspots; the contamination
+threshold (counts/s or x background) and the alarm (2 of the last 3 readings)."""
 import math
 import numpy as np
 import pytest
 from nala_coverage.geometry import Grid
-from nala_coverage.measurement import Meter
-from nala_coverage.radiation import RadiationMap
+from nala_coverage.radiation import Alarm, RadiationMap, default_setting, threshold, valid_setting
 
-CFG = {'background_readings': 3, 'threshold_factor': 2.0, 'hotspot_join_m': 0.6, 'keepout_margin_m': 0.2}
+CFG = {'background_readings': 3, 'threshold_mode': 'background', 'threshold_cps': 100.0, 'threshold_factor': 2.0,
+       'hotspot_join_m': 0.6}
 
 
 def room():
@@ -72,21 +73,31 @@ def test_hotspots_join_close_cells_keep_their_id_and_can_be_checked():
     assert m.update_hotspots(now=102.)[0]['checked'] and m.state()['to_check'] == 1
 
 
-def test_keepout_is_the_hot_floor_plus_the_margin():
-    m = ready_map()
-    m.add_reading(50., [(2.0, 2.0)])
-    keepout = m.keepout()
-    assert keepout[m.grid.cell((2.0, 2.0))] and keepout[m.grid.cell((2.15, 2.0))]
-    assert not keepout[m.grid.cell((2.35, 2.0))] and not keepout[m.grid.cell((2.0, 2.4))]
-    assert m.state()['hotspots'] == 0                    # update_hotspots not called yet
-    assert not RadiationMap(room(), 0.26, CFG).keepout().any()   # no background yet: nothing is hot
+def test_threshold_as_counts_per_second_or_times_the_background():
+    assert threshold({'mode': 'cps', 'value': 80.}, None) == 80.               # no background needed
+    assert threshold({'mode': 'background', 'value': 2.5}, None) is None       # not measured yet
+    assert threshold({'mode': 'background', 'value': 2.5}, 12.) == 30.
+    assert default_setting(CFG) == {'mode': 'background', 'value': 2.0}
+    assert default_setting({**CFG, 'threshold_mode': 'cps'}) == {'mode': 'cps', 'value': 100.0}
+    m = ready_map(background=10.)
+    m.setting = {'mode': 'cps', 'value': 35.}
+    assert m.threshold == 35. and m.state()['setting'] == {'mode': 'cps', 'value': 35.}
 
 
-def test_avoided_floor_is_not_counted_as_missing():
-    grid = room()
-    meter = Meter(grid, grid.free.copy(), radius=.3)
-    keepout = np.zeros(grid.cells.shape, bool)
-    keepout[20:40, 20:40] = True
-    whole, avoided = meter.report(), meter.report(keepout)
-    assert avoided['avoided_m2'] == pytest.approx(400 * .05 ** 2)
-    assert avoided['coverable_m2'] == pytest.approx(whole['coverable_m2'] - avoided['avoided_m2'])
+def test_only_usable_thresholds_are_accepted():
+    assert valid_setting({'mode': 'cps', 'value': 0.5}) and valid_setting({'mode': 'background', 'value': 1.2})
+    for bad in ({'mode': 'cps', 'value': 0}, {'mode': 'background', 'value': 1.0}, {'mode': 'x', 'value': 5},
+                {'mode': 'cps', 'value': float('nan')}, {'mode': 'cps', 'value': 'a'}, {'mode': 'cps'}, None):
+        assert not valid_setting(bad)
+
+
+def test_alarm_after_2_of_the_last_3_readings():
+    a = Alarm(2, 3)
+    assert not a.add(120., 100.)                    # one high reading: not yet
+    assert not a.add(40., 100.)
+    assert a.add(100., 100.)                        # 2 of the last 3 (at the threshold counts)
+    a.reset()
+    assert [a.add(c, 100.) for c in (150., 20., 30., 150., 20., 30.)] == [False] * 6   # high ones 3 apart
+    a.reset()
+    assert not a.add(101., 100.) and a.add(101., 100.)                          # 2 in a row
+    assert [c for c, _ in a.last] == [101., 101.]
