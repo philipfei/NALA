@@ -23,9 +23,9 @@ to do next. Older handover text (Pi reinstall, phase A/B, firmware tuning) is in
 
 User: while driving, most often turning on the spot, one or more motors sometimes stand still. Cause: the firmware
 gives a stalled wheel at most FF(target) + kp x target + i_limit (10 %) PWM, ~25-34 % for slow commands.
-Changed on `main` (not on the Pi yet; ask the user before deploying): `min_wheel_speed` 0.08 m/s (base.yaml, all
-apps), coverage `motion` 0.15 m/s / 0.5 rad/s, `spur.speed_m_s` 0.15 / `clear_m` 0.13 / `track_gain` 3.6,
-teleop turn 0.6 rad/s.
+Changed on `main`: `min_wheel_speed` 0.08 m/s (base.yaml, all apps), teleop turn 0.6 rad/s. Coverage 0.15 m/s /
+0.5 rad/s was tried in one robot run (rdg_nm_petroom, run 2026-10-26_143137): the robot weaved while driving
+(|turn rate| > 0.3 rad/s in 18 % of the driving time, 2-6 % before), so coverage is back at 0.12 / 0.4.
 Robot test (with the user): app 1 small stick and 360 deg turns; app 3 room Test run, count stalls at corner turns,
 check stop accuracy at goals (a stop from 0.08 m/s coasts ~8 mm) and corner turn overshoot. Still stalls -> firmware
 stall boost (CLAUDE.md open questions, "Motors stalling").

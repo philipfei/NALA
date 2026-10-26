@@ -17,9 +17,11 @@
       # Coverage driving speeds. Autodrive only drives forwards (the gate passes no negative linear speed
       # from Nav2); manual driving through the gate may reverse.
       # The MCU protocol has steps of 1 mm/s and 1 mrad/s (docs/mcu_protocol.md).
-      # 0.15 / 0.5 since 2026-10-26 (user; was 0.12 / 0.4): a faster target also gives a stalled wheel more PWM.
-      linear_m_s: 0.15
-      angular_rad_s: 0.5
+      # 0.15 / 0.5 on 2026-10-26 made the robot weave while driving (time with |turn rate| > 0.3 rad/s while driving
+      # 18 % instead of 2-6 %, one robot run). Likely cause: RPP's fixed lookahead_dist 0.2 m asks for faster heading
+      # corrections at 0.15 m/s, and the gate's angular_accel_rad_s2 cannot follow them. Back to 0.12 / 0.4 (user).
+      linear_m_s: 0.12
+      angular_rad_s: 0.4
       # Acceleration limits of the velocity gate (both directions). Floor test 2026-10-16: while the command is
       # above 0 the robot follows only 0.1-0.14 m/s^2 of deceleration; with 0.1 m/s^2 it stopped 3 mm from the
       # goal, 0.3 deg with 0.35 rad/s^2.
@@ -63,13 +65,12 @@
       # the supervisor, only over floor the meter has measured (checked before and while backing out). The velocity
       # gate passes a reverse speed only from the supervisor's /cmd_vel_reverse and never more than speed_m_s.
       # User 2026-10-21: back out at the normal driving speed (motion.linear_m_s; was 0.06).
-      speed_m_s: 0.15
+      speed_m_s: 0.12
       # Steering while backing out (on odometry): rad/s per rad of heading error and per m beside the line, no
       # overshoot at speed_m_s (heading_gain^2 >= 4 x track_gain x speed_m_s). Robot 2026-10-20: 2.0 / 20 on the
       # AMCL pose zigzagged +-15-20 deg; 1.5 / 6.0 at 0.06 m/s.
-      # track_gain 3.6 since speed_m_s 0.15 (2026-10-26; 4.5 at 0.12): 1.5^2 >= 4 x 3.6 x 0.15.
       heading_gain: 1.5
-      track_gain: 3.6
+      track_gain: 4.5
       # The end of backing out: between P and this much past it (onto the route), never short of it: the robot turns
       # on the spot there.
       end_tolerance_m: 0.02
@@ -81,8 +82,8 @@
       max_heading_error_deg: 10.0
       # LiDAR: a scan point within this distance behind the outline (outline + the planning padding wide) stops
       # backing out (SPUR_REVERSE_BLOCKED). At least the braking distance at speed_m_s (speed^2 / (2 x
-      # motion.linear_accel_m_s2) = 0.113 m at 0.15 m/s) plus a reaction step (0.1 s); was 0.10 at 0.12 m/s.
-      clear_m: 0.13
+      # motion.linear_accel_m_s2) = 0.072 m at 0.12 m/s) plus a reaction step (0.1 s); was 0.06 at 0.06 m/s.
+      clear_m: 0.10
     localization:
       position_sigma_m: 0.1
       heading_sigma_deg: 10.0

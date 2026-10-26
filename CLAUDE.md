@@ -368,7 +368,7 @@ SLAM must not jump to a wrong but similar-looking place.
   the outline + planning_padding_m instead of the turning circle). A stop inside the pocket (Nav2 failure, timeout,
   pause) ends the drive-in there (SPUR_SHORTENED) and the robot backs out. Backing out ('reverse', state SPUR) is the
   supervisor's: on odometry along the line put into odom when it starts (steering on AMCL zigzagged), at
-  spur.speed_m_s (= normal speed since 2026-10-21, user: 0.15 m/s since 2026-10-26; LiDAR stop distance behind spur.clear_m 0.13 m),
+  spur.speed_m_s (0.12 m/s = normal speed since 2026-10-21, user; LiDAR stop distance behind spur.clear_m 0.10 m),
   via /cmd_vel_reverse (the gate passes it only while NAV owns the robot, only <= 0, <= spur.speed_m_s, only from
   coverage_supervisor). Before it every cell under the bare outline must be measured (or under the robot at P), else
   a pause (SPUR_REVERSE_NOT_MEASURED); LiDAR behind: SPUR_REVERSE_BLOCKED. (Contamination ends the task, below.)
@@ -457,8 +457,11 @@ SLAM must not jump to a wrong but similar-looking place.
   centred 410 x 360 mm box), so they do not depend on the real outline.
 - The panel runs `plan_cli.py` as a child process: coverage_tool's package is called `coverage`, the same
   name as the system package `python3-coverage`.
-- Speeds (`motion` in `config/coverage.yaml`): 0.15 m/s, 0.5 rad/s (user, 2026-10-26; 0.12 / 0.4 before), slowest 0.04 m/s near a goal
-  (base_node raises it to min_wheel_speed 0.08 m/s on the robot)
+- Speeds (`motion` in `config/coverage.yaml`): 0.12 m/s, 0.4 rad/s (start values), slowest 0.04 m/s near a goal
+  (base_node raises it to min_wheel_speed 0.08 m/s on the robot). 0.15 / 0.5 (2026-10-26, one robot run) made the
+  robot weave while driving: |turn rate| > 0.3 rad/s in 18 % of the driving time instead of 2-6 % (likely: RPP's
+  fixed lookahead 0.2 m + the gate's 0.35 rad/s^2 cannot follow; not proven); back to 0.12 / 0.4 (user). If faster again: scale
+  lookahead_dist with the speed (0.25 m at 0.15 m/s keeps v / lookahead as before).
   (the MCU protocol has 1 mm/s steps). Acceleration limits = floor test 2026-10-16 (user decision): 0.1 m/s^2
   (velocity gate) and 0.35 rad/s^2 (velocity gate). RPP `max_angular_accel` = `controller_angular_accel_rad_s2`
   3.0: RPP limits its turn command to the measured rate +- accel x 0.05 s, and 0.35 could neither start a turn
@@ -535,12 +538,15 @@ SLAM must not jump to a wrong but similar-looking place.
   `coverage_disk_radius_m: 0.6` in `config/coverage.yaml` are placeholders, and the sensor is assumed not to stick
   out of the outline. Whether the rod carries it: not known yet (user, 2026-10-19). Change them and plan again when known.
 - [3] First robot tests of app 3: localization at the base station, costmaps, a short plan, an obstacle, the
-  return; coverage speeds (`motion` in `config/coverage.yaml`: 0.15 m/s, 0.5 rad/s since 2026-10-26; the
+  return; coverage speeds (`motion` in `config/coverage.yaml`: 0.12 m/s, 0.4 rad/s are start values; the
   acceleration limits 0.1 m/s^2 / 0.35 rad/s^2 come from the floor test). Battery check stays off
   (`battery.enabled: false`) until it is turned on (the INA219 works since 2026-10-21).
 - [3] Obstacles lower or higher than the LiDAR scan plane are not seen (no bumper).
 - [3] Motors stalling (user, 2026-10-26: one or more motors sometimes stand still, most often turning on the spot).
-  Done, not tested on the robot yet: min_wheel_speed 0.08 m/s, coverage 0.15 m/s / 0.5 rad/s, teleop turn 0.6 rad/s.
+  Done: min_wheel_speed 0.08 m/s, teleop turn 0.6 rad/s. Coverage 0.15 / 0.5 was tried on 2026-10-26 (weaving) and
+  is back at 0.12 / 0.4. One robot run with min_wheel_speed: it stops ~2 cm further at Nav2 goals (RPP's 0.04 m/s
+  approach is raised to 0.08; still inside xy_goal_tolerance 0.05 m). The gate sends zero at once on a zero
+  command (no ramp-down), and a corner turn ends at ~0.25 rad/s (above 0.24), so turn ends are not affected.
   If motors still stall: firmware v2.4.0 stall boost (user chose to wait): EEPROM parameters `stall_speed` 0.5 rad/s
   (target != 0 and measured below it = stuck) and `stall_i_limit` 25 % (integral limit only while stuck; back to
   i_limit as soon as the wheel turns). Integral grows at ki x error (~16 %/s at 2 rad/s), so ~1 s to the boost.
