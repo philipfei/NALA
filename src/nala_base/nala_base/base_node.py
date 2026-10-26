@@ -21,7 +21,7 @@ from rclpy.parameter import Parameter
 import serial
 from tf2_ros import TransformBroadcaster
 
-from nala_base.kinematics import integrate_pose, limit_wheel_speed, wheels_to_body
+from nala_base.kinematics import integrate_pose, limit_wheel_speed, raise_wheel_speed, wheels_to_body
 from nala_base.mcu_protocol import (
     count_delta, encode_command, FLAG_BOOT, FLAG_FF_INVALID, FLAG_TIMEOUT, split_frames)
 
@@ -37,6 +37,7 @@ class BaseNode(Node):
         super().__init__('base_node')
         port = self.param('serial_port', Parameter.Type.STRING)
         baud = self.param('baud_rate', Parameter.Type.INTEGER)
+        self.min_wheel_speed = self.param('min_wheel_speed', Parameter.Type.DOUBLE)
         self.max_wheel_speed = self.param('max_wheel_speed', Parameter.Type.DOUBLE)
         self.cmd_timeout = self.param('cmd_vel_timeout', Parameter.Type.DOUBLE)
         rate = self.param('command_rate', Parameter.Type.DOUBLE)
@@ -74,7 +75,7 @@ class BaseNode(Node):
         self.reader.start()
         self.get_logger().info(
             f'{port} at {baud} baud, sending at {rate} Hz. '
-            f'Max wheel speed: {self.max_wheel_speed} m/s. /cmd_vel timeout: {self.cmd_timeout} s. '
+            f'Wheel speed: min {self.min_wheel_speed}, max {self.max_wheel_speed} m/s. /cmd_vel timeout: {self.cmd_timeout} s. '
             f'Odometry TF: {"on" if self.publish_tf else "off (published by the EKF)"}.')
 
     def param(self, name, param_type):
@@ -82,8 +83,9 @@ class BaseNode(Node):
         return self.get_parameter(name).value
 
     def on_cmd_vel(self, msg):
-        self.cmd = limit_wheel_speed(msg.linear.x, msg.linear.y, msg.angular.z,
-                                     self.k, self.max_wheel_speed)
+        raised = raise_wheel_speed(msg.linear.x, msg.linear.y, msg.angular.z,
+                                   self.k, self.min_wheel_speed)
+        self.cmd = limit_wheel_speed(*raised, self.k, self.max_wheel_speed)
         self.cmd_time = time.monotonic()
 
     def on_timer(self):

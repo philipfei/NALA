@@ -2,7 +2,7 @@ import math
 
 import pytest
 
-from nala_base.kinematics import integrate_pose, limit_wheel_speed, wheels_to_body
+from nala_base.kinematics import integrate_pose, limit_wheel_speed, raise_wheel_speed, wheels_to_body
 
 
 R = 0.040
@@ -45,6 +45,32 @@ def test_limit_is_the_fastest_wheel(body):
     limited = limit_wheel_speed(*body, K, 1.0)
     assert fastest_rim_speed(*limited) == pytest.approx(1.0)
     assert limited[0] * body[1] == pytest.approx(limited[1] * body[0])   # direction kept
+
+
+def test_slow_turn_raised_to_the_minimum():
+    vx, vy, wz = raise_wheel_speed(0.0, 0.0, 0.1, K, 0.08)
+    assert fastest_rim_speed(vx, vy, wz) == pytest.approx(0.08)
+    assert (vx, vy) == (0.0, 0.0)
+    assert wz == pytest.approx(0.08 / K)
+
+
+@pytest.mark.parametrize('body', [(0.01, 0.0, 0.0), (0.0, -0.02, 0.05), (-0.005, 0.01, -0.03)])
+def test_raise_keeps_the_direction(body):
+    raised = raise_wheel_speed(*body, K, 0.08)
+    assert fastest_rim_speed(*raised) == pytest.approx(0.08)
+    for a, b in zip(raised, body):
+        assert a * fastest_rim_speed(*body) == pytest.approx(b * 0.08)   # same factor for all three
+
+
+def test_raise_keeps_zero():
+    assert raise_wheel_speed(0.0, 0.0, 0.0, K, 0.08) == (0.0, 0.0, 0.0)
+    # Below the protocol resolution (1 mm/s, 1 mrad/s): float noise, stays zero.
+    assert raise_wheel_speed(0.0004, -0.0004, 0.0004, K, 0.08) == (0.0, 0.0, 0.0)
+
+
+def test_fast_enough_unchanged():
+    assert raise_wheel_speed(0.12, 0.0, 0.1, K, 0.08) == (0.12, 0.0, 0.1)
+    assert raise_wheel_speed(0.0, 0.08, 0.0, K, 0.08) == (0.0, 0.08, 0.0)   # exactly at the minimum
 
 
 def test_one_wheel_turn_is_one_circumference():

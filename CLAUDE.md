@@ -163,7 +163,7 @@ Everything below is project-specific and must be kept up to date.
 | Robot outer size (length x width) | **0.650 m x 0.360 m, not centred** (`config/robot.yaml` `outline`: front 0.4425, back 0.2075, left/right 0.18 m; since 2026-10-19). User, 2026-10-16/19: body 0.415 m x 0.360 m, **centred on the wheel centre** (turning centre), plus a rod 0.235 m forward (tip at x = +0.4425 m) = 0.650 m total length; so the turning centre is no longer the centre of the whole outline. Track width still 0.320 m. See `docs/handover.md` section A |
 | Motors | M1 front-left, M2 rear-left, M3 rear-right, M4 front-right |
 | Encoder | 1536 counts per wheel revolution (confirmed: 1.17 m driven = 1.17 m odometry, 2026-10-07) |
-| Teleop speeds | 0.45 m/s linear (= motor limit), 0.5 rad/s angular (keys and full stick; `config/teleop.yaml`; 1.0 until 2026-10-16, slower is better for SLAM) |
+| Teleop speeds | 0.45 m/s linear (= motor limit), 0.6 rad/s angular (keys and full stick; `config/teleop.yaml`; 0.6 since 2026-10-26, user; 0.5 before; 1.0 until 2026-10-16, slower is better for SLAM) |
 | Motor top speed | Measured 2026-10-07 at 100 % PWM: 12.6-13.1 rad/s = 0.50-0.52 m/s rim speed (M4 slowest), the same with wheels in the air and on the floor. Firmware assumed 25 rad/s. `max_wheel_speed: 0.45` in `config/base.yaml` |
 | Game controller | Xbox Wireless Controller `C8:3F:26:93:1B:B2`, paired with the **Pi** over Bluetooth (`/dev/input/js0`; Bluetooth runs on the mini UART since 2026-10-09, `dtoverlay=miniuart-bt`). In `joy` (SDL): LB = button 4, B = button 1, left stick x/y = axes 0/1, right stick x = axis 3, triggers = axes 2/5 (1.0 released). Checked 2026-10-07, B 2026-10-16. The left stick rests at up to ~0.12 (raw): joy deadzone 0.15 |
 | LiDAR | RPLIDAR A2M8 (firmware 1.28), USB CP2102 adapter (`/dev/serial/by-id/usb-Silicon_Labs_CP2102_...`), 115200 baud, driver `rplidar_ros` (`rplidar_composition`). Sensitivity mode: 16 m, about 7900 points/s, about 14 scans/s. Mounted 115 mm in front of the chassis center (x = 0.115, y = 0; moved forward 2026-10-23, user; was x = 0), facing backward (yaw 180 deg, checked 2026-10-07 with objects behind and right of the robot). Height 172.5 mm above the floor (measured, user 2026-10-26) |
@@ -296,6 +296,12 @@ SLAM must not jump to a wrong but similar-looking place.
   in `config/base.yaml`. A mecanum command needs |vx| + |vy| + k*|wz| on its fastest wheel; above the limit
   the Pi scales vx, vy, wz by the same factor. Reason: the firmware clips each wheel at 100 % PWM on its own,
   which cut the turn when strafing and turning at full stick (2026-10-07). No body speed limits (user decision).
+  Minimum (user, 2026-10-26): `min_wheel_speed` 0.08 m/s in `config/base.yaml`: a non-zero command whose fastest
+  wheel is slower is scaled up by one factor (`kinematics.raise_wheel_speed`; zero at the protocol's 1 mm/s,
+  1 mrad/s resolution stays zero). Reason: motors stood still on slow commands, most often turning on the spot.
+  A stalled wheel gets at most FF(target) + kp x target + i_limit (10 %) PWM in the firmware, ~25-34 % for the
+  slow commands; the motor could give much more. Order in base_node: raise, then limit. tools/sim/fake_nala.py
+  does the same.
 - Safety: the Pi sends zero if `/cmd_vel` is older than 0.6 s. The firmware stops after 200 ms without a frame.
 - Maps are saved in `maps/<name>/` and copied between Pi and PC with `scp`.
 
@@ -362,7 +368,7 @@ SLAM must not jump to a wrong but similar-looking place.
   the outline + planning_padding_m instead of the turning circle). A stop inside the pocket (Nav2 failure, timeout,
   pause) ends the drive-in there (SPUR_SHORTENED) and the robot backs out. Backing out ('reverse', state SPUR) is the
   supervisor's: on odometry along the line put into odom when it starts (steering on AMCL zigzagged), at
-  spur.speed_m_s (0.12 m/s = normal speed since 2026-10-21, user; LiDAR stop distance behind spur.clear_m 0.10 m),
+  spur.speed_m_s (= normal speed since 2026-10-21, user: 0.15 m/s since 2026-10-26; LiDAR stop distance behind spur.clear_m 0.13 m),
   via /cmd_vel_reverse (the gate passes it only while NAV owns the robot, only <= 0, <= spur.speed_m_s, only from
   coverage_supervisor). Before it every cell under the bare outline must be measured (or under the robot at P), else
   a pause (SPUR_REVERSE_NOT_MEASURED); LiDAR behind: SPUR_REVERSE_BLOCKED. (Contamination ends the task, below.)
@@ -451,7 +457,8 @@ SLAM must not jump to a wrong but similar-looking place.
   centred 410 x 360 mm box), so they do not depend on the real outline.
 - The panel runs `plan_cli.py` as a child process: coverage_tool's package is called `coverage`, the same
   name as the system package `python3-coverage`.
-- Speeds (`motion` in `config/coverage.yaml`): 0.12 m/s, 0.4 rad/s (start values), slowest 0.04 m/s near a goal
+- Speeds (`motion` in `config/coverage.yaml`): 0.15 m/s, 0.5 rad/s (user, 2026-10-26; 0.12 / 0.4 before), slowest 0.04 m/s near a goal
+  (base_node raises it to min_wheel_speed 0.08 m/s on the robot)
   (the MCU protocol has 1 mm/s steps). Acceleration limits = floor test 2026-10-16 (user decision): 0.1 m/s^2
   (velocity gate) and 0.35 rad/s^2 (velocity gate). RPP `max_angular_accel` = `controller_angular_accel_rad_s2`
   3.0: RPP limits its turn command to the measured rate +- accel x 0.05 s, and 0.35 could neither start a turn
@@ -528,10 +535,15 @@ SLAM must not jump to a wrong but similar-looking place.
   `coverage_disk_radius_m: 0.6` in `config/coverage.yaml` are placeholders, and the sensor is assumed not to stick
   out of the outline. Whether the rod carries it: not known yet (user, 2026-10-19). Change them and plan again when known.
 - [3] First robot tests of app 3: localization at the base station, costmaps, a short plan, an obstacle, the
-  return; coverage speeds (`motion` in `config/coverage.yaml`: 0.12 m/s, 0.4 rad/s are start values; the
+  return; coverage speeds (`motion` in `config/coverage.yaml`: 0.15 m/s, 0.5 rad/s since 2026-10-26; the
   acceleration limits 0.1 m/s^2 / 0.35 rad/s^2 come from the floor test). Battery check stays off
   (`battery.enabled: false`) until it is turned on (the INA219 works since 2026-10-21).
 - [3] Obstacles lower or higher than the LiDAR scan plane are not seen (no bumper).
+- [3] Motors stalling (user, 2026-10-26: one or more motors sometimes stand still, most often turning on the spot).
+  Done, not tested on the robot yet: min_wheel_speed 0.08 m/s, coverage 0.15 m/s / 0.5 rad/s, teleop turn 0.6 rad/s.
+  If motors still stall: firmware v2.4.0 stall boost (user chose to wait): EEPROM parameters `stall_speed` 0.5 rad/s
+  (target != 0 and measured below it = stuck) and `stall_i_limit` 25 % (integral limit only while stuck; back to
+  i_limit as soon as the wheel turns). Integral grows at ki x error (~16 %/s at 2 rad/s), so ~1 s to the boost.
 - [3] Pi set up for app 3 on 2026-10-16: `setup_pi_screen.sh` ran, after a reboot the panel starts full-screen by
   itself (GNOME autostart), touch and picture checked by the user, the screen stays on. Xbox on the Pi without
   base_node: LB with a held stick = 0, after centring 0.45 m/s, B = button 1. Still open: planning time on the Pi 4.

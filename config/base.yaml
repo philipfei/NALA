@@ -10,6 +10,11 @@ base_node:
     # Motor limit: the fastest wheel rim speed the motors really reach (= wheel rad/s x wheel radius).
     # If a command needs a faster wheel (for example strafe + turn at full stick), the Pi scales
     # vx, vy and wz down together, so the path keeps its shape. The input speeds are in teleop.yaml.
+    # Minimum: a non-zero command whose fastest wheel is slower than this is scaled up (same direction).
+    # A stalled wheel gets at most FF + kp x target + i_limit PWM in the firmware (~25 % at 0.04 m/s), and the
+    # floor stick-slip zone is 0.05-0.10 m/s: slow commands left motors standing, most often when turning on the
+    # spot (2026-10-26). 0.08 m/s = turn on the spot >= 0.24 rad/s; a stop from it coasts ~8 mm. User, 2026-10-26.
+    min_wheel_speed: 0.08       # m/s
     max_wheel_speed: 0.45       # m/s. Measured top speed at 100 % PWM 0.50-0.52 m/s (slowest M4), minus 10 %
                                 # so the speed controller keeps some room to drive straight (2026-10-07)
 

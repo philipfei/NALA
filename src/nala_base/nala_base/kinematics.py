@@ -2,6 +2,29 @@
 
 import math
 
+from nala_base.mcu_protocol import SCALE
+
+
+def raise_wheel_speed(vx, vy, wz, k, min_wheel_speed):
+    """Raise a slow body speed command so that its fastest wheel is at least min_wheel_speed.
+
+    The mirror of limit_wheel_speed: vx, vy and wz are scaled up by the same factor, so the
+    direction is kept. Reason: a stalled wheel gets at most FF + kp x target + i_limit PWM in
+    the firmware, so a slow target can leave a wheel standing (most often turning on the spot).
+    A command that is zero in the MCU protocol (all values round to 0 mm/s, 0 mrad/s) stays
+    exactly zero, so float noise never starts the robot.
+    k: half track width + half wheelbase (m). min_wheel_speed: wheel rim speed (m/s).
+    """
+    if all(round(value * SCALE) == 0 for value in (vx, vy, wz)):
+        return 0.0, 0.0, 0.0
+    peak = abs(vx) + abs(vy) + k * abs(wz)
+    if peak < min_wheel_speed:
+        scale = min_wheel_speed / peak
+        vx *= scale
+        vy *= scale
+        wz *= scale
+    return vx, vy, wz
+
 
 def limit_wheel_speed(vx, vy, wz, k, max_wheel_speed):
     """Limit a body speed command so that no wheel is faster than max_wheel_speed.
