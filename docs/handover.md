@@ -179,8 +179,9 @@ Why it matters (everything assumes a centred box today):
 - The URDF (`nala_description`, RViz picture) uses `body_length`/`body_width`.
 - Is the rod the coverage sensor (scintillator)? `coverage.yaml` has `sensor_offset_m: 0.26`, `coverage_disk_radius_m:
   0.6` as placeholders. If the sensor sits at the rod tip, the offset becomes ~0.44 m. Ask.
-- The LiDAR is 115 mm in front of the chassis centre since 2026-10-23 (was at the centre), 172.5 mm above the
-  floor (measured 2026-10-26): check that it does not see the rod (now only ~0.33 m in front of the LiDAR)
+- The LiDAR is 95 mm in front of the chassis centre since 2026-10-23 (was at the centre; robot.yaml had 0.115 until
+  2026-10-26, wrong: maps made with it, e.g. rdg_nm_petroom, may be slightly distorted), 172.5 mm above the
+  floor (measured 2026-10-26): check that it does not see the rod (now only ~0.35 m in front of the LiDAR)
   (`tools/debug/scan_on_map.py`, or the scan check in this file's history: no points < 0.45 m before the rod).
 - Questions still to ask: rod height, width and lateral position (on the centre line?), rigid or not, what it
   carries (the coverage sensor?). Answered: the body is centred on the wheel centre.
