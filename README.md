@@ -37,7 +37,7 @@ All dependencies: [requirements.yaml](requirements.yaml).
   as wide as the body: outer size 650 x 360 mm, not centred on the turning centre.
   Track width 320 mm (half: 160 mm). Wheelbase 260 mm (half: 130 mm). Wheel radius 40 mm (diameter: 80 mm).
 - Motors: M1 front-left, M2 rear-left, M3 rear-right, M4 front-right. Encoders: 1536 counts per wheel revolution.
-- LiDAR: RPLIDAR A2M8 (USB, CP2102 adapter, 115200 baud), at the chassis center, facing backward. Height not measured yet.
+- LiDAR: RPLIDAR A2M8 (USB, CP2102 adapter, 115200 baud), 115 mm in front of the chassis center (since 2026-10-23), facing backward. Height not measured yet.
 - Motor driver: ATmega328PB (5 V). UART PD0/PD1 <-> level shifter <-> Pi GPIO14/15 (`/dev/ttyAMA0`), 38400 baud,
   binary frames with CRC. It runs a speed controller per wheel (control loop 20 Hz, stops after 200 ms without
   a command) and sends the cumulative encoder counts every 50 ms. Firmware v2.1.0 or newer is needed.
