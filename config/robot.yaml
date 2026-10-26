@@ -17,7 +17,7 @@ outline:
 laser:                # RPLIDAR A2M8 scan center
   x: 0.115            # m, 115 mm in front of the chassis center (moved forward by the user, 2026-10-23; was 0.0)
   y: 0.0              # m
-  z: 0.20             # m above the floor. PLACEHOLDER, not measured yet (verify)
+  z: 0.1725           # m above the floor: 172.5 mm, measured by the user 2026-10-26 (was a 0.20 placeholder)
   yaw: 3.141593       # rad (180 deg): the LiDAR is mounted facing backward
 
 imu:                  # WT901C-TTL, mounted flat with the chip side up (roll = pitch = 0)
