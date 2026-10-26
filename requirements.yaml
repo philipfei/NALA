@@ -61,7 +61,7 @@ apt:
       - ros2-apt-source 1.3.0               # same version as the PC
       - ros-jazzy-rmw-cyclonedds-cpp        # first, so ros-base uses Cyclone (like the PC), not Fast DDS
       - ros-jazzy-ros-base                  # ROS 2 without GUI tools
-      - python3-serial                      # pyserial: UART to the MCU, USB serial to the IMU
+      - python3-serial                      # pyserial: UART to the MCU, USB serial to the IMU and the scintillator
       - python3-yaml                        # config files in scripts/setup_imu.py, scripts/tune_motors.py (comes with ROS)
       - openssh-server                      # not preinstalled on Ubuntu Desktop
       - python3-pytest                      # unit tests

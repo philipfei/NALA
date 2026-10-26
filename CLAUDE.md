@@ -173,7 +173,8 @@ Everything below is project-specific and must be kept up to date.
 | Battery | 4S2P Li-ion 18650, 3300 mAh per cell: 16.8 V full (4.2 V/cell), 6.6 Ah. Low-voltage alarm at 14.4 V (3.6 V/cell, user, 2026-10-21), 0 % at 12.8 V (3.2 V/cell). 16.1 V measured 2026-10-15 |
 | Motor supply | Always 12 V from a DC-DC converter (user, 2026-10-15): the motor speed for a PWM does not depend on the battery voltage |
 | Battery monitor | TI **INA219** at **0x40** on the Pi I2C bus 1 (GPIO2 SDA / GPIO3 SCL, directly, not through the level shifter), voltage only (IN+ and IN- shorted, no current; user, 2026-10-21). Works: 16.44 V read on 2026-10-21 (`docs/battery.md`). The old INA260 (0x4F) never answered and is dead |
-| Pi pins | GPIO14/15 = UART to the MCU, GPIO2/3 = I2C to the INA219, USB = LiDAR (CP2102) and IMU (CH340G). Two devices must never share a UART (two TX outputs would drive one RX pin) |
+| Scintillator | USB, Prolific USB-to-serial adapter (067b:23a3, `/dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_ESCDb147612-if00-port0`), 19200 baud 8N1, RTS/CTS (user protocol; read 2026-10-26). One TAB-separated text line per second; **only the value before the second `cps` field is used**, the other fields (incl. the scintillator's wrong clock) are ignored; stamp = Pi arrival time (user, 2026-10-26). Driver `scintillator_node` (`docs/scintillator.md`) |
+| Pi pins | GPIO14/15 = UART to the MCU, GPIO2/3 = I2C to the INA219, USB = LiDAR (CP2102), IMU (CH340G) and scintillator (Prolific). Two devices must never share a UART (two TX outputs would drive one RX pin) |
 | Robot screen (app 3) | Waveshare 7 inch HDMI LCD (C), 1024 x 600, capacitive touch over USB, on the Pi HDMI port. The Pi runs headed for app 3 (user, 2026-10-08) |
 
 ## Reference code (`ref/`, local only)
@@ -251,7 +252,7 @@ SLAM must not jump to a wrong but similar-looking place.
   velocity gate, coverage meter, base station), `nala_panel` (robot screen for app 3).
   The coverage planner is `coverage_tool/` (Python, no ROS, not a ROS package), run as `plan_cli.py`.
 - A package that is still empty has a `COLCON_IGNORE` file. Remove it in the stage that fills the package.
-- The Pi runs: `nala_base` (`base_node`, `battery_node`, `imu_node`), robot_localization EKF (apps 2 and 3), Xbox controller (`joy` + `nala_teleop` `xbox_teleop`: hold LB, left stick = drive + strafe,
+- The Pi runs: `nala_base` (`base_node`, `battery_node`, `imu_node`, `scintillator_node` in app 3), robot_localization EKF (apps 2 and 3), Xbox controller (`joy` + `nala_teleop` `xbox_teleop`: hold LB, left stick = drive + strafe,
   right stick = turn), `rplidar_ros`, `robot_state_publisher`, `slam_toolbox` (app 2), AMCL + Nav2 + coverage
   mission + velocity gate (app 3), the robot screen panel (`nala_panel`, app 3).
 - The PC runs: keyboard teleop (`nala_teleop`, own node: IJKL keys, Shift = strafe, the user chose it over WASD;
@@ -385,7 +386,8 @@ SLAM must not jump to a wrong but similar-looking place.
   driving home, the robot stays (user: end task only). Screen: full-screen red warning with readings, threshold,
   time, sensor position until Acknowledge (user), then the spot on the map; the task report keeps it (Results tab).
   The keepout zone, the Nav2 keepout layer and every "drive around / skip contaminated floor" rule were removed
-  (user). radiation.enabled is still false (no scintillator driver). Simulation (Test room, one source): stopped
+  (user). radiation.enabled is still false (user, 2026-10-26: the driver exists now, but first measure the real
+  background and choose a threshold; the readings are recorded meanwhile). Simulation (Test room, one source): stopped
   0.3 m before the source, no contact.
 - Wall distance (user, 2026-10-22: the RDG route was wobbly, with many stops along diagonal walls at the safety
   limit): no fixed inset and no "walls first" rule; the optimiser's shift move (coverage_tool/coverage/localsearch.py)

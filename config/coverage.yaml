@@ -174,7 +174,7 @@
       # Scintillator readings (/scintillator/count_rate, counts per second, about one per second;
       # docs/scintillator.md). PLACEHOLDERS until the scintillator is tested.
       # false: no background measurement at the start, no avoidance (to drive app 3 without a scintillator).
-      enabled: false                  # true once the scintillator driver exists (no driver yet: the task would pause)
+      enabled: false                  # false until the real background and threshold are known (user, 2026-10-26)
       # Background: the mean of this many readings while the robot stands on the base station at the start.
       background_readings: 10
       background_timeout_s: 30.0      # s, pause the task (NO_SCINTILLATOR) if the background is not ready by then

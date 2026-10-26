@@ -14,7 +14,7 @@ setup(
     zip_safe=True,
     maintainer='philipfei',
     maintainer_email='feijinghao2002@gmail.com',
-    description='NALA mecanum base: MCU driver, wheel odometry, WT901 IMU driver, INA219 battery monitor',
+    description='NALA mecanum base: MCU driver, wheel odometry, WT901 IMU driver, INA219 battery monitor, scintillator driver',
     license='TODO',
     extras_require={'test': ['pytest']},
     entry_points={
@@ -22,6 +22,7 @@ setup(
             'base_node = nala_base.base_node:main',
             'imu_node = nala_base.imu_node:main',
             'battery_node = nala_base.battery_node:main',
+            'scintillator_node = nala_base.scintillator_node:main',
         ],
     },
 )

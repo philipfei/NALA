@@ -3,15 +3,32 @@
 The scintillator measures radiation. In app 3 its readings make the heatmap on the robot screen, find
 contaminated spots (hotspots), and stop the scan when contamination is found (user, 2026-10-22).
 
-## What is known (user, 2026-10-14)
+## Device and protocol (user, 2026-10-14 and 2026-10-26)
 
-- Connected to the Pi over **USB**.
-- Gives **counts per second**, one new value about **every second**.
-- **The USB data format is not known yet.** There is no driver for it in this repo yet.
+- Connected to the Pi over **USB**, through a Prolific USB-to-serial adapter (USB id 067b:23a3),
+  `/dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_ESCDb147612-if00-port0`.
+- **19200 baud, 8 data bits, no parity, 1 stop bit, hardware flow control (RTS/CTS).** The Pi only reads; it
+  sends nothing. (CTS reads low; receiving works anyway.)
+- One text line about **every second**, fields separated by TAB, ending in CR LF. Read on the robot 2026-10-26:
+
+  ```
+  0 <TAB> <TAB> 21-10-2026 13:57:39 <TAB> 0.000 <TAB> cps <TAB> 100 <TAB> % <TAB> 4 <TAB> cps <TAB> 47 <TAB> %
+  ```
+
+- **Only the value before the second `cps` field is used** (here 4 counts/s; user, 2026-10-26). The `%` after it
+  looks like the statistical error (about 1/sqrt(counts)). Every other field is ignored: the first `0`, the empty
+  field, the scintillator's own date and time (its clock is wrong, and the Pi time of arrival is used) and the first
+  cps value (always 0.000 / 100 % so far). A line without a second cps value is skipped (and counted in the log).
+
+## The driver
+
+`nala_base/scintillator_node` (parser `nala_base/scintillator.py`, unit tests `test_scintillator.py`, settings
+`config/scintillator.yaml`). App 3 starts it on the robot (`hardware:=true`). It opens the port exclusively: while it
+runs, no other program (for example miniterm) can read the scintillator. Live readings in a terminal: README, app 3.
 
 ## The interface the rest of app 3 uses
 
-Whoever writes the driver publishes this topic. Nothing else in app 3 has to change.
+The driver publishes this topic. The simulation (`tools/sim/fake_nala.py`) publishes the same topic.
 
 | Topic | Type | Rate |
 |---|---|---|
@@ -59,7 +76,8 @@ Run folder (`maps/<name>/runs/<time>/`): `readings.csv` (every reading: time, co
 
 ## Open points
 
-- The USB format, the counting interval and whether the stamp should be corrected for a delay.
+- The counting interval (1.0 s assumed: one line per second) and whether the stamp should be corrected for a delay.
+- What the first cps value, the first field and the empty field mean (not needed: ignored).
 - The real background and source count rates, and a good threshold (the config values are placeholders). At low
   rates (a few counts per second), Poisson noise alone often reaches 2x background in one reading; the 2-of-3 rule
   makes a false stop less likely, but test it with the real scintillator.
@@ -68,5 +86,7 @@ Run folder (`maps/<name>/runs/<time>/`): `readings.csv` (every reading: time, co
 
 ## Without a scintillator
 
-Set `radiation.enabled: false` in `config/coverage.yaml`: no background measurement, no contamination stop. The simulation
+Set `radiation.enabled: false` in `config/coverage.yaml`: no background measurement, no contamination stop.
+It is false now (user, 2026-10-26: until the real background and a good threshold are known). The driver still
+runs, so the heatmap, hotspots and `readings.csv` are recorded. The simulation
 (`tools/sim/fake_nala.py --sources ...`) publishes `CountRate` from simulated sources.

@@ -1,4 +1,4 @@
-"""App 3 (Pi): base driver + battery + IMU + EKF + robot model + LiDAR + localization + Nav2 + coverage mission.
+"""App 3 (Pi): base driver + battery + IMU + scintillator + EKF + robot model + LiDAR + localization + Nav2 + coverage mission.
 Never starts motion.
 
 ros2 launch nala_bringup app3_coverage_pi.launch.py map:=$HOME/NALA/maps/house1/map.yaml \
@@ -10,8 +10,8 @@ The Xbox controller does not drive in app 3 (only the velocity gate may publish 
 joy_node runs only for xbox_pause, so that its B button pauses the task (config/teleop.yaml).
 Like app 2, the EKF (wheel vx, vy + IMU turn rate) publishes TF odom -> base_footprint, not base_node:
 the wheel turn rate is 10-14 % too high (mecanum roller slip, floor test 2026-10-16).
-hardware:=false leaves out base_node, battery_node, imu_node, the EKF, the LiDAR driver and the Xbox controller
-(simulation, tools/sim).
+hardware:=false leaves out base_node, battery_node, imu_node, scintillator_node, the EKF, the LiDAR driver and the
+Xbox controller (simulation, tools/sim: fake_nala publishes the scintillator readings).
 """
 from pathlib import Path
 import tempfile
@@ -80,6 +80,9 @@ def _setup(context):
                   parameters=[str(config_dir / 'base.yaml'), {'publish_tf': False}]),
             _node('nala_base', 'battery_node', 'battery_node', parameters=[str(config_dir / 'battery.yaml')]),
             _node('nala_base', 'imu_node', 'imu_node', parameters=[str(config_dir / 'imu.yaml')]),
+            # Scintillator on USB serial -> /scintillator/count_rate (docs/scintillator.md).
+            _node('nala_base', 'scintillator_node', 'scintillator_node',
+                  parameters=[str(config_dir / 'scintillator.yaml')]),
             # EKF: /odom vx, vy + /imu turn rate -> TF odom -> base_footprint (config/ekf.yaml, docs/imu_ekf.md).
             _node('robot_localization', 'ekf_node', 'ekf_filter_node', parameters=[str(config_dir / 'ekf.yaml')]),
             _node('rplidar_ros', 'rplidar_composition', 'rplidar_node',
@@ -102,8 +105,7 @@ def _setup(context):
         _node('nala_coverage', 'coverage_supervisor', 'coverage_supervisor',
               parameters=[{**shared, 'plan_file': str(Path(plan).resolve())}]),
         _node('nala_coverage', 'coverage_meter', 'coverage_meter', parameters=[shared]),
-        # Scintillator readings + measured poses -> heatmap, hotspots (the scintillator driver is not
-        # here yet: its USB format is unknown, docs/scintillator.md).
+        # Scintillator readings + measured poses -> heatmap, hotspots (docs/scintillator.md).
         _node('nala_coverage', 'radiation_node', 'radiation_node', parameters=[shared]),
         # LiDAR scans at trusted poses -> cells that changed against the saved map (shown on the robot screen).
         _node('nala_coverage', 'mapchange_node', 'map_change_node', parameters=[shared]),
@@ -125,7 +127,7 @@ def generate_launch_description():
         DeclareLaunchArgument('base_station', default_value='',
                               description='base station file (default: base_station.yaml next to the map)'),
         DeclareLaunchArgument('hardware', default_value='true',
-                              description='false: no base_node, battery, IMU, EKF, LiDAR driver, Xbox (simulation)'),
+                              description='false: no base_node, battery, IMU, scintillator, EKF, LiDAR driver, Xbox (simulation)'),
         DeclareLaunchArgument('nav2_stamped_supported', default_value='true'),
         OpaqueFunction(function=preflight),
         OpaqueFunction(function=_setup),

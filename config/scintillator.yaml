@@ -1,0 +1,10 @@
+# Scintillator (nala_base/scintillator_node). Runs on the Pi, started by app 3 (hardware:=true).
+# Wiring: scintillator <-> Prolific USB-to-serial adapter (067b:23a3) <-> a Pi USB port.
+# The by-id path stays the same when the USB devices come up in another order. See docs/scintillator.md.
+scintillator_node:
+  ros__parameters:
+    serial_port: /dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_ESCDb147612-if00-port0
+    baud_rate: 19200                   # 8 data bits, no parity, 1 stop bit
+    rtscts: true                       # hardware flow control (RTS/CTS)
+    interval_s: 1.0                    # s, counting interval: the scintillator sends one line per second
+    reading_timeout: 3.0               # s, error if no reading comes for this long

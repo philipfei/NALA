@@ -47,6 +47,8 @@ All dependencies: [requirements.yaml](requirements.yaml).
   Only its turn rate is used (EKF in apps 2 and 3): [docs/imu_ekf.md](docs/imu_ekf.md).
 - Battery: 4S2P Li-ion 18650 (3300 mAh per cell: 16.8 V full, 6.6 Ah). Battery monitor: TI INA219 (address 0x40, IN+ and IN- shorted: voltage only, no current)
   on the Pi I2C bus 1 (GPIO2/3), read by `battery_node` (`/battery_state`, `/battery_low` below 14.4 V): [docs/battery.md](docs/battery.md).
+- Scintillator (app 3): USB, Prolific USB-to-serial adapter, 19200 baud 8N1 RTS/CTS, one text line per second,
+  read by `scintillator_node` (`/scintillator/count_rate`): [docs/scintillator.md](docs/scintillator.md).
 - Xbox Wireless Controller (`C8:3F:26:93:1B:B2`), paired with the Pi over Bluetooth.
 - Screen (app 3): Waveshare 7 inch HDMI LCD (C), 1024 x 600, capacitive touch over USB. On the Pi HDMI port.
 
@@ -107,6 +109,7 @@ NALA/
 │   ├── tune_motors.yaml                   [1] Test settings of scripts/tune_motors.py (step times, sweep speeds, timeouts).
 │   │                                      The controller parameters themselves are in the MCU EEPROM
 │   ├── imu.yaml                           [2] WT901 IMU: serial port, baud rate, gyro variance; rate written by setup_imu.py
+│   ├── scintillator.yaml                  [3] Scintillator: serial port, baud rate, flow control, counting interval, timeout
 │   ├── ekf.yaml                           [2] robot_localization EKF: wheel vx, vy + IMU turn rate -> odom TF
 │   ├── rplidar.yaml                       [2] RPLIDAR A2M8 driver params: port, baud rate, frame, scan mode
 │   ├── slam_mapping.yaml                  [2] slam_toolbox mapping params, tuned against pose jumps
@@ -237,13 +240,16 @@ NALA/
     │   │   ├── ina260.py                  [1] INA219 register decoding (bus voltage only; the file name is old), voltage -> charge (no ROS)
     │   │   ├── battery_node.py            [1] ROS node: INA219 -> /battery_state, /battery_low
     │   │   ├── wt901.py                   [2] WT901 IMU serial frames (no ROS)
-    │   │   └── imu_node.py                [2] ROS node: IMU serial port -> /imu
+    │   │   ├── imu_node.py                [2] ROS node: IMU serial port -> /imu
+    │   │   ├── scintillator.py            [3] Scintillator serial text lines -> counts per second (no ROS)
+    │   │   └── scintillator_node.py       [3] ROS node: scintillator serial port -> /scintillator/count_rate
     │   └── test/
     │       ├── test_mcu_protocol.py       [1] Unit tests for mcu_protocol.py
     │       ├── test_ina260.py             [1] Unit tests for ina260.py
     │       ├── test_kinematics.py         [1] Unit tests for kinematics.py
     │       ├── test_step_metrics.py       [1] Unit tests for step_metrics.py
-    │       └── test_wt901.py              [2] Unit tests for wt901.py
+    │       ├── test_wt901.py              [2] Unit tests for wt901.py
+    │       └── test_scintillator.py       [3] Unit tests for scintillator.py (real lines from the robot)
     │
     ├── nala_teleop/                       Teleop with fixed speeds: PC keyboard (no speed keys), Pi Xbox controller
     │   ├── package.xml                    [1] Package manifest
@@ -703,6 +709,32 @@ scp -r maps/house1 nala@nala.local:NALA/maps/
 
 `plan_cli.py` options: `--start X Y` (coverage start, default the base station), `--area x1 y1 x2 y2 ...`.
 The interactive planner on the PC: `python3 coverage_tool/app.py maps/house1/map.yaml`.
+
+#### Scintillator readings in a terminal
+
+App 3 starts the scintillator driver itself. To watch the readings (counts per second, one per second):
+
+PC terminal (in the repo folder) or Pi terminal (`ssh nala@nala.local`), while app 3 runs:
+
+```bash
+source config/ros_env.sh       # Pi: source ~/NALA/config/ros_env.sh
+ros2 topic echo /scintillator/count_rate --field counts_per_second
+```
+
+Without app 3, start the driver by hand in a Pi terminal first (Ctrl-C stops it):
+
+```bash
+ros2 run nala_base scintillator_node --ros-args --params-file ~/NALA/config/scintillator.yaml
+```
+
+The raw lines (Pi terminal, only while no driver runs: the driver locks the port; `Ctrl+]` to leave):
+
+```bash
+python3 -m serial.tools.miniterm --rtscts /dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_ESCDb147612-if00-port0 19200
+```
+
+`radiation.enabled` in `config/coverage.yaml` is false for now: the readings are recorded (heatmap, hotspots,
+`readings.csv`), but there is no background measurement and no contamination stop.
 
 #### Robot geometry for coverage
 
