@@ -32,3 +32,6 @@ CLAUDE.local.md
 
 # Local reference document of the previous team (68 MB)
 firmware/arduino_uart_test/*.pdf
+
+# Scintillator manual (manufacturer document): local reference only
+metorX Berthold_LB_124_SCINT-Serie.pdf
