@@ -6,8 +6,8 @@
 CSV rows: time_s,kind,values...
   nav     Nav2 controller command (/cmd_vel_nav): vx, wz
   gate    velocity gate output (/cmd_vel, what base_node gets): vx, wz
-  odom    wheel odometry speed (/odom): vx, wz
-  ekf     EKF speed (/odometry/filtered): vx, wz
+  odom    wheel odometry speed (/odom): vx, wz, vy (vy since 2026-10-27, at the end: older files have only vx, wz)
+  ekf     EKF speed (/odometry/filtered): vx, wz, vy
   amcl    AMCL pose: x, y, yaw_deg, position sigma (m)
   trust   supervisor trust state (/coverage/trust), only when it changes
   log     warnings and errors of all nodes (/rosout), except battery_node
@@ -43,7 +43,8 @@ def main():
         return lambda m: write(kind, round(m.linear.x, 4), round(m.angular.z, 4))
 
     def odom(kind):
-        return lambda m: write(kind, round(m.twist.twist.linear.x, 4), round(m.twist.twist.angular.z, 4))
+        return lambda m: write(kind, round(m.twist.twist.linear.x, 4), round(m.twist.twist.angular.z, 4),
+                               round(m.twist.twist.linear.y, 4))
 
     def amcl(m):
         c = m.pose.covariance

@@ -8,7 +8,12 @@ amcl:
     odom_frame_id: odom
     global_frame_id: map
     scan_topic: /scan
-    robot_model_type: nav2_amcl::DifferentialMotionModel
+    # Omni (mecanum) model (user decision 2026-10-27; was DifferentialMotionModel). The EKF odometry also moves
+    # sideways (wheel vy), e.g. when a wheel slips or stalls in a turn. The differential model takes a sideways
+    # or diagonal move of >= 1 cm between two updates as a rotation and adds up to ~0.2-0.4 m position noise in
+    # one update: robot runs 2026-10-26 (RDG_NM_v4) had 40 POSITION_UNCERTAIN pauses in 15 min, all in slow turns
+    # (docs/handover.md). The omni model adds noise only from the real translation and rotation.
+    robot_model_type: nav2_amcl::OmniMotionModel
     laser_model_type: likelihood_field
     laser_min_range: 0.2
     laser_max_range: 12.0
@@ -22,10 +27,12 @@ amcl:
     alpha1: 0.03
     alpha2: 0.05
     alpha3: 0.05
-    # Position noise from turning (differential model). 0.03 (user decision 2026-10-19; was 0.05): the LiDAR is at
-    # the turning centre. With 0.05 the position sigma passed the 0.10 m trust limit in turns, with 0.01 AMCL was too
-    # sure to correct itself (both robot, 2026-10-19; the first run may also have started with the robot backwards).
+    # Position noise from turning. 0.03 (user decision 2026-10-19, with the differential model; was 0.05). With 0.05
+    # the position sigma passed the 0.10 m trust limit in turns, with 0.01 AMCL was too sure to correct itself (both
+    # robot, 2026-10-19; the first run may also have started with the robot backwards). Kept for the omni model;
+    # alpha1 = alpha4, so it does not matter which of the two the omni model uses for which noise.
     alpha4: 0.03
+    # Sideways (strafe) noise from translation (omni model only).
     alpha5: 0.05
     transform_tolerance: 0.5
     tf_broadcast: true

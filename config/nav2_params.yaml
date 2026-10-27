@@ -40,8 +40,16 @@ controller_server:
     FollowPath:
       plugin: nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController
       desired_linear_vel: 0.12
+      # Lookahead = measured speed x lookahead_time, kept between min and max (user decision 2026-10-27): 0.36 m at
+      # 0.12 m/s, 0.2 m when RPP slows down on tight arcs or near a goal. The fixed 0.2 m made the robot weave:
+      # heading +-8-10 deg, ~6.5 s period, not decaying, on straight pieces (robot runs 2026-10-26; 12-18 deg at
+      # 0.15 m/s). A model of pure pursuit with ~0.8-1 s of loop delay (wheel speed loop + software) shows the
+      # same; with >= 0.35 m it stays stable up to ~1.2 s of delay (docs/handover.md).
       lookahead_dist: 0.2
-      use_velocity_scaled_lookahead_dist: false
+      use_velocity_scaled_lookahead_dist: true
+      lookahead_time: 3.0
+      min_lookahead_dist: 0.2
+      max_lookahead_dist: 0.45
       rotate_to_heading_angular_vel: 0.4
       use_rotate_to_heading: true
       rotate_to_heading_min_angle: 0.35

@@ -18,8 +18,9 @@
       # from Nav2); manual driving through the gate may reverse.
       # The MCU protocol has steps of 1 mm/s and 1 mrad/s (docs/mcu_protocol.md).
       # 0.15 / 0.5 on 2026-10-26 made the robot weave while driving (time with |turn rate| > 0.3 rad/s while driving
-      # 18 % instead of 2-6 %, one robot run). Likely cause: RPP's fixed lookahead_dist 0.2 m asks for faster heading
-      # corrections at 0.15 m/s, and the gate's angular_accel_rad_s2 cannot follow them. Back to 0.12 / 0.4 (user).
+      # 18 % instead of 2-6 %, one robot run). Back to 0.12 / 0.4 (user). Cause (analysis 2026-10-27): RPP's fixed
+      # lookahead_dist 0.2 m with ~0.8-1 s of loop delay oscillates (also at 0.12 m/s, less); the gate's
+      # angular_accel_rad_s2 made no difference in the model. Now a speed-scaled lookahead (nav2_params.yaml).
       linear_m_s: 0.12
       angular_rad_s: 0.4
       # Acceleration limits of the velocity gate (both directions). Floor test 2026-10-16: while the command is

@@ -201,7 +201,8 @@ NALA/
 │
 ├── tools/
 │   ├── debug/                             [3] Pi: diagnosis while app 3 runs (only listen). See docs/handover.md
-│   │   ├── record_drive.py                Record Nav2 command, gate output, odom, EKF, AMCL, trust state, warnings to CSV
+│   │   ├── analyze_run.py                 PC or Pi: summary of an app 3 run folder (pauses, weaving against the plan, supervisor CPU timing); reads files only
+│   │   ├── record_drive.py                Record Nav2 command, gate output, odom, EKF (vx, wz, vy), AMCL, trust state, warnings to CSV
 │   │   ├── scan_on_map.py                 PNG of the live LiDAR scan on the map at the AMCL pose
 │   │   └── tf_lag.py                      Age of the odom TF, /odom and /imu when they arrive
 │   └── sim/                               [3] PC: closed-loop simulation of app 3 with a fake robot (see tools/sim/README.md)

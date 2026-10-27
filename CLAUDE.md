@@ -320,7 +320,8 @@ SLAM must not jump to a wrong but similar-looking place.
   to the start first (user, 2026-10-08). A plan records its base station; the robot refuses a plan made for
   another one (`PLAN_BASE_MISMATCH`).
 - Localization in app 3: AMCL on `map.yaml` (not slam_toolbox), initial pose = the base station, sent by the
-  supervisor with a spread of 0.1 m / 10 deg. AMCL has no global relocalization, but app 3 does not assume the
+  supervisor with a spread of 0.1 m / 10 deg. AMCL motion model `OmniMotionModel` (user decision 2026-10-27; was
+  differential: a sideways odometry move in slow turns gave 40 POSITION_UNCERTAIN pauses in 15 min; not driven yet). AMCL has no global relocalization, but app 3 does not assume the
   robot starts on the base station (user, 2026-10-19): `locator_node` (`locate.py`) searches the whole map with the
   scan every 2 s while no task drives -> `/coverage/located` (ON_BASE / BACKWARDS / NOT_ON_BASE + pose). The screen
   draws the robot there and says "not on the base station" / "the wrong way round"; Start needs ON_BASE; when the
@@ -459,9 +460,11 @@ SLAM must not jump to a wrong but similar-looking place.
   name as the system package `python3-coverage`.
 - Speeds (`motion` in `config/coverage.yaml`): 0.12 m/s, 0.4 rad/s (start values), slowest 0.04 m/s near a goal
   (base_node raises it to min_wheel_speed 0.08 m/s on the robot). 0.15 / 0.5 (2026-10-26, one robot run) made the
-  robot weave while driving: |turn rate| > 0.3 rad/s in 18 % of the driving time instead of 2-6 % (likely: RPP's
-  fixed lookahead 0.2 m + the gate's 0.35 rad/s^2 cannot follow; not proven); back to 0.12 / 0.4 (user). If faster again: scale
-  lookahead_dist with the speed (0.25 m at 0.15 m/s keeps v / lookahead as before).
+  robot weave while driving: |turn rate| > 0.3 rad/s in 18 % of the driving time instead of 2-6 %; back to 0.12 / 0.4
+  (user). The robot weaved at 0.12 m/s too (heading +-8-10 deg, ~6.5 s period). Cause (analysis 2026-10-27,
+  docs/handover.md): RPP's fixed lookahead 0.2 m with ~0.8-1 s of loop delay; not the gate's 0.35 rad/s^2. Now
+  RPP speed-scaled lookahead (user decision 2026-10-27): lookahead_time 3.0 s, 0.2-0.45 m (0.36 m at 0.12 m/s).
+  Not driven yet.
   (the MCU protocol has 1 mm/s steps). Acceleration limits = floor test 2026-10-16 (user decision): 0.1 m/s^2
   (velocity gate) and 0.35 rad/s^2 (velocity gate). RPP `max_angular_accel` = `controller_angular_accel_rad_s2`
   3.0: RPP limits its turn command to the measured rate +- accel x 0.05 s, and 0.35 could neither start a turn
@@ -550,6 +553,11 @@ SLAM must not jump to a wrong but similar-looking place.
   If motors still stall: firmware v2.4.0 stall boost (user chose to wait): EEPROM parameters `stall_speed` 0.5 rad/s
   (target != 0 and measured below it = stuck) and `stall_i_limit` 25 % (integral limit only while stuck; back to
   i_limit as soon as the wheel turns). Integral grows at ki x error (~16 %/s at 2 rad/s), so ~1 s to the boost.
+- [3] "Recalculating" pauses and weaving (robot runs 2026-10-26 on RDG_NM_v4, analysis 2026-10-27,
+  docs/handover.md): AMCL sigma jumps in slow turns (POSITION_UNCERTAIN) -> AMCL omni model; weaving -> RPP
+  speed-scaled lookahead; both not driven yet. Open: CPU on the big map (load 9.5 while driving, supervisor gaps
+  median 475 ms -> SCAN_STALE); which process is not known: log `top` in the next run.
+  `tools/debug/analyze_run.py <run_dir>` compares runs.
 - [3] Pi set up for app 3 on 2026-10-16: `setup_pi_screen.sh` ran, after a reboot the panel starts full-screen by
   itself (GNOME autostart), touch and picture checked by the user, the screen stays on. Xbox on the Pi without
   base_node: LB with a held stick = 0, after centring 0.45 m/s, B = button 1. Still open: planning time on the Pi 4.

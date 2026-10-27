@@ -30,6 +30,38 @@ Robot test (with the user): app 1 small stick and 360 deg turns; app 3 room Test
 check stop accuracy at goals (a stop from 0.08 m/s coasts ~8 mm) and corner turn overshoot. Still stalls -> firmware
 stall boost (CLAUDE.md open questions, "Motors stalling").
 
+## "Recalculating" pauses and weaving (analysis 2026-10-27) - robot test to do
+
+Runs `maps/RDG_NM_v4/runs/2026-10-26_162946` and `_164108` (plan `2026-10-22_152140`, 0.12 m/s / 0.4 rad/s), copied
+to the PC. `tools/debug/analyze_run.py <run_dir>` prints the numbers below for any run folder.
+"Recalculating..." on the screen = a pause with auto-resume. Run 164108 (15 min): 53 of them (40 POSITION_UNCERTAIN,
+12 SCAN_STALE, 1 ODOM_STALE), 2-7 s each, each also cancels and restarts the Nav2 goal; plus 11 SPUR_OFF_LINE.
+
+1. **POSITION_UNCERTAIN: AMCL position sigma jumps in slow turns.** Every pause started at < 0.075 m/s while
+   turning, at corners and piece starts, often 4-7 times at the same spot. Recording `~/nala_debug/drive_14_stepfix.csv`
+   (2026-10-20): sigma > 0.1 m in 15-17 % of the turn samples, 0.8 % when driving straight; all 11 jumps in turns,
+   e.g. 0.083 -> 0.218 m in one update at |vx| 0.014 m/s. Likely mechanism (vy was not recorded, so not proven):
+   the EKF odometry (wheel vx and vy) moves sideways or diagonally when a wheel slips or stalls in a turn; the AMCL
+   DifferentialMotionModel takes a move of >= 1 cm off the heading as a rotation and adds ~0.2-0.4 m of position
+   noise in one update; sigma > 0.2 m stops the robot even when the scan fits. **Changed:** AMCL
+   `OmniMotionModel` (config/localization.yaml), alphas unchanged; `record_drive.py` now also records vy.
+2. **SCAN_STALE / ODOM_STALE: CPU.** RDG_NM_v4 (414 x 254 cells, 4x rdg_nm_petroom): load while driving 9.5
+   (petroom runs the same day 5.5), supervisor callback gap median 475 ms (petroom 106 ms; scan_age_s 0.5 s), ticks
+   up to 0.94 s, gaps up to 1.35 s also with short ticks; EKF and controller missed their rates. Which process uses
+   the CPU is not known. **Not changed yet:** log `top -b -d 5` during the next run, then decide.
+3. **Weaving: path follower limit cycle.** The plan pieces are straight, the robot stays near them (cross-track p90
+   4 cm), but the heading swings +-8-10 deg with a ~6.5 s period (~0.75 m) and does not decay. Same at 0.12 m/s on
+   petroom (p90 13.7 deg, low CPU); at 0.15 m/s (run 143137) median 14.8 deg, p90 32 deg. A model (pure pursuit,
+   gate limits, first-order wheel lag, loop delay) gives the same amplitude and period with lookahead 0.2 m and
+   ~0.8-1 s of total delay, at both speeds; the gate's 0.35 rad/s^2 changes nothing there; >= 0.35 m stays stable
+   up to ~1.2 s. The +-5 cm sideways weave also explains SPUR_OFF_LINE (spur.max_offset_m 0.05).
+   **Changed:** RPP speed-scaled lookahead (lookahead_time 3.0 s, 0.2-0.45 m; 0.36 m at 0.12 m/s).
+
+Robot test (RDG_NM_v4, same plan, with the user): `record_drive.py` and `top -b -d 5 > ~/nala_debug/top.log`, then
+`analyze_run.py`. Targets vs run 164108: POSITION_UNCERTAIN <= 5 per 15 min (40); heading error p90 < 6 deg (12.9);
+|w| > 0.1 while driving < 15 % (36 %); no SPUR_OFF_LINE (11). Watch tight arcs and corners near walls (a longer
+lookahead cuts arcs with a radius below ~0.2-0.3 m more; RPP slows down there, which shortens the lookahead again).
+
 ## What the session of 2026-10-16 did (all on `main`, pushed)
 
 In order (`git log --oneline c2417cf..HEAD`):
