@@ -943,7 +943,10 @@ class Supervisor(Node):
                 # Planner may return one pose for a coincident goal; only accept if already there.
                 if points and math.dist(self.pose[:2],points[0])<=self.settings['recovery']['plan_endpoint_tolerance_m']:points=[list(self.pose[:2]),points[0]]
                 else:raise ValueError('Empty planner result')
-            if math.dist(points[0],self.pose[:2])>self.settings['recovery']['planner_start_tolerance_m']:raise ValueError('Planner start does not match robot')
+            # NavFn returns a corner of its start cell, up to half a cell diagonal off the start (an escape point up to
+            # planner_start_tolerance_m away; robot 2026-10-28: 0.17 m, the same failure on every resume).
+            if math.dist(points[0],self.pose[:2])>self.settings['recovery']['planner_start_tolerance_m']+self.base.resolution*math.sqrt(.5)+1e-9:
+                raise ValueError('Planner start does not match robot')
             expected={'CONNECT_PLAN':lambda:self.current.start,'RETURN_PLAN':lambda:self.station[:2],'TEST_PLAN':lambda:self.test_goal[:2]}[phase]()
             if math.dist(points[-1],expected)>self.settings['recovery']['plan_endpoint_tolerance_m']+1e-9:
                 # The planner could only get near that point of the plan (blocked): skip further along the plan.

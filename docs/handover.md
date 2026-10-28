@@ -82,6 +82,14 @@ the speed-scaled lookahead; copied to the PC). Folder name 12:59 = Pi clock, rea
    NTP stepped the clock forward mid-run (16:29:51): TF and costmaps failed (odom at -770 m, "sensor origin out of
    map bounds"). **Not fixed yet** (idea: no task start until `timedatectl` says the clock is synchronized).
 3. Battery 13.8-14.2 V the whole run (below the 14.4 V alarm): charge before the next run.
+4. **Pause that resume could not end** (run `2026-10-28_164419`, xy_goal_tolerance 0.10): `EXECUTION_CHECK: Planner
+   start does not match robot`, again on every resume, until the robot was moved. The robot stood 0.44 m from a wall
+   (inside the collision radius), so plan_to gave NavFn an escape start up to planner_start_tolerance_m (0.15 m)
+   away. NavFn returns a corner of its start cell (worldToMap rounds, mapToWorld adds no half cell), up to 0.035 m
+   further: 0.15-0.18 m, above the check's 0.15 m (6.6 % of the poses around that spot, the same result every time
+   for one pose). **Fixed:** the check allows planner_start_tolerance_m + half a cell diagonal
+   (test_planner_start_on_a_cell_corner_is_accepted). Later in that run: SCAN_STALE pauses at load ~14 (CPU, item 2
+   of the 2026-10-27 analysis).
 
 Robot test: the same plan; count turns on the spot > 360 deg near goals (target: none) and piece ends missed by
 more than 0.10 m (ENDPOINT_MISSED_ACCEPTED). Check the Pi clock first (`timedatectl`).

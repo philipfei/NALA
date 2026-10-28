@@ -845,6 +845,22 @@ def test_a_piece_ended_a_little_off_its_end_is_continued_not_reconnected(ros):
     assert fails==['ACTION_SUCCEEDED_WITHOUT_REACHING_ENDPOINT']
 
 
+def test_planner_start_on_a_cell_corner_is_accepted(ros):
+    # Robot 2026-10-28: a little too close to a wall, the escape start was 0.14 m away; NavFn returns its start cell's
+    # corner (up to half a cell diagonal off), 0.17 m from the robot: EXECUTION_CHECK on every resume.
+    from nala_coverage.planning import poly_target
+    add,pump,_,_=ros
+    sup=add(Supervisor());sup.mission.start(time.monotonic(),sup.timeout)
+    followed=[];sup.follow=lambda points,*a,**k:followed.append(points)
+    sup.current=poly_target([[2.,2.],[2.6,2.]]);sup.pose=[1.86,2.,0.];sup.escape=[2.,2.];sup.path_end_yaw=None
+    sup.mission.state='CONNECT_PLAN'
+    result=ComputePathToPose.Result();result.path=path_msg(sup,[[2.025,2.025],[2.,2.]])
+    sup.action_result('plan',4,result,None)
+    assert followed and sup.mission.state=='CONNECT_PLAN'
+    sup.mission.state='CONNECT_PLAN';result.path=path_msg(sup,[[2.2,2.],[2.,2.]])    # really somewhere else
+    with pytest.raises(ValueError,match='Planner start does not match robot'):sup.action_result('plan',4,result,None)
+
+
 def test_backing_out_steers_on_odometry_not_on_amcl_jumps(ros):
     # Robot 2026-10-20: steering on the AMCL pose zigzagged +-15-20 deg in a pocket. The line is put into the
     # odometry frame once; an AMCL correction afterwards changes nothing.
