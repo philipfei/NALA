@@ -62,6 +62,30 @@ Robot test (RDG_NM_v4, same plan, with the user): `record_drive.py` and `top -b 
 |w| > 0.1 while driving < 15 % (36 %); no SPUR_OFF_LINE (11). Watch tight arcs and corners near walls (a longer
 lookahead cuts arcs with a radius below ~0.2-0.3 m more; RPP slows down there, which shortens the lookahead again).
 
+## Turning in circles at piece ends and a clock jump (robot run 2026-10-28) - robot test to do
+
+Run `maps/rdg_nm_26-10-2026/runs/2026-10-28_125931` (plan `2026-10-28_103020`, first run with the omni AMCL model and
+the speed-scaled lookahead; copied to the PC). Folder name 12:59 = Pi clock, really ~16:07.
+
+1. **Turning in circles near piece ends.** At (5.77, -5.83) for ~100 s (~1500 deg one way, TARGET_TIMEOUT) and at
+   (5.62, -0.83) for ~60 s (then FOLLOW_PATH_ERROR_106 = RPP "collision ahead", BLOCKED_IN_PLACE). In those turns
+   vx ~ 0, w ~ -0.32 rad/s: RPP turns on the spot towards the goal (angle > rotate_to_heading_min_angle 0.35 rad).
+   But in the AMCL pose base_link moves sideways at ~0.025 m/s while turning: the rotation centre is ~8 cm ahead
+   of base_link (2026-10-26 runs, differential model, same laser.x 0.095: ~2 cm). That point is ~5 cm from the goal,
+   so base_link circles the goal at ~10 cm and the angle to it stays ~24 deg: RPP never stops turning. Base within
+   0.05 m of the goal 0-2 % of the time, within 0.10 m ~50 %. **Changed:** Nav2 xy_goal_tolerance 0.05 -> 0.10 m
+   (= the supervisor's recovery.endpoint_tolerance_m). Open: the cause of the 8 cm (real sideways motion from
+   mecanum slip, or a wrong LiDAR x offset; the laser alone cannot tell). Floor test: tape under the wheel centre,
+   turn 360 deg on the spot in app 1, see whether the centre moves. The omni model works otherwise: 1
+   POSITION_UNCERTAIN in ~11 min (40 in 15 min on 2026-10-26).
+2. **Clock jump.** The Pi booted without time sync (timesyncd restored the last shutdown time, 3 h 19 min slow).
+   NTP stepped the clock forward mid-run (16:29:51): TF and costmaps failed (odom at -770 m, "sensor origin out of
+   map bounds"). **Not fixed yet** (idea: no task start until `timedatectl` says the clock is synchronized).
+3. Battery 13.8-14.2 V the whole run (below the 14.4 V alarm): charge before the next run.
+
+Robot test: the same plan; count turns on the spot > 360 deg near goals (target: none) and piece ends missed by
+more than 0.10 m (ENDPOINT_MISSED_ACCEPTED). Check the Pi clock first (`timedatectl`).
+
 ## What the session of 2026-10-16 did (all on `main`, pushed)
 
 In order (`git log --oneline c2417cf..HEAD`):

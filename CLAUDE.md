@@ -548,11 +548,18 @@ SLAM must not jump to a wrong but similar-looking place.
 - [3] Motors stalling (user, 2026-10-26: one or more motors sometimes stand still, most often turning on the spot).
   Done: min_wheel_speed 0.08 m/s, teleop turn 0.6 rad/s. Coverage 0.15 / 0.5 was tried on 2026-10-26 (weaving) and
   is back at 0.12 / 0.4. One robot run with min_wheel_speed: it stops ~2 cm further at Nav2 goals (RPP's 0.04 m/s
-  approach is raised to 0.08; still inside xy_goal_tolerance 0.05 m). The gate sends zero at once on a zero
+  approach is raised to 0.08; still inside xy_goal_tolerance, 0.05 m then, 0.10 m since 2026-10-28). The gate sends zero at once on a zero
   command (no ramp-down), and a corner turn ends at ~0.25 rad/s (above 0.24), so turn ends are not affected.
   If motors still stall: firmware v2.4.0 stall boost (user chose to wait): EEPROM parameters `stall_speed` 0.5 rad/s
   (target != 0 and measured below it = stuck) and `stall_i_limit` 25 % (integral limit only while stuck; back to
   i_limit as soon as the wheel turns). Integral grows at ki x error (~16 %/s at 2 rad/s), so ~1 s to the boost.
+- [3] Turning in circles at plan piece ends (robot run 2026-10-28, rdg_nm_26-10-2026, omni AMCL): RPP turned on
+  the spot towards a goal ~10 cm away for up to 100 s, because in the AMCL pose base_link moves on a ~8 cm circle
+  while turning on the spot (rotation centre ~8 cm ahead of base_link; ~2 cm with the differential model on
+  2026-10-26). Done: Nav2 xy_goal_tolerance 0.05 -> 0.10 m (user). Not driven yet. Open: does the robot really move
+  sideways when turning on the spot (mecanum slip), or is the LiDAR x offset (0.095) wrong? Check on the floor.
+  The same run also broke when NTP stepped the Pi clock +3 h 19 min mid-run (no time sync at boot; TF and costmaps
+  fail): not fixed yet. docs/handover.md.
 - [3] "Recalculating" pauses and weaving (robot runs 2026-10-26 on RDG_NM_v4, analysis 2026-10-27,
   docs/handover.md): AMCL sigma jumps in slow turns (POSITION_UNCERTAIN) -> AMCL omni model; weaving -> RPP
   speed-scaled lookahead; both not driven yet. Open: CPU on the big map (load 9.5 while driving, supervisor gaps
