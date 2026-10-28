@@ -97,7 +97,7 @@ def test_maps_map_new_plan_and_planning_screens(panel, tmp_path, monkeypatch):
     screen.tap(1.157, -1.875)
     assert screen.start == [1.157, -1.875] and screen.at_point.isChecked()
     screen.set_mode('area')
-    for corner in ([0.0, -4.0], [2.0, -4.0], [2.0, -2.0], [0.0, -2.0]):
+    for corner in ([0.0, -4.0], [2.0, -4.0], [2.0, -2.0], [2.0, -2.0], [0.0, -2.0]):   # one double-click
         screen.tap(*corner)
     screen.close_area()
     assert screen.area_closed and len(screen.area) == 4

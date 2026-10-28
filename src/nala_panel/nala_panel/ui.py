@@ -403,6 +403,9 @@ class MapScreen(QtWidgets.QWidget):
             self.mode = None
             self.say(f'Coverage starts at x {x:.2f}, y {y:.2f}. The robot drives there from the base station.')
         elif self.mode == 'area':
+            # A double-click (or double tap) is two taps on one spot: a repeated corner makes the area invalid.
+            if self.area and math.dist(self.area[-1], (x, y)) < self.grid.resolution:
+                return
             self.area.append([x, y])
             self.say(f'{len(self.area)} corner(s). Tap more corners, then "Close area".')
         self.redraw()
