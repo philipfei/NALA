@@ -6,7 +6,7 @@
   <description>Touchscreen panel on the robot for app 3: choose a map, set the base station, plan a path
     (coverage_tool), choose a plan and drive it. Settings come from config/panel.yaml.</description>
   <maintainer email="feijinghao2002@gmail.com">philipfei</maintainer>
-  <license>TODO</license>
+  <license>CC-BY-NC-4.0</license>
 
   <exec_depend>rclpy</exec_depend>
   <exec_depend>nala_coverage</exec_depend>

@@ -5,7 +5,7 @@
   <version>0.1.0</version>
   <description>Keyboard (PC) and Xbox controller (Pi, /joy) teleop of the NALA robot. The speeds are fixed and come from config/teleop.yaml.</description>
   <maintainer email="feijinghao2002@gmail.com">philipfei</maintainer>
-  <license>TODO</license>
+  <license>CC-BY-NC-4.0</license>
 
   <exec_depend>rclpy</exec_depend>
   <exec_depend>geometry_msgs</exec_depend>

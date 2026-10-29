@@ -15,7 +15,7 @@ setup(
     maintainer='philipfei',
     maintainer_email='feijinghao2002@gmail.com',
     description='Touchscreen panel on the robot for app 3: maps, base station, path planning and driving',
-    license='TODO',
+    license='CC-BY-NC-4.0',
     extras_require={'test': ['pytest']},
     entry_points={
         'console_scripts': [

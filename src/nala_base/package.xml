@@ -5,7 +5,7 @@
   <version>0.1.0</version>
   <description>NALA mecanum base: Pi to MCU driver over UART (/cmd_vel, wheel odometry /odom), WT901 IMU driver (/imu), INA219 battery monitor (/battery_state).</description>
   <maintainer email="feijinghao2002@gmail.com">philipfei</maintainer>
-  <license>TODO</license>
+  <license>CC-BY-NC-4.0</license>
 
   <exec_depend>rclpy</exec_depend>
   <exec_depend>geometry_msgs</exec_depend>

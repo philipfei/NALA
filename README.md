@@ -93,6 +93,7 @@ An edited file works without a rebuild. A new file needs a rebuild.
 NALA/
 ├── CLAUDE.md                              Shared Claude Code rules (tracked, edited by others). The maintainer's own rules are in CLAUDE.local.md (in .gitignore, not in git)
 ├── README.md                              This file
+├── LICENSE                                License: CC BY-NC 4.0 (full legal text)
 ├── requirements.yaml                      System versions and all dependencies (PC, Pi, firmware)
 ├── .gitignore                             What git ignores: build output, ref/, map files
 ├── .gitattributes                         Force LF line endings (the code runs on Linux)
@@ -842,3 +843,8 @@ pauses with `TF_UNAVAILABLE`; run it again on its own (`-k <name>`) before treat
 The firmware is owned by a teammate. See [firmware/README.md](firmware/README.md):
 build with Microchip Studio on Windows (`firmware/motor_driver_C.atsln`, F7), flash with `avrdude` and an ArduinoISP.
 The exact commands are in section 5 of the firmware README.
+
+## License
+
+This project is licensed under the Creative Commons Attribution-NonCommercial 4.0 International License
+(CC BY-NC 4.0). See [LICENSE](LICENSE) or <https://creativecommons.org/licenses/by-nc/4.0/>.

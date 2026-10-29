@@ -15,7 +15,7 @@ setup(
     maintainer='philipfei',
     maintainer_email='feijinghao2002@gmail.com',
     description='NALA mecanum base: MCU driver, wheel odometry, WT901 IMU driver, INA219 battery monitor, scintillator driver',
-    license='TODO',
+    license='CC-BY-NC-4.0',
     extras_require={'test': ['pytest']},
     entry_points={
         'console_scripts': [

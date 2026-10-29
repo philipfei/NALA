@@ -4,7 +4,7 @@
   <version>0.4.0</version>
   <description>Drives exported coverage plans on a fixed map with Nav2: supervision and coverage measurement.</description>
   <maintainer email="philip@example.com">philip</maintainer>
-  <license>Apache-2.0</license>
+  <license>CC-BY-NC-4.0</license>
   <exec_depend>rclpy</exec_depend>
   <exec_depend>ament_index_python</exec_depend>
   <exec_depend>geometry_msgs</exec_depend>

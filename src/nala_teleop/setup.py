@@ -15,7 +15,7 @@ setup(
     maintainer='philipfei',
     maintainer_email='feijinghao2002@gmail.com',
     description='Keyboard (PC) and Xbox controller (Pi) teleop of the NALA robot with fixed speeds',
-    license='TODO',
+    license='CC-BY-NC-4.0',
     extras_require={'test': ['pytest']},
     entry_points={
         'console_scripts': [

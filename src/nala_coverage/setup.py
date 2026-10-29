@@ -14,7 +14,7 @@ setup(
     maintainer='philip',
     maintainer_email='philip@example.com',
     description='Stage 3: drives coverage_tool plans with Nav2 from a base station and back; velocity gate and coverage measurement.',
-    license='Apache-2.0',
+    license='CC-BY-NC-4.0',
     entry_points={'console_scripts': [
         'coverage_supervisor = nala_coverage.supervisor:main',
         'coverage_meter = nala_coverage.meter:main',
