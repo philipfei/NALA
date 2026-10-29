@@ -124,7 +124,9 @@ NALA/
 │   ├── mcu_protocol.md                    Pi-side summary of the Pi <-> MCU UART protocol, first hardware test
 │   ├── imu_ekf.md                         [2] IMU wiring and setup, EKF design: why only the gyro turn rate
 │   ├── battery.md                         [1] INA219 battery voltage monitor: wiring, code, /battery_state data format
-│   └── scintillator.md                    [3] Scintillator input (/scintillator/count_rate), heatmap, hotspots, contamination stop
+│   ├── scintillator.md                    [3] Scintillator input (/scintillator/count_rate), heatmap, hotspots, contamination stop
+│   ├── robot_screen.md                    [3] Manual of the robot screen (nala_panel): every screen, button and message
+│   └── robot_screen/                      [3] Screenshots for robot_screen.md (16 PNG, 1024x600, from test_ui.py)
 │
 ├── firmware/                              MCU motor driver (ATmega328PB), Microchip Studio project.
 │   │                                      Owned by a teammate, who builds and flashes it. v2.3.0 (by Claude).
@@ -609,7 +611,7 @@ normal way to use it. The PC is optional (RViz, or planning on the PC).
 #### On the robot screen
 
 The panel starts by itself after the Pi boots (`scripts/setup_pi_screen.sh`). By hand, in a terminal on the Pi:
-`bash ~/NALA/scripts/start_panel.sh`.
+`bash ~/NALA/scripts/start_panel.sh`. Full manual with screenshots: [docs/robot_screen.md](docs/robot_screen.md).
 
 1. **Maps:** tap the map (every folder in `maps/` with a `map.yaml` from app 2).
 2. **New plan** tab:
