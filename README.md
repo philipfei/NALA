@@ -11,7 +11,7 @@ plan the path, choose a plan and drive it.
 | App | What it does | Status |
 |---|---|---|
 | 1. Teleop | Drive the chassis with the PC keyboard or an Xbox controller | Driven 2026-10-07. Firmware v2.3.x: speed control tuned on the floor (2026-10-15). Driving test 2026-10-16: forward and strafe odometry exact |
-| 2. Mapping | App 1 + real-time LiDAR SLAM on the Pi (wheel odometry + IMU in an EKF) + RViz on the PC + save the map and copy it to the PC | First map of one room 2026-10-16: clean. IMU yaw checked in a 360 deg turn. Next: the real house (similar rooms), see [docs/handover.md](docs/handover.md) |
+| 2. Mapping | App 1 + real-time LiDAR SLAM on the Pi (wheel odometry + IMU in an EKF) + RViz on the PC + save the map and copy it to the PC | First map of one room 2026-10-16: clean. IMU yaw checked in a 360 deg turn. Next: the real house (similar rooms) |
 | 3. Coverage | On the robot screen: choose a map from app 2, set the base station, plan a coverage path (from the base station or another start point, optionally only an area), choose a plan and drive it. The robot starts at the base station, covers, and returns | Code done. Tested in simulation only (`tools/sim`). Not tested on the robot |
 
 ## System
@@ -91,7 +91,6 @@ An edited file works without a rebuild. A new file needs a rebuild.
 
 ```
 NALA/
-├── CLAUDE.md                              Shared Claude Code rules (tracked, edited by others). The maintainer's own rules are in CLAUDE.local.md (in .gitignore, not in git)
 ├── README.md                              This file
 ├── LICENSE                                License: CC BY-NC 4.0 (full legal text)
 ├── requirements.yaml                      System versions and all dependencies (PC, Pi, firmware)
@@ -121,7 +120,6 @@ NALA/
 │   └── panel.yaml                         [3] Robot screen (nala_panel): map folder, window and button size, update rates
 │
 ├── docs/
-│   ├── handover.md                        State on 2026-10-12, steps after the Pi reinstall, prompt for the next Claude session
 │   ├── mcu_protocol.md                    Pi-side summary of the Pi <-> MCU UART protocol, first hardware test
 │   ├── imu_ekf.md                         [2] IMU wiring and setup, EKF design: why only the gyro turn rate
 │   ├── battery.md                         [1] INA219 battery voltage monitor: wiring, code, /battery_state data format
@@ -167,7 +165,6 @@ NALA/
 ├── coverage_tool/                         [3] Coverage path planner (Python, no ROS). Used by the robot screen
 │   │                                      (plan_cli.py) and on the PC (app.py). Details: coverage_tool/README.md
 │   ├── README.md                          How the planner works, its cost function, settings and commands
-│   ├── CLAUDE.md                          Planner facts for Claude Code
 │   ├── requirements.txt                   Python libraries of the planner (for pip on other machines; apt on the Pi)
 │   ├── .gitignore                         Python cache files
 │   ├── app.py                             PC: interactive planner window (Tkinter)
@@ -203,7 +200,7 @@ NALA/
 │   └── start_panel.sh                     [3] Start the robot screen panel (at login, or by hand); waits for the XWayland display
 │
 ├── tools/
-│   ├── debug/                             [3] Pi: diagnosis while app 3 runs (only listen). See docs/handover.md
+│   ├── debug/                             [3] Pi: diagnosis while app 3 runs (only listen)
 │   │   ├── analyze_run.py                 PC or Pi: summary of an app 3 run folder (pauses, weaving against the plan, supervisor CPU timing); reads files only
 │   │   ├── record_drive.py                Record Nav2 command, gate output, odom, EKF (vx, wz, vy), AMCL, trust state, warnings to CSV
 │   │   ├── scan_on_map.py                 PNG of the live LiDAR scan on the map at the AMCL pose

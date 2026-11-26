@@ -26,8 +26,8 @@ firmware/**/Release/
 # Arduino example code for the IMU (WitMotion): local reference only
 JY901 uno r3/
 
-# Claude Code instructions of the user: local file, never pushed (user, 2026-10-14).
-# CLAUDE.md itself is tracked (others edit it); do not edit it here.
+# Claude Code instructions: local files, never pushed.
+CLAUDE.md
 CLAUDE.local.md
 
 # Local reference document of the previous team (68 MB)
